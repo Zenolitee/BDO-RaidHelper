@@ -89,7 +89,7 @@ For the private web dashboard, open the Discord Developer Portal OAuth2 settings
 - `NODEWAR_CHANNEL_ID`: Channel where the scheduler and `/event repost` publish roster posts.
 - `NODEWAR_ROLE_ID`: Role pinged by scheduled posts, for example `<@&ROLE_ID>`.
 - `OFFICER_ROLE_ID`: Optional role allowed to edit, close, delete, and repost events.
-- The website home page includes an `Invite to Server` button. Its invite URL requests `Use External Emojis` along with the bot's normal message/embed permissions.
+- The website home page includes an `Invite to Server` button. Its invite URL requests `Use External Emojis` and `Mention Everyone, @here, and All Roles` along with the bot's normal message/embed permissions.
 
 It is fine to paste the client ID and guild ID here. Do not paste the bot token here unless you plan to reset it afterward; put it directly in `D:\NW-Helper\.env`.
 

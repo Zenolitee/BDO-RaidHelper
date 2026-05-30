@@ -295,7 +295,7 @@ function botInviteUrl(): string | undefined {
 
   const params = new URLSearchParams({
     client_id: config.discordClientId,
-    permissions: "137439235072",
+    permissions: "137439366144",
     integration_type: "0",
     scope: "bot applications.commands"
   });
