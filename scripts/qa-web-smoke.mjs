@@ -53,6 +53,7 @@ try {
   if (!address || typeof address === "string") throw new Error("QA server did not bind to a TCP port.");
   const baseUrl = `http://127.0.0.1:${address.port}`;
   await expectResponse(`${baseUrl}/`, 200, "Log in with Discord");
+  await expectResponse(`${baseUrl}/assets/styles.css`, 200, ".delivery-editor");
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Zen");
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Raid day");
   await expectResponse(`${baseUrl}/events/${event.id}/edit`, 404, "Event not found");

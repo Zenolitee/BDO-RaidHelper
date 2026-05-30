@@ -16,6 +16,7 @@ A Discord bot and web roster page for Black Desert Online Node War and Siege pla
 - `/event repost` reposts an event immediately to the configured or selected roster channel.
 - The web page shows events as Mainball/FFA, Defense, Zerker, Shai, and Bench columns.
 - The web dashboard supports Discord OAuth login, administrator server selection, one-time raid creation, and linked roster allocation sliders.
+- Web raid creation loads channels and roles from the selected Discord server, requires a roster channel, and supports multiple optional ping roles.
 
 ## Setup
 
@@ -40,6 +41,8 @@ A Discord bot and web roster page for Black Desert Online Node War and Siege pla
    ```
 
 Open `http://localhost:3000` for the roster dashboard.
+
+The dashboard stylesheet is authored in `src/styles/input.css` and compiled with the Tailwind CLI. Both `npm run dev` and `npm run build` regenerate `src/public/styles.css`.
 
 ## Supabase storage
 

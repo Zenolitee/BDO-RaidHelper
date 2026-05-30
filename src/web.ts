@@ -20,6 +20,25 @@ interface DiscordGuild {
   permissions: string;
 }
 
+interface DiscordGuildChannel {
+  id: string;
+  name: string;
+  position?: number;
+  type: number;
+}
+
+interface DiscordGuildRole {
+  id: string;
+  name: string;
+  managed: boolean;
+  position: number;
+}
+
+interface GuildDeliveryOptions {
+  channels: DiscordGuildChannel[];
+  roles: DiscordGuildRole[];
+}
+
 interface WebSession {
   user: UserProfile;
   guilds: DiscordGuild[];
@@ -101,14 +120,21 @@ export function createWebApp(store: EventStore) {
     response.redirect("/");
   });
 
-  app.get("/create", (request, response) => {
+  app.get("/create", async (request, response) => {
     const session = getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     if (!session || !guildId || !session.guilds.some((guild) => guild.id === guildId)) {
       response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
       return;
     }
-    response.type("html").send(renderPage("Create Raid", renderCreateRaid(guildId, session.csrfToken, session)));
+    try {
+      const [deliveryOptions, settings] = await Promise.all([fetchGuildDeliveryOptions(guildId), store.getSettings()]);
+      response
+        .type("html")
+        .send(renderPage("Create Raid", renderCreateRaid(guildId, session.csrfToken, session, deliveryOptions, settings.nodeWarChannelIds?.[guildId] ?? config.nodeWarChannelId)));
+    } catch (error) {
+      response.status(502).type("html").send(renderPage("Create Raid", renderWebError(error)));
+    }
   });
 
   app.post("/create", async (request, response) => {
@@ -125,7 +151,10 @@ export function createWebApp(store: EventStore) {
       const day = warDayForDate(date);
       const totalCapacity = getNodeWarCapacity(tier, day);
       const groups = parseGroupAllocation(request.body.groups, totalCapacity);
-      const settings = await store.getSettings();
+      const deliveryOptions = await fetchGuildDeliveryOptions(guildId);
+      const announcementChannelId = parseAnnouncementChannelId(request.body.announcementChannelId, deliveryOptions.channels);
+      const announcementRoleIds = parseAnnouncementRoleIds(request.body.announcementRoleIds, deliveryOptions.roles);
+      const announcementTime = parseClockTime(request.body.announcementTime);
       const event: WarEvent = {
         id: nanoid(10),
         title: buildNodeWarTitle(day, tier, totalCapacity),
@@ -140,10 +169,9 @@ export function createWebApp(store: EventStore) {
         totalCapacity,
         groups,
         announcementDate: previousDate(date),
-        announcementTime: config.nodeWarPostTime,
-        announcementChannelId: settings.nodeWarChannelIds?.[guildId] ?? config.nodeWarChannelId,
-        announcementRoleId: config.nodeWarRoleId,
-        announcementRoleIds: config.nodeWarRoleId ? [config.nodeWarRoleId] : [],
+        announcementTime,
+        announcementChannelId,
+        announcementRoleIds,
         guildId,
         createdBy: `web:${session.user.id}`,
         createdAt: new Date().toISOString(),
@@ -285,6 +313,32 @@ async function fetchBotGuildIds(): Promise<Set<string>> {
   return new Set(guilds.map((guild) => guild.id));
 }
 
+async function fetchGuildDeliveryOptions(guildId: string): Promise<GuildDeliveryOptions> {
+  const [channels, roles] = await Promise.all([
+    fetchDiscordBot<DiscordGuildChannel[]>(`/guilds/${guildId}/channels`),
+    fetchDiscordBot<DiscordGuildRole[]>(`/guilds/${guildId}/roles`)
+  ]);
+  return {
+    channels: channels
+      .filter((channel) => channel.type === 0 || channel.type === 5)
+      .sort((left, right) => (left.position ?? 0) - (right.position ?? 0) || left.name.localeCompare(right.name)),
+    roles: roles.filter((role) => role.name !== "@everyone" && !role.managed).sort((left, right) => right.position - left.position)
+  };
+}
+
+async function fetchDiscordBot<T>(path: string): Promise<T> {
+  if (!config.discordToken) {
+    throw new Error("Discord bot token is not configured.");
+  }
+  const response = await fetch(`https://discord.com/api/v10${path}`, {
+    headers: { Authorization: `Bot ${config.discordToken}` }
+  });
+  if (!response.ok) {
+    throw new Error("Discord server channels and roles could not be loaded.");
+  }
+  return (await response.json()) as T;
+}
+
 function hasAdministratorPermission(permissions: string): boolean {
   return (BigInt(permissions) & 8n) === 8n;
 }
@@ -326,7 +380,7 @@ function renderPage(title: string, body: string): string {
   <title>${escapeHtml(title)} | NW Helper</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
-<body>
+<body class="antialiased selection:bg-amber-300/30 selection:text-amber-50">
   ${body}
 </body>
 </html>`;
@@ -338,10 +392,10 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
     .map((event) => {
       const signed = event.signups.filter((signup) => signup.group !== "bench").length;
       const capacity = activeRosterCapacity(event);
-      return `<article class="event-card">
+      return `<article class="event-card group relative overflow-hidden">
         <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span>${labelRecurrence(event.recurrence)}</span></div>
         <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(event.title)}</strong></a>
-        <small>${formatDateLabel(event.date)} · War starts ${formatTimeLabel(event.time)}</small>
+        <small>${formatDateLabel(event.date)} | War starts ${formatTimeLabel(event.time)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
         <div class="card-footer"><b>${signed}/${capacity} signed</b><a href="/events/${event.id}/edit">Manage</a></div>
       </article>`;
@@ -352,7 +406,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       ? `<section class="server-picker"><header><p class="eyebrow">Your servers</p><h1>Select a server</h1><p>Only servers shared with NW Helper are listed.</p></header><div class="server-grid">${session.guilds
           .map(
             (guild) =>
-              `<a class="server-card" href="/?guild=${encodeURIComponent(guild.id)}"><span class="server-mark">${escapeHtml(guild.name.slice(0, 1).toUpperCase())}</span><span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span></a>`
+              `<a class="server-card group transition duration-200 ease-out" href="/?guild=${encodeURIComponent(guild.id)}"><span class="server-mark">${escapeHtml(guild.name.slice(0, 1).toUpperCase())}</span><span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span></a>`
           )
           .join("") || "<p>No shared administrator servers found.</p>"}</div><div class="invite-row"><span>Not seeing your server?</span>${renderInviteButton("Invite the bot")}</div></section>`
       : "";
@@ -397,7 +451,7 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
   return `${renderNav(session, event.guildId)}<main class="shell detail-shell">
     <section class="event-summary">
       <div>
-        <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} · ${NODE_WAR_PRESETS[event.tier].territoryGroup}` : event.kind === "siege" ? "Siege" : "Node War"}</p>
+        <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} | ${NODE_WAR_PRESETS[event.tier].territoryGroup}` : event.kind === "siege" ? "Siege" : "Node War"}</p>
         <h1>${escapeHtml(event.title)}</h1>
         <div class="summary-meta"><span>${formatDateLabel(event.date)}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span></div>
       </div>
@@ -416,7 +470,7 @@ function renderDayRail(event: WarEvent): string {
   const days = event.recurrence === "weekly" && event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
   return `<section class="day-section"><div class="section-title"><div><p class="eyebrow">Schedule</p><h2>${event.recurrence === "weekly" ? "Weekly raid days" : "Raid day"}</h2></div><span>Announces ${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</span></div><div class="day-rail">${days
     .map(
-      (day) => `<article class="day-card">
+      (day) => `<article class="day-card relative overflow-hidden">
         <span>${labelWarDay(day).slice(0, 3)}</span>
         <strong>${labelWarDay(day)}</strong>
         <small>${event.tier ? NODE_WAR_PRESETS[event.tier].territoryGroup : event.kind}</small>
@@ -475,7 +529,13 @@ function renderGroupIcon(groupKey: GroupKey, configuredEmoji?: string): string {
   return `<span class="role-emoji">${escapeHtml(getGroupEmoji(groupKey, configuredEmoji))}</span>`;
 }
 
-function renderCreateRaid(guildId: string, csrfToken: string, session: WebSession): string {
+function renderCreateRaid(
+  guildId: string,
+  csrfToken: string,
+  session: WebSession,
+  deliveryOptions: GuildDeliveryOptions,
+  configuredChannelId?: string
+): string {
   const templates = [
     { tier: "tier1", name: "T1 Balenos / Serendia", capacity: 30 },
     { tier: "tier2", name: "T2 Calpheon / Ulukita", capacity: 40 },
@@ -505,8 +565,10 @@ function renderCreateRaid(guildId: string, csrfToken: string, session: WebSessio
       <input type="hidden" name="groups" id="groups-value">
       <section class="schedule-panel">
         <label>Node War date <input type="date" name="date" id="event-date" value="${defaultNextDate()}" required></label>
-        <p>The event starts at ${escapeHtml(config.nodeWarStartTime)} ${escapeHtml(config.timezone)}. Its announcement is scheduled for the prior day at ${escapeHtml(config.nodeWarPostTime)}.</p>
+        <label>Announcement time <input type="time" name="announcementTime" value="${escapeHtml(config.nodeWarPostTime)}" required></label>
+        <p>The event starts at ${escapeHtml(config.nodeWarStartTime)} ${escapeHtml(config.timezone)}. Its announcement is scheduled for the prior day.</p>
       </section>
+      ${renderDeliveryEditor(deliveryOptions, configuredChannelId)}
       <section class="template-grid" aria-label="Node War templates">
         ${templates.map((template, index) => `<button class="template-button${index === 0 ? " active" : ""}" type="button" data-capacity="${template.capacity}" data-tier="${template.tier}">
           <span>${escapeHtml(template.name)}</span><b>Preset capacity by weekday</b>
@@ -516,6 +578,31 @@ function renderCreateRaid(guildId: string, csrfToken: string, session: WebSessio
       <div class="editor-actions"><button type="submit">Schedule Raid</button></div>
     </form>
   </main>${renderAllocationScript(true)}`;
+}
+
+function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {
+  return `<section class="delivery-editor">
+    <header><div><p class="eyebrow">Discord delivery</p><h2>Announcement destination</h2></div><p>Choose where the roster posts and which roles receive the signup ping.</p></header>
+    <label>Roster channel
+      <select name="announcementChannelId" required>
+        <option value="">Select a Discord channel</option>
+        ${options.channels
+          .map((channel) => `<option value="${escapeHtml(channel.id)}"${channel.id === configuredChannelId ? " selected" : ""}># ${escapeHtml(channel.name)}</option>`)
+          .join("")}
+      </select>
+    </label>
+    <fieldset>
+      <legend>Ping roles <span>Optional, select any number</span></legend>
+      <div class="ping-role-grid">${
+        options.roles
+          .map(
+            (role) =>
+              `<label><input type="checkbox" name="announcementRoleIds" value="${escapeHtml(role.id)}"${role.id === config.nodeWarRoleId ? " checked" : ""}><span>@${escapeHtml(role.name)}</span></label>`
+          )
+          .join("") || "<p class=\"empty\">No selectable server roles found.</p>"
+      }</div>
+    </fieldset>
+  </section>`;
 }
 
 function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession): string {
@@ -732,6 +819,24 @@ function parseClockTime(value: unknown): string {
     throw new Error("Announcement time must use HH:mm format.");
   }
   return time;
+}
+
+function parseAnnouncementChannelId(value: unknown, channels: DiscordGuildChannel[]): string {
+  const channelId = String(value ?? "").trim();
+  if (!channelId || !channels.some((channel) => channel.id === channelId)) {
+    throw new Error("Select a valid Discord roster channel.");
+  }
+  return channelId;
+}
+
+function parseAnnouncementRoleIds(value: unknown, roles: DiscordGuildRole[]): string[] {
+  const requested = Array.isArray(value) ? value : value ? [value] : [];
+  const allowed = new Set(roles.map((role) => role.id));
+  const roleIds = [...new Set(requested.map((roleId) => String(roleId).trim()).filter(Boolean))];
+  if (roleIds.some((roleId) => !allowed.has(roleId))) {
+    throw new Error("One or more selected Discord ping roles are invalid.");
+  }
+  return roleIds;
 }
 
 function parseRepeatDays(value: unknown, fallback?: WarDay): WarDay[] {
