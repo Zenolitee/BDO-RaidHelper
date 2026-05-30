@@ -1,0 +1,588 @@
+:root {
+  color-scheme: dark;
+  --bg: #171719;
+  --board: #1d1e23;
+  --panel: #24262b;
+  --panel-strong: #30333b;
+  --text: #f4f1e8;
+  --muted: #aaa8a2;
+  --line: #3d414a;
+  --accent: #f0b84f;
+  --accent-2: #6aa6ff;
+  --danger: #d7473e;
+  --green: #59b46f;
+  --focus: #6bb7ff;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.42), transparent 22rem),
+    linear-gradient(180deg, rgba(240, 184, 79, 0.09), transparent 18rem),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 5px),
+    var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f4c463, #c98b30);
+  color: #171719;
+  font-weight: 800;
+  padding: 0.65rem 0.9rem;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.topbar,
+.event-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: end;
+  border-left: 4px solid var(--accent);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(240, 184, 79, 0.08), transparent 40%),
+    var(--board);
+  padding: 22px 24px 26px;
+  border-radius: 6px;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.28);
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 760px;
+  margin: 0;
+  font-size: clamp(2.1rem, 5vw, 4.2rem);
+  line-height: 1;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.summary {
+  max-width: 430px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.top-actions {
+  display: grid;
+  justify-items: end;
+  gap: 14px;
+}
+
+.account-panel,
+.server-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-panel {
+  justify-content: flex-end;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.server-link {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  text-decoration: none;
+}
+
+.server-link.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.invite-button {
+  display: inline-grid;
+  place-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f4c463, #c98b30);
+  color: #171719;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.secondary-button {
+  border-color: var(--line);
+  background: #25272d;
+  color: var(--text);
+}
+
+.event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.event-card,
+.roster-column,
+.signup-panel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+    rgba(29, 30, 35, 0.94);
+}
+
+.event-card {
+  display: grid;
+  gap: 12px;
+  min-height: 140px;
+  padding: 18px;
+  text-decoration: none;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.event-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(240, 184, 79, 0.75);
+  background:
+    linear-gradient(180deg, rgba(240, 184, 79, 0.08), transparent),
+    rgba(31, 33, 39, 0.98);
+}
+
+.event-card span,
+.event-card small,
+.empty {
+  color: var(--muted);
+}
+
+.event-card strong {
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.event-card b {
+  color: var(--accent);
+}
+
+.type-pill {
+  width: max-content;
+  padding: 2px 6px;
+  border: 1px solid rgba(240, 184, 79, 0.45);
+  background: rgba(240, 184, 79, 0.12);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.card-meter {
+  display: block;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #16171b;
+}
+
+.card-meter i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--accent));
+}
+
+.detail-shell nav {
+  margin-bottom: 20px;
+}
+
+.hero-count {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.hero-count strong {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  color: var(--accent);
+}
+
+.hero-count span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.event-hero p:last-child {
+  color: var(--muted);
+}
+
+.roster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 8px 0 22px;
+}
+
+.roster-column {
+  min-height: 300px;
+  overflow: hidden;
+}
+
+.roster-column header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  background: var(--panel-strong);
+  border-bottom: 1px solid var(--line);
+}
+
+.roster-column h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roster-column h2 span,
+.class-badge {
+  display: inline-grid;
+  min-width: 2.25rem;
+  min-height: 1.35rem;
+  place-items: center;
+  border: 1px solid rgba(106, 166, 255, 0.5);
+  background: rgba(37, 58, 168, 0.45);
+  color: #dfe8ff;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.role-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.role-emoji {
+  display: inline-grid;
+  min-width: 20px;
+  place-items: center;
+}
+
+.capacity-strip b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.create-shell nav {
+  margin-bottom: 20px;
+}
+
+.builder-head,
+.slot-editor {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--board);
+  padding: 22px 24px;
+}
+
+.builder-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.capacity-box {
+  display: grid;
+  align-content: center;
+  justify-items: end;
+}
+
+.capacity-box span,
+.editor-note {
+  color: var(--muted);
+}
+
+.capacity-box strong {
+  color: var(--accent);
+  font-size: 3rem;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.template-button {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+}
+
+.template-button.active {
+  border-color: var(--accent);
+  background: #40351f;
+}
+
+.template-button b {
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+.slot-editor header,
+.role-row,
+.role-name {
+  display: flex;
+  align-items: center;
+}
+
+.slot-editor header {
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.role-table {
+  display: grid;
+  gap: 7px;
+}
+
+.role-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) minmax(160px, 2fr) 4ch;
+  gap: 14px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: #202228;
+}
+
+.role-name {
+  gap: 9px;
+}
+
+.role-name input {
+  padding: 0.45rem;
+}
+
+.custom-role .role-name {
+  display: grid;
+  grid-template-columns: 20px minmax(110px, 1fr) minmax(140px, 1fr);
+}
+
+output {
+  color: var(--accent);
+  font-weight: 900;
+  text-align: right;
+}
+
+.editor-note {
+  margin-bottom: 0;
+  line-height: 1.5;
+}
+
+.roster-column header b {
+  color: var(--accent);
+}
+
+.signup-list {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+}
+
+.signup-row {
+  display: grid;
+  grid-template-columns: 2ch 3ch minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #2b2e34;
+  font-size: 0.82rem;
+}
+
+.signup-row:hover {
+  border-color: rgba(240, 184, 79, 0.45);
+  background: #30333a;
+}
+
+.slot {
+  color: var(--muted);
+  text-align: right;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signup-row button {
+  padding: 0.35rem 0.55rem;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.signup-panel {
+  padding: 18px;
+  border-top: 3px solid var(--accent);
+}
+
+.signup-panel form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #15161a;
+  color: var(--text);
+  padding: 0.7rem 0.75rem;
+}
+
+.capacity-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.capacity-strip span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #292b31, #202228);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.capacity-strip b {
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .topbar,
+  .event-hero,
+  .signup-panel form {
+    grid-template-columns: 1fr;
+  }
+
+  .top-actions {
+    justify-items: start;
+  }
+
+  .capacity-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .template-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    width: min(100% - 20px, 1180px);
+    padding: 24px 0;
+  }
+
+  h1 {
+    font-size: 2.6rem;
+  }
+
+  .roster-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .capacity-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-head,
+  .slot-editor header {
+    display: grid;
+  }
+
+  .capacity-box {
+    justify-items: start;
+  }
+
+  .role-row {
+    grid-template-columns: 1fr 4ch;
+  }
+
+  .role-row input[type="range"] {
+    grid-column: 1;
+  }
+}
