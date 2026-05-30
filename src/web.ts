@@ -27,6 +27,8 @@ interface WebSession {
   expiresAt: number;
 }
 
+const WEB_WAR_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
 export function createWebApp(store: EventStore) {
   const app = express();
   const oauthStates = new Map<string, number>();
@@ -77,10 +79,11 @@ export function createWebApp(store: EventStore) {
         fetchDiscord<UserProfile>("/users/@me", token),
         fetchDiscord<DiscordGuild[]>("/users/@me/guilds", token)
       ]);
+      const botGuildIds = await fetchBotGuildIds();
       const sessionId = randomBytes(32).toString("hex");
       sessions.set(sessionId, {
         user,
-        guilds: guilds.filter((guild) => hasAdministratorPermission(guild.permissions)),
+        guilds: guilds.filter((guild) => hasAdministratorPermission(guild.permissions) && botGuildIds.has(guild.id)),
         csrfToken: randomBytes(24).toString("hex"),
         expiresAt: Date.now() + 24 * 60 * 60_000
       });
@@ -105,7 +108,7 @@ export function createWebApp(store: EventStore) {
       response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
       return;
     }
-    response.type("html").send(renderPage("Create Raid", renderCreateRaid(guildId, session.csrfToken)));
+    response.type("html").send(renderPage("Create Raid", renderCreateRaid(guildId, session.csrfToken, session)));
   });
 
   app.post("/create", async (request, response) => {
@@ -163,7 +166,7 @@ export function createWebApp(store: EventStore) {
     }
 
     const canManage = Boolean(event.guildId && session?.guilds.some((guild) => guild.id === event.guildId));
-    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage)));
+    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage, session)));
   });
 
   app.get("/events/:id/edit", async (request, response) => {
@@ -173,7 +176,7 @@ export function createWebApp(store: EventStore) {
       response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
       return;
     }
-    response.type("html").send(renderPage(`Edit ${event.title}`, renderEditRaid(event, session.csrfToken)));
+    response.type("html").send(renderPage(`Edit ${event.title}`, renderEditRaid(event, session.csrfToken, session)));
   });
 
   app.post("/events/:id/composition", async (request, response) => {
@@ -185,7 +188,17 @@ export function createWebApp(store: EventStore) {
     }
     try {
       const groups = parseGroupAllocation(request.body.groups, event.totalCapacity);
-      await store.updateEventDetails(event.id, { groups });
+      const repeatDays = parseRepeatDays(request.body.repeatDays, event.day);
+      const recurrence = request.body.recurrence === "weekly" ? "weekly" : "once";
+      const announcementTime = parseClockTime(request.body.announcementTime);
+      await store.updateEventDetails(event.id, {
+        groups,
+        title: event.tier ? buildNodeWarTitle(repeatDays[0], event.tier, event.totalCapacity) : event.title,
+        recurrence,
+        repeatDays: recurrence === "weekly" ? repeatDays : undefined,
+        day: repeatDays[0],
+        announcementTime
+      });
       response.redirect(`/events/${event.id}/edit?saved=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Composition update failed", renderWebError(error)));
@@ -211,28 +224,22 @@ export function createWebApp(store: EventStore) {
 
 function renderAccountControls(session?: WebSession, selectedGuildId?: string): string {
   if (!session) {
-    return `<a class="invite-button secondary-button" href="/auth/discord">Log in with Discord</a>`;
+    return `<a class="button button-secondary" href="/auth/discord">Log in with Discord</a>`;
   }
 
-  const guildLinks = session.guilds
-    .map(
-      (guild) =>
-        `<a class="${guild.id === selectedGuildId ? "server-link active" : "server-link"}" href="/?guild=${encodeURIComponent(guild.id)}">${escapeHtml(guild.name)}</a>`
-    )
-    .join("");
   return `<div class="account-panel">
-    <span>${escapeHtml(session.user.global_name ?? session.user.username)}</span>
-    <div class="server-links">${guildLinks || "<small>No administrator servers found.</small>"}</div>
+    <span class="account-name">${escapeHtml(session.user.global_name ?? session.user.username)}</span>
+    ${selectedGuildId ? `<a href="/">Switch server</a>` : ""}
     <a href="/logout">Log out</a>
   </div>`;
 }
 
 function renderLoginRequired(): string {
-  return `<main class="shell"><section class="builder-head"><div><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p class="summary">Log in and select a server where you have administrator permission.</p><p><a class="invite-button" href="/auth/discord">Log in with Discord</a></p></div></section></main>`;
+  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to manage servers where you are an administrator and NW Helper is installed.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
 }
 
 function renderLoginError(): string {
-  return `<main class="shell"><section class="builder-head"><div><p class="eyebrow">Private dashboard</p><h1>Discord login failed</h1><p class="summary">The OAuth request could not be completed. Check the configured redirect URI and try again.</p><p><a class="invite-button" href="/auth/discord">Try Discord login again</a></p></div></section></main>`;
+  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login failed</h1><p>The OAuth request could not be completed. Check the configured redirect URI and try again.</p><a class="button" href="/auth/discord">Try again</a></section></main>`;
 }
 
 async function exchangeDiscordCode(code: string): Promise<string> {
@@ -262,6 +269,20 @@ async function fetchDiscord<T>(path: string, token: string): Promise<T> {
     throw new Error("Discord profile request failed.");
   }
   return (await response.json()) as T;
+}
+
+async function fetchBotGuildIds(): Promise<Set<string>> {
+  if (!config.discordToken) {
+    return new Set();
+  }
+  const response = await fetch("https://discord.com/api/v10/users/@me/guilds", {
+    headers: { Authorization: `Bot ${config.discordToken}` }
+  });
+  if (!response.ok) {
+    throw new Error("Discord bot guild request failed.");
+  }
+  const guilds = (await response.json()) as Array<{ id: string }>;
+  return new Set(guilds.map((guild) => guild.id));
 }
 
 function hasAdministratorPermission(permissions: string): boolean {
@@ -318,50 +339,42 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       const signed = event.signups.filter((signup) => signup.group !== "bench").length;
       const capacity = activeRosterCapacity(event);
       return `<article class="event-card">
-        <span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span>
+        <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span>${labelRecurrence(event.recurrence)}</span></div>
         <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(event.title)}</strong></a>
-        <small>${event.date} ${escapeHtml(event.time)}</small>
+        <small>${formatDateLabel(event.date)} · War starts ${formatTimeLabel(event.time)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
-        <div class="card-footer"><b>${signed}/${capacity} signed</b><a href="/events/${event.id}/edit">Edit slots</a></div>
+        <div class="card-footer"><b>${signed}/${capacity} signed</b><a href="/events/${event.id}/edit">Manage</a></div>
       </article>`;
     })
     .join("");
   const serverPicker =
     session && !selectedGuild
-      ? `<section class="server-picker"><header><p class="eyebrow">Manage server</p><h2>Select a Discord server</h2></header><div class="server-grid">${session.guilds
+      ? `<section class="server-picker"><header><p class="eyebrow">Your servers</p><h1>Select a server</h1><p>Only servers shared with NW Helper are listed.</p></header><div class="server-grid">${session.guilds
           .map(
             (guild) =>
-              `<a class="server-card" href="/?guild=${encodeURIComponent(guild.id)}"><strong>${escapeHtml(guild.name)}</strong><span>Open roster manager</span></a>`
+              `<a class="server-card" href="/?guild=${encodeURIComponent(guild.id)}"><span class="server-mark">${escapeHtml(guild.name.slice(0, 1).toUpperCase())}</span><span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span></a>`
           )
-          .join("") || "<p>No servers found where your Discord account has Administrator permission.</p>"}</div></section>`
+          .join("") || "<p>No shared administrator servers found.</p>"}</div><div class="invite-row"><span>Not seeing your server?</span>${renderInviteButton("Invite the bot")}</div></section>`
       : "";
 
-  return `<main class="shell">
-    <section class="topbar">
-      <div>
-        <p class="eyebrow">Black Desert Online</p>
-        <h1>War room roster</h1>
-      </div>
-      <div class="top-actions">
-        <p class="summary">A compact operations board for Node War signups, role allocation, and repeat-day planning.</p>
-        ${session && selectedGuild ? `<a class="invite-button secondary-button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">Create Raid</a>` : ""}
-        ${renderInviteButton()}
-        ${renderAccountControls(session, guildId)}
-      </div>
-    </section>
-    ${selectedGuild ? `<section class="section-heading"><div><p class="eyebrow">Selected server</p><h2>${escapeHtml(selectedGuild.name)}</h2></div><a href="/">Change server</a></section>` : ""}
+  return `${renderNav(session, guildId)}<main class="shell">
+    ${selectedGuild ? `<section class="dashboard-head"><div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div><a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">Create raid</a></section>` : ""}
     ${serverPicker}
-    ${selectedGuild ? `<section class="event-grid">${cards || "<p>No events are stored for this server yet.</p>"}</section>` : !session ? "<section class=\"empty-state\"><p>Log in with Discord to manage servers and roster allocations.</p></section>" : ""}
+    ${selectedGuild ? `<section class="event-grid">${cards || "<div class=\"empty-state\"><h2>No raids scheduled</h2><p>Create a roster or use the Discord wizard to get started.</p></div>"}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to manage shared servers, schedules, and compositions.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
   </main>`;
 }
 
-function renderInviteButton(): string {
+function renderNav(session?: WebSession, guildId?: string): string {
+  return `<header class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}">Raids</a><a href="/create?guild=${encodeURIComponent(guildId)}">Create</a>` : ""}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></header>`;
+}
+
+function renderInviteButton(label = "Invite to Server"): string {
   const url = botInviteUrl();
   if (!url) {
     return "";
   }
 
-  return `<a class="invite-button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Invite to Server</a>`;
+  return `<a class="button button-secondary" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
 }
 
 function botInviteUrl(): string | undefined {
@@ -378,55 +391,55 @@ function botInviteUrl(): string | undefined {
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
-function renderEventDetail(event: WarEvent, canManage: boolean): string {
-  const columns = orderedGroups(event)
-    .map((group) => {
-      const signups = event.signups.filter((signup) => signup.group === group.key);
-      return `<section class="roster-column">
-        <header>
-          <h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2>
-          <b>${group.key === "bench" ? signups.length : `${signups.length}/${group.capacity}`}</b>
-        </header>
-        <div class="signup-list">
-          ${signups
-            .map(
-              (signup, index) => `<div class="signup-row">
-                  <span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span>
-                  <span class="slot">${index + 1}</span>
-                  <span class="name">${escapeHtml(signup.displayName)}</span>
-                </div>`
-            )
-            .join("") || "<p class=\"empty\">No signups yet</p>"}
-        </div>
-      </section>`;
-    })
-    .join("");
-
+function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSession): string {
   const signed = event.signups.filter((signup) => signup.group !== "bench").length;
 
-  return `<main class="shell detail-shell">
-    <nav class="page-nav"><a href="/">Dashboard</a>${canManage ? `<a class="invite-button secondary-button" href="/events/${event.id}/edit">Edit composition</a>` : ""}</nav>
-    <section class="event-hero">
+  return `${renderNav(session, event.guildId)}<main class="shell detail-shell">
+    <section class="event-summary">
       <div>
-        <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} / ${NODE_WAR_PRESETS[event.tier].territoryGroup}` : event.kind === "siege" ? "Siege" : "Node War"} / ${labelWarDay(event.day)} / ${labelRecurrence(event.recurrence)}</p>
+        <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} · ${NODE_WAR_PRESETS[event.tier].territoryGroup}` : event.kind === "siege" ? "Siege" : "Node War"}</p>
         <h1>${escapeHtml(event.title)}</h1>
-        <p>${event.date} ${escapeHtml(event.time)} ${escapeHtml(event.timezone)}</p>
+        <div class="summary-meta"><span>${formatDateLabel(event.date)}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span></div>
       </div>
       <div class="hero-count">
         <strong>${signed}/${activeRosterCapacity(event)}</strong>
         <span>signed</span>
       </div>
     </section>
-    <section class="capacity-strip">
-      ${orderedGroups(event)
-        .map((group) => {
-          const count = event.signups.filter((signup) => signup.group === group.key).length;
-          return `<span><b>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</b> ${group.key === "bench" ? count : `${count}/${group.capacity}`}</span>`;
-        })
-        .join("")}
-    </section>
-    <section class="roster-grid">${columns}</section>
+    <div class="detail-actions"><a class="button button-secondary" href="/">Dashboard</a>${canManage ? `<a class="button" href="/events/${event.id}/edit">Edit raid</a>` : ""}</div>
+    ${renderDayRail(event)}
+    <section class="roster-grid">${renderRosterColumns(event)}</section>
   </main>`;
+}
+
+function renderDayRail(event: WarEvent): string {
+  const days = event.recurrence === "weekly" && event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
+  return `<section class="day-section"><div class="section-title"><div><p class="eyebrow">Schedule</p><h2>${event.recurrence === "weekly" ? "Weekly raid days" : "Raid day"}</h2></div><span>Announces ${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</span></div><div class="day-rail">${days
+    .map(
+      (day) => `<article class="day-card">
+        <span>${labelWarDay(day).slice(0, 3)}</span>
+        <strong>${labelWarDay(day)}</strong>
+        <small>${event.tier ? NODE_WAR_PRESETS[event.tier].territoryGroup : event.kind}</small>
+        <dl><div><dt>Signed</dt><dd>${event.signups.filter((signup) => signup.group !== "bench").length}/${activeRosterCapacity(event)}</dd></div><div><dt>War</dt><dd>${formatTimeLabel(event.time)}</dd></div><div><dt>Post</dt><dd>${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</dd></div></dl>
+      </article>`
+    )
+    .join("") || "<p>No raid days selected.</p>"}</div></section>`;
+}
+
+function renderRosterColumns(event: WarEvent): string {
+  return orderedGroups(event)
+    .map((group) => {
+      const signups = event.signups.filter((signup) => signup.group === group.key);
+      return `<section class="roster-column">
+        <header><h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2><b>${group.key === "bench" ? signups.length : `${signups.length}/${group.capacity}`}</b></header>
+        <div class="signup-list">${signups
+          .map(
+            (signup, index) => `<div class="signup-row"><span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span><span class="slot">${index + 1}</span><span class="name">${escapeHtml(signup.displayName)}</span></div>`
+          )
+          .join("") || "<p class=\"empty\">No signups yet</p>"}</div>
+      </section>`;
+    })
+    .join("");
 }
 
 function labelRecurrence(recurrence: WarEvent["recurrence"]): string {
@@ -462,7 +475,7 @@ function renderGroupIcon(groupKey: GroupKey, configuredEmoji?: string): string {
   return `<span class="role-emoji">${escapeHtml(getGroupEmoji(groupKey, configuredEmoji))}</span>`;
 }
 
-function renderCreateRaid(guildId: string, csrfToken: string): string {
+function renderCreateRaid(guildId: string, csrfToken: string, session: WebSession): string {
   const templates = [
     { tier: "tier1", name: "T1 Balenos / Serendia", capacity: 30 },
     { tier: "tier2", name: "T2 Calpheon / Ulukita", capacity: 40 },
@@ -475,8 +488,8 @@ function renderCreateRaid(guildId: string, csrfToken: string): string {
     { key: "shai", label: getGroupLabel("shai"), capacity: 2 }
   ];
 
-  return `<main class="shell create-shell">
-    <nav><a href="/?guild=${encodeURIComponent(guildId)}">All events</a></nav>
+  return `${renderNav(session, guildId)}<main class="shell create-shell">
+    <div class="page-nav"><a href="/?guild=${encodeURIComponent(guildId)}">Back to raids</a></div>
     <section class="builder-head">
       <div>
         <p class="eyebrow">Node War template builder</p>
@@ -505,18 +518,25 @@ function renderCreateRaid(guildId: string, csrfToken: string): string {
   </main>${renderAllocationScript(true)}`;
 }
 
-function renderEditRaid(event: WarEvent, csrfToken: string): string {
-  return `<main class="shell create-shell">
-    <nav class="page-nav"><a href="/events/${event.id}">Roster</a><a href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Server events</a></nav>
+function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession): string {
+  const repeatDays = event.recurrence === "weekly" && event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
+  return `${renderNav(session, event.guildId)}<main class="shell create-shell">
+    <nav class="page-nav"><a href="/events/${event.id}">Back to roster</a><a href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Server raids</a></nav>
     <section class="builder-head">
-      <div><p class="eyebrow">Server roster manager</p><h1>Edit composition</h1><p class="summary">${escapeHtml(event.title)}</p></div>
+      <div><p class="eyebrow">Raid settings</p><h1>Edit raid</h1><p class="summary">${escapeHtml(event.title)}</p></div>
       <div class="capacity-box"><span>Capacity</span><strong id="capacity-value">${event.totalCapacity}</strong></div>
     </section>
     <form method="post" action="/events/${event.id}/composition" id="allocation-form">
       <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
       <input type="hidden" name="groups" id="groups-value">
+      <section class="schedule-editor">
+        <div><p class="eyebrow">Schedule</p><h2>Announcement timing</h2></div>
+        <label>Repeat mode<select name="recurrence"><option value="once"${event.recurrence !== "weekly" ? " selected" : ""}>One-time event</option><option value="weekly"${event.recurrence === "weekly" ? " selected" : ""}>Repeat weekly</option></select></label>
+        <label>Announcement time<input name="announcementTime" type="time" value="${escapeHtml(event.announcementTime ?? config.nodeWarPostTime)}" required></label>
+        <fieldset><legend>Raid days</legend><div class="day-checks">${WEB_WAR_DAYS.map((day) => `<label><input type="checkbox" name="repeatDays" value="${day}"${repeatDays.includes(day) ? " checked" : ""}><span>${labelWarDay(day).slice(0, 3)}</span></label>`).join("")}</div></fieldset>
+      </section>
       ${renderAllocationEditor(event.groups.filter((group) => group.key !== "bench"))}
-      <div class="editor-actions"><button type="submit">Save composition</button></div>
+      <div class="editor-actions"><button type="submit">Save raid settings</button></div>
     </form>
   </main>${renderAllocationScript(false)}`;
 }
@@ -528,7 +548,7 @@ function renderAllocationEditor(groups: GroupConfig[]): string {
       <button type="button" id="add-role">Add custom role</button>
     </header>
     <div id="role-table" class="role-table">${groups.map((group) => renderSliderRow(group)).join("")}</div>
-    <p class="editor-note">Increasing a specialist role reduces Mainball / FFA. Custom roles accept a raw Discord emoji value such as <code>&lt;:name:123456789&gt;</code>.</p>
+    <p class="editor-note">Increasing a specialist role reduces Mainball / FFA automatically.</p>
   </section>`;
 }
 
@@ -537,7 +557,7 @@ function renderSliderRow(group: GroupConfig): string {
   return `<div class="role-row${custom ? " custom-role" : ""}" data-key="${escapeHtml(group.key)}" data-label="${escapeHtml(group.label)}" data-emoji="${escapeHtml(group.emoji ?? "")}">
     <div class="role-name">${renderGroupIcon(group.key, group.emoji)}${
       custom
-        ? `<input class="role-label-input" aria-label="Custom role name" value="${escapeHtml(group.label)}"><input class="role-emoji-input" aria-label="Custom Discord emoji" value="${escapeHtml(group.emoji ?? "")}" placeholder="&lt;:name:id&gt;"><button class="remove-role" type="button" aria-label="Remove custom role">Remove</button>`
+        ? `<input class="role-label-input" aria-label="Custom role name" value="${escapeHtml(group.label)}" placeholder="Role name"><input class="role-emoji-input" aria-label="Emote for role" value="${escapeHtml(group.emoji ?? "")}" placeholder=":mage: or &lt;:mage:id&gt;"><button class="remove-role" type="button" aria-label="Remove custom role">Remove</button>`
         : `<strong>${escapeHtml(group.label)}</strong>`
     }</div>
     <input aria-label="${escapeHtml(group.label)} slots" type="range" min="0" max="100" value="${group.capacity}"${group.key === "mainball" ? " disabled" : ""}>
@@ -597,7 +617,7 @@ function renderAllocationScript(useTemplates: boolean): string {
         row.className = "role-row custom-role";
         row.dataset.key = key;
         row.dataset.label = "Custom role";
-        row.innerHTML = '<div class="role-name"><span class="role-emoji">+</span><input class="role-label-input" aria-label="Custom role name" value="Custom role"><input class="role-emoji-input" aria-label="Custom Discord emoji" placeholder="&lt;:name:id&gt;"><button class="remove-role" type="button" aria-label="Remove custom role">Remove</button></div><input aria-label="Custom role slots" type="range" min="0" max="' + capacity + '" value="0"><output>0</output>';
+        row.innerHTML = '<div class="role-name"><span class="role-emoji">+</span><input class="role-label-input" aria-label="Custom role name" placeholder="Role name"><input class="role-emoji-input" aria-label="Emote for role" placeholder=":mage: or &lt;:mage:id&gt;"><button class="remove-role" type="button" aria-label="Remove custom role">Remove</button></div><input aria-label="Custom role slots" type="range" min="0" max="' + capacity + '" value="0"><output>0</output>';
         table.append(row);
         bind(row);
         serialize();
@@ -706,9 +726,42 @@ function parseDate(value: unknown): string {
   return date;
 }
 
+function parseClockTime(value: unknown): string {
+  const time = String(value ?? "").trim();
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new Error("Announcement time must use HH:mm format.");
+  }
+  return time;
+}
+
+function parseRepeatDays(value: unknown, fallback?: WarDay): WarDay[] {
+  const requested = Array.isArray(value) ? value : value ? [value] : fallback ? [fallback] : [];
+  const days = WEB_WAR_DAYS.filter((day) => requested.includes(day));
+  if (!days.length) {
+    throw new Error("Select at least one raid day.");
+  }
+  return days;
+}
+
 function warDayForDate(date: string): WarDay {
   const days: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   return days[new Date(`${date}T12:00:00Z`).getUTCDay()];
+}
+
+function formatDateLabel(date: string): string {
+  const parsed = new Date(`${date}T12:00:00Z`);
+  return Number.isNaN(parsed.getTime())
+    ? date
+    : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(parsed);
+}
+
+function formatTimeLabel(time: string): string {
+  const [hourValue, minuteValue = "00"] = time.split(":");
+  const hour = Number.parseInt(hourValue, 10);
+  if (!Number.isInteger(hour)) {
+    return time;
+  }
+  return `${hour % 12 || 12}:${minuteValue.padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
 }
 
 function previousDate(date: string): string {
@@ -732,7 +785,7 @@ function defaultNextDate(): string {
 
 function renderWebError(error: unknown): string {
   const message = error instanceof Error ? error.message : "The request could not be completed.";
-  return `<main class="shell"><section class="builder-head"><div><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p class="summary">${escapeHtml(message)}</p><p><a class="invite-button secondary-button" href="/">Return to dashboard</a></p></div></section></main>`;
+  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p>${escapeHtml(message)}</p><a class="button button-secondary" href="/">Return to dashboard</a></section></main>`;
 }
 
 function escapeHtml(value: string): string {

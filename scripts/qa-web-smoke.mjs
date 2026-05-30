@@ -54,6 +54,7 @@ try {
   const baseUrl = `http://127.0.0.1:${address.port}`;
   await expectResponse(`${baseUrl}/`, 200, "Log in with Discord");
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Zen");
+  await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Raid day");
   await expectResponse(`${baseUrl}/events/${event.id}/edit`, 404, "Event not found");
   await expectResponse(`${baseUrl}/create?guild=qa-guild`, 403, "Discord login required");
 

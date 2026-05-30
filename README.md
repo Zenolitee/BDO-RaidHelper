@@ -83,7 +83,7 @@ Use the Discord Developer Portal: https://discord.com/developers/applications
 - `DISCORD_CLIENT_SECRET`: OAuth2 client secret used by the private web dashboard.
 - `DISCORD_REDIRECT_URI`: OAuth2 callback URL. Add the same URL in the Discord Developer Portal. Defaults to `http://localhost:3000/auth/discord/callback`.
 
-For the private web dashboard, open the Discord Developer Portal OAuth2 settings, add the redirect URI, and set `DISCORD_CLIENT_SECRET`. The dashboard requests `identify guilds`, shows administrator servers after login, and filters event lists by the selected server. Open an event and select `Edit composition` to rebalance slots. Increasing Defense, Zerker, Shai, or a custom role automatically reduces Mainball/FFA. Custom roles can store a raw Discord emoji value such as `<:name:123456789>`.
+For the private web dashboard, open the Discord Developer Portal OAuth2 settings, add the redirect URI, and set `DISCORD_CLIENT_SECRET`. The dashboard requests `identify guilds` and only shows administrator servers shared with the bot. Open an event and select `Edit raid` to update weekly raid days, announcement time, and roster allocation. Increasing Defense, Zerker, Shai, or a custom role automatically reduces Mainball/FFA. Custom roles can store a Unicode emoji, an alias such as `:mage:`, or a raw Discord emoji value such as `<:name:123456789>`.
 - `NODEWAR_POST_TIME`: Daily auto-post time in `HH:mm`. Default is `22:15`, calculated in `TIMEZONE`.
 - `NODEWAR_START_TIME`: Node War start time in `HH:mm`. Default is `21:00`.
 - `NODEWAR_CHANNEL_ID`: Channel where the scheduler and `/event repost` publish roster posts.
