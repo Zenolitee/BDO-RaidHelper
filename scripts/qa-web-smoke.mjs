@@ -64,6 +64,20 @@ try {
   if (!mainball?.value.includes(`${getGroupEmoji("mainball")} \`1\` **Zen**`)) {
     throw new Error("Discord roster row did not render the selected role icon before the boxed number.");
   }
+
+  await store.updateEventDetails(event.id, {
+    announcedAt: new Date().toISOString(),
+    closed: true
+  });
+  const rescheduled = await store.updateEventDetails(event.id, {
+    date: "2026-06-01",
+    announcementDate: "2026-05-31",
+    announcedAt: undefined,
+    closed: false
+  });
+  if (rescheduled.date !== "2026-06-01" || rescheduled.announcementDate !== "2026-05-31" || rescheduled.announcedAt || rescheduled.closed) {
+    throw new Error("Rescheduled event did not clear the prior announcement state.");
+  }
   console.log("Web smoke QA passed.");
 } finally {
   await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

@@ -111,7 +111,7 @@ export class EventStore {
 
   async updateEventDetails(
     eventId: string,
-    updates: Partial<Pick<WarEvent, "title" | "tier" | "day" | "date" | "time" | "timezone" | "recurrence" | "totalCapacity" | "groups" | "repeatDays" | "announcementDate" | "announcementTime" | "announcementChannelId" | "announcementRoleId" | "announcementRoleIds" | "announcedAt">>
+    updates: Partial<Pick<WarEvent, "title" | "tier" | "day" | "date" | "time" | "timezone" | "recurrence" | "totalCapacity" | "groups" | "repeatDays" | "announcementDate" | "announcementTime" | "announcementChannelId" | "announcementRoleId" | "announcementRoleIds" | "announcedAt" | "closed">>
   ): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
 

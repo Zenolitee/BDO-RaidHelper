@@ -216,16 +216,31 @@ export function createWebApp(store: EventStore) {
     }
     try {
       const groups = parseGroupAllocation(request.body.groups, event.totalCapacity);
-      const repeatDays = parseRepeatDays(request.body.repeatDays, event.day);
       const recurrence = request.body.recurrence === "weekly" ? "weekly" : "once";
+      const date = parseDate(request.body.date);
+      const dateDay = warDayForDate(date);
+      const repeatDays = recurrence === "weekly" ? parseRepeatDays(request.body.repeatDays, event.day) : [dateDay];
       const announcementTime = parseClockTime(request.body.announcementTime);
+      const announcementDate = previousDate(date);
+      const previousRepeatDays = event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
+      const repeatDaysChanged =
+        (recurrence === "weekly" || event.recurrence === "weekly") && repeatDays.join(",") !== previousRepeatDays.join(",");
+      const scheduleChanged =
+        date !== event.date ||
+        announcementDate !== event.announcementDate ||
+        announcementTime !== event.announcementTime ||
+        recurrence !== event.recurrence ||
+        repeatDaysChanged;
       await store.updateEventDetails(event.id, {
         groups,
         title: event.tier ? buildNodeWarTitle(repeatDays[0], event.tier, event.totalCapacity) : event.title,
         recurrence,
         repeatDays: recurrence === "weekly" ? repeatDays : undefined,
         day: repeatDays[0],
-        announcementTime
+        date,
+        announcementDate,
+        announcementTime,
+        ...(scheduleChanged ? { announcedAt: undefined, closed: false } : {})
       });
       response.redirect(`/events/${event.id}/edit?saved=1`);
     } catch (error) {
@@ -618,6 +633,7 @@ function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession)
       <input type="hidden" name="groups" id="groups-value">
       <section class="schedule-editor">
         <div><p class="eyebrow">Schedule</p><h2>Announcement timing</h2></div>
+        <label>Node War date<input name="date" type="date" value="${escapeHtml(event.date)}" required></label>
         <label>Repeat mode<select name="recurrence"><option value="once"${event.recurrence !== "weekly" ? " selected" : ""}>One-time event</option><option value="weekly"${event.recurrence === "weekly" ? " selected" : ""}>Repeat weekly</option></select></label>
         <label>Announcement time<input name="announcementTime" type="time" value="${escapeHtml(event.announcementTime ?? config.nodeWarPostTime)}" required></label>
         <fieldset><legend>Raid days</legend><div class="day-checks">${WEB_WAR_DAYS.map((day) => `<label><input type="checkbox" name="repeatDays" value="${day}"${repeatDays.includes(day) ? " checked" : ""}><span>${labelWarDay(day).slice(0, 3)}</span></label>`).join("")}</div></fieldset>

@@ -637,7 +637,7 @@ button:hover {
 
 .schedule-editor {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(150px, 220px) minmax(150px, 220px);
+  grid-template-columns: minmax(170px, 1fr) repeat(3, minmax(150px, 210px));
   gap: 14px;
   align-items: end;
 }
