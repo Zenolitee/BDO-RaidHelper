@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { refreshEventMessage, rollCompletedWeeklyEvents } from "../dist/bot.js";
+import { eventEndsAt, refreshEventMessage, rollCompletedWeeklyEvents } from "../dist/bot.js";
 import { getGroupEmoji } from "../dist/emojis.js";
 import { renderEventEmbed } from "../dist/render.js";
 import { EventStore } from "../dist/store.js";
@@ -64,6 +64,11 @@ try {
   const mainball = embed.fields?.find((field) => field.name.includes("Mainball"));
   if (!mainball?.value.includes(`${getGroupEmoji("mainball")} \`1\` **Zen**`)) {
     throw new Error("Discord roster row did not render the selected role icon before the boxed number.");
+  }
+
+  const nodeWarEnd = eventEndsAt({ ...event, date: "2026-05-31", time: "21:00" });
+  if (nodeWarEnd !== new Date("2026-05-31T22:00:00+08:00").getTime()) {
+    throw new Error("Node War lifecycle must end one hour after the 9:00 PM start.");
   }
 
   let editedPayload;

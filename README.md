@@ -110,6 +110,7 @@ The bot uses the current NA/EU Occupation Mode Node War participant table:
 Create an event through the private wizard. Creation stores the event only; the Discord roster post is sent later when the selected announcement time is reached.
 
 Weekly rosters roll forward after each completed war. The previous Discord post remains as history, while the next matching weekday receives a new event ID, day-correct title, and empty signup list.
+Node War is treated as a one-hour event from `21:00` to `22:00` GMT+8, so the next-day roster can announce at `22:15`.
 
 ```bash
 /event create

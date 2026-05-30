@@ -40,7 +40,7 @@ import { type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./t
 
 const AUTO_SCHEDULER_USER = "nodewar-scheduler";
 const SCHEDULER_INTERVAL_MS = 60_000;
-const NODEWAR_DURATION_MS = 2 * 60 * 60 * 1000;
+const NODEWAR_DURATION_MS = 60 * 60 * 1000;
 const WIZARD_TIMEOUT_MS = 10 * 60_000;
 const WIZARD_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
@@ -1544,7 +1544,7 @@ async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Pro
   }
 }
 
-function eventEndsAt(event: WarEvent): number {
+export function eventEndsAt(event: WarEvent): number {
   const parsed = new Date(`${event.date}T${event.time}:00+08:00`).getTime();
   return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed + NODEWAR_DURATION_MS;
 }
