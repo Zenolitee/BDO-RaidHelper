@@ -170,41 +170,35 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       const announcementChannelId = parseAnnouncementChannelId(request.body.announcementChannelId, deliveryOptions.channels);
       const announcementRoleIds = parseAnnouncementRoleIds(request.body.announcementRoleIds, deliveryOptions.roles);
       const announcementTime = parseClockTime(request.body.announcementTime);
-      const plannedEvents = repeatDays.map((day) => {
-        const date = nextDateForDay(day);
-        const totalCapacity = getNodeWarCapacity(tier, day);
-        return { day, date, totalCapacity, groups: parseGroupAllocation(request.body.groups, totalCapacity) };
-      });
-      const events = await Promise.all(
-        plannedEvents.map(async ({ day, date, totalCapacity, groups }) => {
-          const event: WarEvent = {
-            id: nanoid(10),
-            title: buildNodeWarTitle(day, tier, totalCapacity),
-            kind: "nodewar",
-            tier,
-            day,
-            repeatDays: recurrence === "weekly" ? [day] : undefined,
-            date,
-            time: config.nodeWarStartTime,
-            timezone: config.timezone,
-            recurrence,
-            totalCapacity,
-            groups,
-            announcementDate: previousDate(date),
-            announcementTime,
-            announcementChannelId,
-            announcementRoleIds,
-            guildId,
-            createdBy: `web:${session.user.id}`,
-            createdAt: new Date().toISOString(),
-            signups: [],
-            closed: false
-          };
-          await store.createEvent(event);
-          return event;
-        })
-      );
-      response.redirect(`/events/${events[0].id}/edit?created=${events.length}`);
+      const next = nextScheduledRaid(repeatDays);
+      const totalCapacity = getNodeWarCapacity(tier, next.day);
+      const event: WarEvent = {
+        id: nanoid(10),
+        title: buildNodeWarTitle(next.day, tier, totalCapacity),
+        kind: "nodewar",
+        tier,
+        day: next.day,
+        repeatDays: recurrence === "weekly" ? repeatDays : undefined,
+        date: next.date,
+        time: config.nodeWarStartTime,
+        timezone: config.timezone,
+        recurrence,
+        totalCapacity,
+        groups: parseGroupAllocation(request.body.groups, totalCapacity),
+        announcementDate: previousDate(next.date),
+        announcementTime,
+        announcementChannelId,
+        announcementRoleIds,
+        guildId,
+        createdBy: `web:${session.user.id}`,
+        createdAt: new Date().toISOString(),
+        signups: [],
+        closed: false,
+        active: true,
+        autoRepost: recurrence === "weekly"
+      };
+      await store.createEvent(event);
+      response.redirect(`/events/${event.id}/edit?created=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Create Raid", renderWebError(error)));
     }
@@ -265,6 +259,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         groups,
         title: event.tier ? buildNodeWarTitle(selectedDay, event.tier, totalCapacity) : event.title,
         recurrence,
+        autoRepost: recurrence === "weekly" ? event.autoRepost !== false : false,
         repeatDays: recurrence === "weekly" ? repeatDays : undefined,
         day: selectedDay,
         date,
@@ -288,6 +283,32 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       return;
     }
     await store.deleteEvent(event.id);
+    response.redirect(`/?guild=${encodeURIComponent(event.guildId ?? "")}`);
+  });
+
+  app.post("/events/:id/status", async (request, response) => {
+    const event = await store.getEvent(request.params.id);
+    const session = getSession(request, sessions);
+    if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+    const active = request.body.active === "true";
+    await store.updateEventDetails(event.id, {
+      active,
+      ...(active && event.recurrence === "once" ? { announcedAt: undefined, closed: false } : {})
+    });
+    response.redirect(`/?guild=${encodeURIComponent(event.guildId ?? "")}`);
+  });
+
+  app.post("/events/:id/auto-repost", async (request, response) => {
+    const event = await store.getEvent(request.params.id);
+    const session = getSession(request, sessions);
+    if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+    await store.updateEventDetails(event.id, { autoRepost: request.body.autoRepost === "true" });
     response.redirect(`/?guild=${encodeURIComponent(event.guildId ?? "")}`);
   });
 
@@ -457,25 +478,30 @@ function renderPage(title: string, body: string): string {
 
 function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string): string {
   const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
-  const activeEvents = events.filter((event) => !event.closed);
+  const visibleEvents = events.filter((event) => !event.closed || (event.recurrence === "once" && event.active === false));
+  const activeEvents = visibleEvents.filter(isEventActive);
   const totalSignups = activeEvents.reduce((sum, event) => sum + event.signups.filter((signup) => signup.group !== "bench").length, 0);
   const weeklyPosts = activeEvents.filter((event) => event.recurrence === "weekly").length;
   const nextAnnouncement = [...activeEvents]
     .filter((event) => event.announcementDate && event.announcementTime && !event.announcedAt)
     .sort((left, right) => `${left.announcementDate} ${left.announcementTime}`.localeCompare(`${right.announcementDate} ${right.announcementTime}`))[0];
-  const cards = activeEvents
+  const cards = visibleEvents
     .map((event) => {
       const signed = event.signups.filter((signup) => signup.group !== "bench").length;
       const capacity = activeRosterCapacity(event);
+      const active = isEventActive(event);
+      const autoRepost = event.autoRepost ?? event.recurrence === "weekly";
       return `<article class="event-card group relative overflow-hidden">
-        <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span>${labelRecurrence(event.recurrence)}</span></div>
+        <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span class="status-pill ${active ? "status-active" : "status-inactive"}">${active ? "Active" : "Inactive"}</span></div>
         <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(scheduleTitle(event))}</strong></a>
         <small>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</small>
         <small>Current roster ${escapeHtml(event.title)}</small>
         <small>Following signup post ${formatAnnouncementLabel(event)}</small>
         <small>War starts ${formatTimeLabel(event.time)} ${escapeHtml(config.timezone)}</small>
+        <small>Schedule ${labelRecurrence(event.recurrence)} | ${formatRaidDays(event)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
-        <div class="card-footer"><b>${signed}/${capacity} signed</b><span class="card-actions"><a href="/events/${event.id}/edit">Manage</a>${session ? `<form method="post" action="/events/${event.id}/delete" onsubmit="return confirm('Delete this raid event?')"><input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}"><button class="link-button danger-link" type="submit">Delete</button></form>` : ""}</span></div>
+        <div class="card-switches">${session ? `${renderCardToggle(event, session.csrfToken, "status", "Status", active)}${renderCardToggle(event, session.csrfToken, "auto-repost", "Auto repost", autoRepost, event.recurrence !== "weekly")}` : ""}</div>
+        <div class="card-footer"><b>${signed}/${capacity} signed</b><span class="card-actions"><a href="/events/${event.id}">Open</a><a href="/events/${event.id}/edit">Manage</a>${session ? `<form method="post" action="/events/${event.id}/delete" onsubmit="return confirm('Delete this raid event?')"><input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}"><button class="link-button danger-link" type="submit">Delete</button></form>` : ""}</span></div>
       </article>`;
     })
     .join("");
@@ -500,6 +526,11 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
     ${serverPicker}
     ${selectedGuild ? `<section class="event-grid">${cards || "<div class=\"empty-state\"><h2>No raids scheduled</h2><p>Create a roster or use the Discord wizard to get started.</p></div>"}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to manage shared servers, schedules, and compositions.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
   </main>`;
+}
+
+function renderCardToggle(event: WarEvent, csrfToken: string, action: "status" | "auto-repost", label: string, enabled: boolean, disabled = false): string {
+  const field = action === "status" ? "active" : "autoRepost";
+  return `<form method="post" action="/events/${event.id}/${action}"><input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}"><input type="hidden" name="${field}" value="${enabled ? "false" : "true"}"><button class="switch-button${enabled ? " switch-on" : ""}" type="submit"${disabled ? " disabled" : ""}><span>${escapeHtml(label)}</span><i></i><b>${enabled ? "On" : "Off"}</b></button></form>`;
 }
 
 function renderNav(session?: WebSession, guildId?: string): string {
@@ -549,7 +580,7 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
       <div>
         <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} schedule` : event.kind === "siege" ? "Siege schedule" : "Node War schedule"}</p>
         <h1>${escapeHtml(scheduleTitle(event))}</h1>
-        <div class="summary-meta"><span>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span></div>
+        <div class="summary-meta"><span>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span><span>Status: ${isEventActive(event) ? "Active" : "Inactive"}</span><span>Auto repost: ${(event.autoRepost ?? event.recurrence === "weekly") ? "On" : "Off"}</span></div>
       </div>
       <div class="hero-count">
         <strong>${signed}/${activeRosterCapacity(event)}</strong>
@@ -1035,6 +1066,15 @@ function scheduleTitle(event: WarEvent): string {
   return `${tier} ${NODE_WAR_PRESETS[event.tier].territoryGroup} War [${event.id}]`;
 }
 
+function isEventActive(event: WarEvent): boolean {
+  return event.active ?? !event.closed;
+}
+
+function formatRaidDays(event: WarEvent): string {
+  const days = event.recurrence === "weekly" && event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
+  return days.map((day) => labelWarDay(day).slice(0, 3)).join(", ") || "No days selected";
+}
+
 function formatAnnouncementLabel(event: WarEvent): string {
   const next = getUpcomingAnnouncements(event, 1)[0];
   if (next) {
@@ -1142,6 +1182,12 @@ function nextDateForDay(day?: WarDay): string {
   const delta = (targetDay - currentDay + 7) % 7;
   value.setUTCDate(value.getUTCDate() + delta);
   return value.toISOString().slice(0, 10);
+}
+
+function nextScheduledRaid(days: WarDay[]): { day: WarDay; date: string } {
+  return days
+    .map((day) => ({ day, date: nextDateForDay(day) }))
+    .sort((left, right) => left.date.localeCompare(right.date))[0];
 }
 
 function warDayForDate(date: string): WarDay {

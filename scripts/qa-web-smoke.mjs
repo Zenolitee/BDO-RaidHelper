@@ -118,6 +118,7 @@ try {
     repeatDays: ["sunday", "monday"],
     date: "2020-05-31",
     recurrence: "weekly",
+    autoRepost: true,
     signups: event.signups.map((signup) => ({ ...signup }))
   });
   await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Fresh roster");
@@ -130,13 +131,13 @@ try {
     { date: "2026-05-31", hour: 23, minute: 0, weekday: "sunday" }
   );
   const weeklyEvents = await store.listEvents();
-  const historical = weeklyEvents.find((candidate) => candidate.id === "qa-weekly");
-  const monday = weeklyEvents.find((candidate) => candidate.id !== "qa-weekly" && candidate.day === "monday" && candidate.date === "2026-06-01");
-  if (!historical?.closed || historical.recurrence !== "once" || historical.signups.length !== 1) {
-    throw new Error("Weekly rollover did not preserve the completed historical roster.");
+  const monday = weeklyEvents.find((candidate) => candidate.id === "qa-weekly");
+  const duplicateMonday = weeklyEvents.find((candidate) => candidate.id !== "qa-weekly" && candidate.day === "monday" && candidate.date === "2026-06-01");
+  if (!monday || monday.title !== "Monday T1 Balenos/Serendia 25 Man" || monday.signups.length !== 0 || monday.recurrence !== "weekly" || monday.closed) {
+    throw new Error("Weekly rollover did not rotate the same raid card into a fresh day-specific Monday roster.");
   }
-  if (!monday || monday.title !== "Monday T1 Balenos/Serendia 25 Man" || monday.signups.length !== 0 || monday.recurrence !== "weekly") {
-    throw new Error("Weekly rollover did not create a fresh day-specific Monday roster.");
+  if (duplicateMonday) {
+    throw new Error("Weekly rollover created a duplicate raid card.");
   }
   console.log("Web smoke QA passed.");
 } finally {

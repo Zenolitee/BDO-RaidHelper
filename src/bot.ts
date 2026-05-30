@@ -616,6 +616,7 @@ async function handleEditWizardButton(
       day,
       repeatDays: state.recurrence === "weekly" ? state.days : undefined,
       recurrence: state.recurrence,
+      autoRepost: state.recurrence === "weekly",
       date: nextDate,
       announcementDate: nextAnnouncementDate,
       announcementTime: state.announcementTime,
@@ -817,7 +818,8 @@ async function setRecurring(
   const enabled = interaction.options.getBoolean("enabled", true);
   const updated = await store.updateEventDetails(id, {
     recurrence: enabled ? "weekly" : "once",
-    repeatDays: enabled && event.day ? [event.day] : undefined
+    repeatDays: enabled ? event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : undefined : undefined,
+    autoRepost: enabled
   });
 
   await refreshEventMessage(client, updated);
@@ -953,6 +955,9 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
       channelId: message.channelId,
       messageId: message.id
     });
+    if (event.recurrence === "once") {
+      await store.updateEventDetails(event.id, { active: false });
+    }
     await interaction.editReply({ content: `Posted ${event.title} in <#${message.channelId}>.` });
     return;
   }
@@ -1278,7 +1283,9 @@ async function confirmWizard(state: EventWizardState, store: EventStore, created
     announcementRoleIds: state.pingRoleIds,
     notes: `Announcement: ${state.postTime} ${config.timezone}`
   });
-  event.repeatDays = !state.createToday && state.recurring ? [next.day] : undefined;
+  event.repeatDays = !state.createToday && state.recurring ? state.days : undefined;
+  event.active = true;
+  event.autoRepost = !state.createToday && state.recurring;
   event.groups = buildWizardGroups(state, totalCapacity);
 
   await store.createEvent(event);
@@ -1457,6 +1464,7 @@ async function runNodeWarScheduler(client: Client, store: EventStore): Promise<v
         channelId: message.channelId,
         messageId: message.id
       });
+      await store.updateEventDetails(result.event.id, { active: false });
     }
   }
 }
@@ -1468,41 +1476,42 @@ export async function rollCompletedWeeklyEvents(
 ): Promise<void> {
   const events = await store.listEvents();
   for (const event of events) {
-    if (event.closed || event.recurrence !== "weekly" || eventEndsAt(event) > Date.now()) {
+    if (event.closed || event.active === false || event.recurrence !== "weekly" || eventEndsAt(event) > Date.now()) {
       continue;
     }
 
-    const closed = await store.updateEventDetails(event.id, { closed: true, recurrence: "once" });
-    await refreshEventMessage(client, closed).catch((error) => {
+    const completed = { ...event, closed: true };
+    await refreshEventMessage(client, completed).catch((error) => {
       console.warn(`Could not refresh completed weekly event ${event.id}:`, error);
     });
+    if (event.autoRepost === false) {
+      await store.updateEventDetails(event.id, { active: false });
+      continue;
+    }
 
-    for (const day of event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : []) {
-      const date = nextDateAfter(now.date, day);
-      const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, day) : event.totalCapacity;
-      try {
-        const nextEvent: WarEvent = {
-          ...event,
-          id: nanoid(10),
-          title: event.tier ? buildNodeWarTitle(day, event.tier, totalCapacity) : event.title,
-          day,
-          repeatDays: [day],
-          date,
-          totalCapacity,
-          groups: groupsForCapacity(event.groups, totalCapacity),
-          announcementDate: announcementDateForEvent(date),
-          announcedAt: undefined,
-          channelId: undefined,
-          messageId: undefined,
-          createdAt: new Date().toISOString(),
-          signups: [],
-          closed: false,
-          recurrence: "weekly"
-        };
-        await store.createEventIfMissing(nextEvent);
-      } catch (error) {
-        console.warn(`Could not roll weekly event ${event.id} into ${day}:`, error);
-      }
+    const next = nextSelectedRaidAfter(now.date, event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : []);
+    if (!next) {
+      await store.updateEventDetails(event.id, { closed: true, active: false });
+      continue;
+    }
+    const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, next.day) : event.totalCapacity;
+    try {
+      await store.updateEventDetails(event.id, {
+        title: event.tier ? buildNodeWarTitle(next.day, event.tier, totalCapacity) : event.title,
+        day: next.day,
+        date: next.date,
+        totalCapacity,
+        groups: groupsForCapacity(event.groups, totalCapacity),
+        announcementDate: announcementDateForEvent(next.date),
+        announcedAt: undefined,
+        channelId: undefined,
+        messageId: undefined,
+        signups: [],
+        closed: false,
+        active: true
+      });
+    } catch (error) {
+      console.warn(`Could not roll weekly event ${event.id} into ${next.day}:`, error);
     }
   }
 }
@@ -1527,6 +1536,12 @@ function nextDateAfter(date: string, day: WarDay): string {
   const delta = (weekdayIndex(day) - value.getUTCDay() + 7) % 7 || 7;
   value.setUTCDate(value.getUTCDate() + delta);
   return value.toISOString().slice(0, 10);
+}
+
+function nextSelectedRaidAfter(date: string, days: WarDay[]): { day: WarDay; date: string } | undefined {
+  return days
+    .map((day) => ({ day, date: nextDateAfter(date, day) }))
+    .sort((left, right) => left.date.localeCompare(right.date))[0];
 }
 
 async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Promise<void> {
@@ -1556,7 +1571,7 @@ async function postDueScheduledEvents(
 ): Promise<void> {
   const events = await store.listEvents();
   for (const event of events) {
-    if (event.closed || event.announcedAt || !event.announcementDate || !event.announcementTime) {
+    if (event.closed || event.active === false || event.announcedAt || !event.announcementDate || !event.announcementTime) {
       continue;
     }
     if (!announcementIsDue(event.announcementDate, event.announcementTime, now)) {
@@ -1578,6 +1593,9 @@ async function postDueScheduledEvents(
         channelId: message.channelId,
         messageId: message.id
       });
+      if (event.recurrence === "once") {
+        await store.updateEventDetails(event.id, { active: false });
+      }
     }
   }
 }
@@ -1625,7 +1643,9 @@ function buildNodeWarEvent(input: {
     createdBy: input.createdBy,
     createdAt: now,
     signups: [],
-    closed: false
+    closed: false,
+    active: true,
+    autoRepost: input.recurrence === "weekly"
   };
 }
 

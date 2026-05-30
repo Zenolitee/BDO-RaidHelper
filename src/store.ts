@@ -111,7 +111,7 @@ export class EventStore {
 
   async updateEventDetails(
     eventId: string,
-    updates: Partial<Pick<WarEvent, "title" | "tier" | "day" | "date" | "time" | "timezone" | "recurrence" | "totalCapacity" | "groups" | "repeatDays" | "announcementDate" | "announcementTime" | "announcementChannelId" | "announcementRoleId" | "announcementRoleIds" | "announcedAt" | "closed">>
+    updates: Partial<Pick<WarEvent, "title" | "tier" | "day" | "date" | "time" | "timezone" | "recurrence" | "totalCapacity" | "groups" | "repeatDays" | "announcementDate" | "announcementTime" | "announcementChannelId" | "announcementRoleId" | "announcementRoleIds" | "announcedAt" | "closed" | "active" | "autoRepost" | "channelId" | "messageId" | "signups">>
   ): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
 
@@ -435,6 +435,8 @@ export function validateStoreData(value: unknown): EventStoreData {
   validateSettings(data.settings);
   for (const event of data.events) {
     validateEvent(event);
+    event.active ??= !event.closed;
+    event.autoRepost ??= event.recurrence === "weekly";
   }
   return data;
 }
@@ -487,6 +489,9 @@ function validateEvent(event: WarEvent): void {
 
   if (!Array.isArray(event.groups) || !Array.isArray(event.signups) || typeof event.closed !== "boolean") {
     throw new Error("Invalid event store JSON: event groups, signups, or closed flag are invalid.");
+  }
+  if ((event.active !== undefined && typeof event.active !== "boolean") || (event.autoRepost !== undefined && typeof event.autoRepost !== "boolean")) {
+    throw new Error("Invalid event store JSON: event active or autoRepost flag is invalid.");
   }
 
   const optionalStrings: Array<keyof WarEvent> = [

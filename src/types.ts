@@ -63,6 +63,8 @@ export interface WarEvent {
   createdAt: string;
   signups: Signup[];
   closed: boolean;
+  active?: boolean;
+  autoRepost?: boolean;
 }
 
 export interface EventStoreData {
