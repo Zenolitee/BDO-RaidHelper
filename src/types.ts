@@ -30,6 +30,7 @@ export interface Signup {
   userId: string;
   displayName: string;
   group: GroupKey;
+  requestedGroup?: GroupKey;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  ActivityType,
   ButtonInteraction,
   ButtonBuilder,
   ButtonStyle,
@@ -33,12 +34,13 @@ import {
   labelWarDay,
   NODE_WAR_PRESETS
 } from "./nodewar-presets.js";
-import { renderEventAttachments, renderEventComponents, renderEventEmbed } from "./render.js";
-import type { EventStore } from "./store.js";
+import { formatAnnouncementSchedule, renderEventAttachments, renderEventComponents, renderEventEmbed } from "./render.js";
+import { activeRosterCapacity, type EventStore } from "./store.js";
 import { type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
 
 const AUTO_SCHEDULER_USER = "nodewar-scheduler";
 const SCHEDULER_INTERVAL_MS = 60_000;
+const NODEWAR_DURATION_MS = 2 * 60 * 60 * 1000;
 const WIZARD_TIMEOUT_MS = 10 * 60_000;
 const WIZARD_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
@@ -88,6 +90,10 @@ export function createDiscordClient(store: EventStore): Client {
 
   client.once(Events.ClientReady, async (readyClient) => {
     console.log(`Discord bot ready as ${readyClient.user.tag}`);
+    readyClient.user.setPresence({
+      activities: [{ name: "Meow", type: ActivityType.Listening }],
+      status: "online"
+    });
     startNodeWarScheduler(client, store).catch((error) => {
       console.error("Node War scheduler failed:", error);
     });
@@ -205,7 +211,7 @@ async function listEvents(interaction: ChatInputCommandInteraction, store: Event
 
   const lines = events.map((event, index) => {
     const signed = event.signups.filter((signup) => signup.group !== "bench").length;
-    return `${index + 1}. ID: \`${event.id}\` - **${event.title}** - ${event.date} ${event.time} - ${signed}/${event.totalCapacity}`;
+    return `${index + 1}. ID: \`${event.id}\` - **${event.title}** - ${event.date} ${event.time} - ${signed}/${activeRosterCapacity(event)}`;
   });
   await interaction.reply({ content: lines.join("\n"), ephemeral: true });
 }
@@ -272,6 +278,7 @@ async function showEvent(interaction: ChatInputCommandInteraction, store: EventS
   }
 
   await interaction.reply({
+    content: `Announcement: ${formatAnnouncementSchedule(event)}`,
     embeds: [renderEventEmbed(event, true)],
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -564,7 +571,8 @@ async function handleEditWizardButton(
         { key: "mainball", label: getGroupLabel("mainball"), capacity: state.mainball, editable: true },
         { key: "defense", label: getGroupLabel("defense"), capacity: state.defense, editable: true },
         { key: "zerker", label: getGroupLabel("zerker"), capacity: state.zerker, editable: true },
-        { key: "shai", label: getGroupLabel("shai"), capacity: state.shai, editable: true }
+        { key: "shai", label: getGroupLabel("shai"), capacity: state.shai, editable: true },
+        { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
       ]
     });
 
@@ -1198,7 +1206,8 @@ function buildWizardGroups(state: EventWizardState, totalCapacity: number): WarE
     { key: "mainball", label: getGroupLabel("mainball"), capacity: mainball, editable: true },
     { key: "defense", label: getGroupLabel("defense"), capacity: state.slots.defense, editable: true },
     { key: "zerker", label: getGroupLabel("zerker"), capacity: state.slots.zerker, editable: true },
-    { key: "shai", label: getGroupLabel("shai"), capacity: state.slots.shai, editable: true }
+    { key: "shai", label: getGroupLabel("shai"), capacity: state.slots.shai, editable: true },
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
   ];
 }
 
@@ -1303,6 +1312,7 @@ async function startNodeWarScheduler(client: Client, store: EventStore): Promise
 
 async function runNodeWarScheduler(client: Client, store: EventStore): Promise<void> {
   const now = zonedNow(config.timezone);
+  await closeExpiredOneTimeEvents(client, store);
   await postDueScheduledEvents(client, store, now);
 
   if (now.hour !== schedulerHour() || now.minute !== schedulerMinute()) {
@@ -1353,6 +1363,26 @@ async function runNodeWarScheduler(client: Client, store: EventStore): Promise<v
       });
     }
   }
+}
+
+async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Promise<void> {
+  const events = await store.listEvents();
+  const now = Date.now();
+  for (const event of events) {
+    if (event.closed || event.recurrence !== "once" || eventEndsAt(event) > now) {
+      continue;
+    }
+
+    const closed = await store.closeEvent(event.id);
+    await refreshEventMessage(client, closed).catch((error) => {
+      console.warn(`Could not refresh expired event ${event.id}:`, error);
+    });
+  }
+}
+
+function eventEndsAt(event: WarEvent): number {
+  const parsed = new Date(`${event.date}T${event.time}:00+08:00`).getTime();
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed + NODEWAR_DURATION_MS;
 }
 
 async function postDueScheduledEvents(
@@ -1673,7 +1703,7 @@ function nextWarDayAfterToday(timezone: string, allowedDays: WarDay[] = WIZARD_D
 
 function warDayFromWeekday(weekday: string): WarDay | undefined {
   const normalized = weekday.toLowerCase();
-  if (["sunday", "monday", "tuesday", "wednesday", "thursday", "friday"].includes(normalized)) {
+  if (["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].includes(normalized)) {
     return normalized as WarDay;
   }
   return undefined;

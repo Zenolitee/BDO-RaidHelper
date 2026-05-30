@@ -78,14 +78,8 @@ export class EventStore {
         throw new Error(`Group slots (${total}) cannot exceed total roster size (${event.totalCapacity}).`);
       }
 
-      for (const group of groups) {
-        const signed = event.signups.filter((signup) => signup.group === group.key).length;
-        if (group.key !== "bench" && group.capacity < signed) {
-          throw new Error(`${group.label} already has ${signed} signups.`);
-        }
-      }
-
-      event.groups = groups;
+      event.groups = ensureBenchGroup(groups);
+      moveOverflowToBench(event);
       updatedEvent = event;
     });
 
@@ -103,16 +97,12 @@ export class EventStore {
           throw new Error(`${key} is not enabled for this event.`);
         }
 
-        const signed = event.signups.filter((signup) => signup.group === key).length;
-        if (capacity < signed) {
-          throw new Error(`${group.label} already has ${signed} signups.`);
-        }
-
         group.capacity = capacity;
       }
 
       rebalanceMainBall(nextGroups, event.totalCapacity);
-      event.groups = nextGroups;
+      event.groups = ensureBenchGroup(nextGroups);
+      moveOverflowToBench(event);
       updatedEvent = event;
     });
 
@@ -128,8 +118,9 @@ export class EventStore {
     await this.updateEvent(eventId, (event) => {
       Object.assign(event, updates);
       if (updates.groups) {
-        event.groups = updates.groups;
+        event.groups = ensureBenchGroup(updates.groups);
       }
+      moveOverflowToBench(event);
       validateEventCapacity(event);
       updatedEvent = event;
     });
@@ -146,17 +137,14 @@ export class EventStore {
         throw new Error("Group not found.");
       }
 
-      const signed = event.signups.filter((signup) => signup.group === groupKey).length;
-      if (groupKey !== "bench" && capacity < signed) {
-        throw new Error(`${group.label} already has ${signed} signups.`);
-      }
-
       if (groupKey === "mainball") {
         throw new Error(`${formatGroupName("mainball")} is calculated from ${formatGroupBadge("defense")}, ${formatGroupBadge("zerker")}, and ${formatGroupBadge("shai")}.`);
       }
 
       group.capacity = capacity;
       rebalanceMainBall(event.groups, event.totalCapacity);
+      event.groups = ensureBenchGroup(event.groups);
+      moveOverflowToBench(event);
       updatedEvent = event;
     });
 
@@ -177,6 +165,8 @@ export class EventStore {
       }
 
       rebalanceMainBall(event.groups, event.totalCapacity);
+      event.groups = ensureBenchGroup(event.groups);
+      moveOverflowToBench(event);
       updatedEvent = event;
     });
 
@@ -195,8 +185,9 @@ export class EventStore {
         }
       }
 
-      event.groups = enabledGroups.map((group) => ({ ...group, editable: true }));
+      event.groups = ensureBenchGroup(enabledGroups.map((group) => ({ ...group, editable: group.key !== "bench" })));
       rebalanceMainBall(event.groups, event.totalCapacity);
+      moveOverflowToBench(event);
       updatedEvent = event;
     });
 
@@ -223,16 +214,17 @@ export class EventStore {
         (candidate) => candidate.group === signup.group && candidate.userId !== signup.userId
       ).length;
 
-      if (groupCount >= group.capacity) {
-        throw new Error(`${group.label} is full.`);
-      }
+      event.groups = ensureBenchGroup(event.groups);
+      const assignedGroup = groupCount >= group.capacity ? "bench" : targetGroup;
+      const requestedGroup = assignedGroup === "bench" ? targetGroup : undefined;
 
       if (existing) {
-        existing.group = targetGroup;
+        existing.group = assignedGroup;
+        existing.requestedGroup = requestedGroup;
         existing.displayName = signup.displayName;
         existing.updatedAt = now;
       } else {
-        event.signups.push({ ...signup, group: targetGroup, createdAt: now, updatedAt: now });
+        event.signups.push({ ...signup, group: assignedGroup, requestedGroup, createdAt: now, updatedAt: now });
       }
 
       updatedEvent = event;
@@ -339,13 +331,20 @@ export function groupSignupCount(event: WarEvent, group: GroupKey): number {
   return event.signups.filter((signup) => signup.group === group).length;
 }
 
+export function activeRosterCapacity(event: WarEvent): number {
+  return event.groups
+    .filter((group) => group.key !== "bench")
+    .reduce((sum, group) => sum + group.capacity, 0);
+}
+
 function ensureT1CoreGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
   const nextGroups = groups;
   const required = [
     { key: "mainball", label: getGroupLabel("mainball"), capacity: 0, editable: true },
     { key: "defense", label: getGroupLabel("defense"), capacity: 5, editable: true },
     { key: "zerker", label: getGroupLabel("zerker"), capacity: 2, editable: true },
-    { key: "shai", label: getGroupLabel("shai"), capacity: 2, editable: true }
+    { key: "shai", label: getGroupLabel("shai"), capacity: 2, editable: true },
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
   ];
 
   for (const group of required) {
@@ -355,6 +354,30 @@ function ensureT1CoreGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
   }
 
   return nextGroups;
+}
+
+function ensureBenchGroup(groups: WarEvent["groups"]): WarEvent["groups"] {
+  if (groups.some((group) => group.key === "bench")) {
+    return groups;
+  }
+
+  return [...groups, { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }];
+}
+
+function moveOverflowToBench(event: WarEvent): void {
+  event.groups = ensureBenchGroup(event.groups);
+  for (const group of event.groups) {
+    if (group.key === "bench") {
+      continue;
+    }
+
+    const signups = event.signups.filter((signup) => signup.group === group.key);
+    for (const signup of signups.slice(group.capacity)) {
+      signup.group = "bench";
+      signup.requestedGroup = group.key;
+      signup.updatedAt = new Date().toISOString();
+    }
+  }
 }
 
 function rebalanceMainBall(groups: WarEvent["groups"], totalCapacity: number): void {
@@ -496,6 +519,7 @@ function validateEvent(event: WarEvent): void {
       typeof signup.userId !== "string" ||
       typeof signup.displayName !== "string" ||
       typeof signup.group !== "string" ||
+      (signup.requestedGroup !== undefined && typeof signup.requestedGroup !== "string") ||
       typeof signup.createdAt !== "string" ||
       typeof signup.updatedAt !== "string"
     ) {

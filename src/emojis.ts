@@ -28,7 +28,7 @@ const GROUP_LABELS: Record<string, string> = {
   defense: "Defense",
   zerker: "Zerker",
   shai: "Shai",
-  bench: "Bench",
+  bench: "Benched",
   flex: "Flex",
   cannon: "Cannon",
   ranger: "Archer/Ranger",

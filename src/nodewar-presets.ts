@@ -81,7 +81,8 @@ export function getT1DefaultGroups(totalCapacity: number): GroupConfig[] {
     { key: "mainball", label: getGroupLabel("mainball"), capacity: mainball, editable: true },
     { key: "defense", label: getGroupLabel("defense"), capacity: defense, editable: true },
     { key: "zerker", label: getGroupLabel("zerker"), capacity: zerker, editable: true },
-    { key: "shai", label: getGroupLabel("shai"), capacity: shai, editable: true }
+    { key: "shai", label: getGroupLabel("shai"), capacity: shai, editable: true },
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
   ];
 }
 
@@ -97,7 +98,8 @@ export function getGroupsForPreset(tier: NodeWarTier, totalCapacity: number): Gr
   return [
     { key: "mainball", label: getGroupLabel("mainball"), capacity: mainball, editable: true },
     { key: "defense", label: getGroupLabel("defense"), capacity: defense, editable: true },
-    { key: "flex", label: getGroupLabel("flex"), capacity: flex, editable: true }
+    { key: "flex", label: getGroupLabel("flex"), capacity: flex, editable: true },
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
   ];
 }
 

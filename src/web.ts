@@ -4,7 +4,7 @@ import type { Request } from "express";
 import { config } from "./config.js";
 import { formatGroupName, getGroupEmoji, getGroupEmojiUrl, getGroupLabel } from "./emojis.js";
 import { labelTier, labelWarDay, NODE_WAR_PRESETS } from "./nodewar-presets.js";
-import type { EventStore } from "./store.js";
+import { activeRosterCapacity, type EventStore } from "./store.js";
 import { type GroupKey, type WarEvent } from "./types.js";
 
 interface UserProfile {
@@ -252,12 +252,13 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
   const cards = events
     .map((event) => {
       const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+      const capacity = activeRosterCapacity(event);
       return `<a class="event-card" href="/events/${event.id}">
         <span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span>
         <strong>${escapeHtml(event.title)}</strong>
         <small>${event.date} ${escapeHtml(event.time)}</small>
-        <span class="card-meter"><i style="width:${Math.min(100, Math.round((signed / event.totalCapacity) * 100))}%"></i></span>
-        <b>${signed}/${event.totalCapacity} signed</b>
+        <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
+        <b>${signed}/${capacity} signed</b>
       </a>`;
     })
     .join("");
@@ -304,20 +305,19 @@ function botInviteUrl(): string | undefined {
 
 function renderEventDetail(event: WarEvent): string {
   const columns = orderedGroups(event)
-    .filter((group) => group.key !== "bench")
     .map((group) => {
       const signups = event.signups.filter((signup) => signup.group === group.key);
       return `<section class="roster-column">
         <header>
           <h2>${renderGroupIcon(group.key)}${escapeHtml(getGroupLabel(group.key))}</h2>
-          <b>${signups.length}/${group.capacity}</b>
+          <b>${group.key === "bench" ? signups.length : `${signups.length}/${group.capacity}`}</b>
         </header>
         <div class="signup-list">
           ${signups
             .map(
               (signup, index) => `<div class="signup-row">
                   <span class="slot">${index + 1}</span>
-                  <span class="class-badge">${renderGroupIcon(signup.group)}</span>
+                  <span class="class-badge">${renderGroupIcon(group.key === "bench" && signup.requestedGroup ? signup.requestedGroup : signup.group)}</span>
                   <span class="name">${escapeHtml(signup.displayName)}</span>
                 </div>`
             )
@@ -342,16 +342,15 @@ function renderEventDetail(event: WarEvent): string {
         <p>${event.date} ${escapeHtml(event.time)} ${escapeHtml(event.timezone)}</p>
       </div>
       <div class="hero-count">
-        <strong>${signed}/${event.totalCapacity}</strong>
+        <strong>${signed}/${activeRosterCapacity(event)}</strong>
         <span>signed</span>
       </div>
     </section>
     <section class="capacity-strip">
       ${orderedGroups(event)
-        .filter((group) => group.key !== "bench")
         .map((group) => {
           const count = event.signups.filter((signup) => signup.group === group.key).length;
-          return `<span><b>${renderGroupIcon(group.key)}${escapeHtml(getGroupLabel(group.key))}</b> ${count}/${group.capacity}</span>`;
+          return `<span><b>${renderGroupIcon(group.key)}${escapeHtml(getGroupLabel(group.key))}</b> ${group.key === "bench" ? count : `${count}/${group.capacity}`}</span>`;
         })
         .join("")}
     </section>

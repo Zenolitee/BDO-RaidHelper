@@ -1,7 +1,7 @@
 import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from "discord.js";
 import { config } from "./config.js";
 import { formatGroupBadge, formatGroupName, getGroupEmoji, getGroupLabel, getSummaryEmoji } from "./emojis.js";
-import { groupSignupCount } from "./store.js";
+import { activeRosterCapacity, groupSignupCount } from "./store.js";
 import { type WarEvent } from "./types.js";
 
 export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): EmbedBuilder {
@@ -16,7 +16,7 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): Em
     .setColor(0xed4245)
     .addFields(
       { name: `${getSummaryEmoji("date")} Date`, value: `**${formatEventDate(event)}**`, inline: true },
-      { name: `${getSummaryEmoji("signed")} Signed`, value: `**${signed} / ${event.totalCapacity}**`, inline: true },
+      { name: `${getSummaryEmoji("signed")} Signed`, value: `**${signed} / ${activeRosterCapacity(event)}**`, inline: true },
       { name: `${getSummaryEmoji("time")} Time`, value: `**${formatEventTime(event)}**`, inline: true },
       { name: `${getSummaryEmoji("status")} Status`, value: `**${status}**`, inline: true },
       { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: true },
@@ -74,11 +74,14 @@ function truncate(value: string, max: number): string {
 }
 
 function renderRosterFields(event: WarEvent): Array<{ name: string; value: string; inline: boolean }> {
-  return orderedGroups(event).filter((group) => group.key !== "bench").map((group) => {
+  return orderedGroups(event).map((group) => {
     const signups = event.signups.filter((signup) => signup.group === group.key);
     const visible = signups.slice(0, 18);
     const more = signups.length - visible.length;
-    const names = visible.map((signup, index) => `\`${index + 1}\` **${truncate(signup.displayName, 32)}**`);
+    const names = visible.map((signup, index) => {
+      const requestedEmoji = group.key === "bench" && signup.requestedGroup ? `${getGroupEmoji(signup.requestedGroup)} ` : "";
+      return `\`${index + 1}\` ${requestedEmoji}**${truncate(signup.displayName, 32)}**`;
+    });
     if (more > 0) {
       names.push(`+${more} more`);
     }
@@ -96,7 +99,7 @@ function renderGroupTitle(event: WarEvent, group: WarEvent["groups"][number]): s
   const label = getGroupLabel(group.key);
   const emoji = getGroupEmoji(group.key);
   const countText = group.key === "bench" ? String(count) : `${count}/${group.capacity}`;
-  return `${emoji} ${label} - ${countText}`;
+  return `${emoji} ${label} - (${countText})`;
 }
 
 function orderedGroups(event: WarEvent): WarEvent["groups"] {
@@ -158,6 +161,22 @@ function eventUnixSeconds(event: WarEvent): number | undefined {
   }
 
   return Math.floor(parsed.getTime() / 1000);
+}
+
+export function formatAnnouncementSchedule(event: WarEvent): string {
+  if (!event.announcementDate || !event.announcementTime) {
+    return "Not scheduled";
+  }
+
+  const unix = unixSeconds(event.announcementDate, event.announcementTime);
+  return unix
+    ? `<t:${unix}:F> (<t:${unix}:R>)`
+    : `${event.announcementDate} ${formatTime(event.announcementTime)} GMT+8`;
+}
+
+function unixSeconds(date: string, time: string): number | undefined {
+  const parsed = new Date(`${date}T${time}:00+08:00`);
+  return Number.isNaN(parsed.getTime()) ? undefined : Math.floor(parsed.getTime() / 1000);
 }
 
 export { formatGroupBadge, formatGroupName, getGroupEmoji, getGroupLabel };
