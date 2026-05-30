@@ -202,18 +202,44 @@ async function handleCommand(
 
 async function listEvents(interaction: ChatInputCommandInteraction, store: EventStore): Promise<void> {
   const guildId = requireGuildId(interaction);
-  const events = (await store.listEvents()).filter((event) => event.guildId === guildId && !event.closed).slice(0, 10);
+  await interaction.reply({ ...(await renderEventList(store, guildId, interaction.user.id)), ephemeral: true });
+}
 
+async function renderEventList(
+  store: EventStore,
+  guildId: string,
+  userId: string,
+  notice?: string
+): Promise<{ content: string; components: Array<ActionRowBuilder<ButtonBuilder>> }> {
+  const allEvents = (await store.listEvents()).filter((event) => event.guildId === guildId && !event.closed);
+  const events = allEvents.slice(0, 5);
   if (events.length === 0) {
-    await interaction.reply({ content: "No open events yet.", ephemeral: true });
-    return;
+    return { content: notice ? `${notice}\n\nNo open events yet.` : "No open events yet.", components: [] };
   }
 
   const lines = events.map((event, index) => {
     const signed = event.signups.filter((signup) => signup.group !== "bench").length;
     return `${index + 1}. ID: \`${event.id}\` - **${event.title}** - ${event.date} ${event.time} - ${signed}/${activeRosterCapacity(event)}`;
   });
-  await interaction.reply({ content: lines.join("\n"), ephemeral: true });
+  if (allEvents.length > events.length) {
+    lines.push(`\nShowing the first ${events.length} of ${allEvents.length} open events.`);
+  }
+
+  return {
+    content: notice ? `${notice}\n\n${lines.join("\n")}` : lines.join("\n"),
+    components: events.map((event, index) =>
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`event-list-edit:${event.id}:${userId}`)
+          .setLabel(`Edit ${index + 1}`)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`event-list-delete:${event.id}:${userId}`)
+          .setLabel(`Delete ${index + 1}`)
+          .setStyle(ButtonStyle.Danger)
+      )
+    )
+  };
 }
 
 async function setNodeWarChannel(interaction: ChatInputCommandInteraction, store: EventStore): Promise<void> {
@@ -433,13 +459,23 @@ async function setSlots(
 async function startEditWizard(interaction: ChatInputCommandInteraction, store: EventStore): Promise<void> {
   const id = interaction.options.getString("id", true);
   const guildId = requireGuildId(interaction);
+  const { state, event } = await createEditWizardState(store, guildId, interaction.user.id, id);
+  await interaction.reply({ ...renderEditWizard(state, event), ephemeral: true });
+}
+
+async function createEditWizardState(
+  store: EventStore,
+  guildId: string,
+  userId: string,
+  id: string
+): Promise<{ state: EditWizardState; event: WarEvent }> {
   const event = await getGuildEvent(store, guildId, id);
   if (!event) {
     throw new Error("Event not found.");
   }
 
   const state: EditWizardState = {
-    userId: interaction.user.id,
+    userId,
     guildId,
     eventId: event.id,
     expiresAt: Date.now() + WIZARD_TIMEOUT_MS,
@@ -452,8 +488,8 @@ async function startEditWizard(interaction: ChatInputCommandInteraction, store: 
     zerker: groupCapacity(event, "zerker", 2),
     shai: groupCapacity(event, "shai", 2)
   };
-  editWizardStates.set(interaction.user.id, state);
-  await interaction.reply({ ...renderEditWizard(state, event), ephemeral: true });
+  editWizardStates.set(userId, state);
+  return { state, event };
 }
 
 async function handleEditWizardSelect(interaction: StringSelectMenuInteraction): Promise<void> {
@@ -824,6 +860,28 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
 
   const [action, eventId, groupKey] = interaction.customId.split(":");
   if (!eventId) {
+    return;
+  }
+
+  if (action === "event-list-edit") {
+    await requireAdministrator(interaction);
+    assertListButtonOwner(interaction, groupKey);
+    const guildId = requireButtonGuildId(interaction);
+    const { state, event } = await createEditWizardState(store, guildId, interaction.user.id, eventId);
+    await interaction.update(renderEditWizard(state, event));
+    return;
+  }
+
+  if (action === "event-list-delete") {
+    await requireAdministrator(interaction);
+    assertListButtonOwner(interaction, groupKey);
+    const guildId = requireButtonGuildId(interaction);
+    const event = await getGuildEvent(store, guildId, eventId);
+    if (!event) {
+      throw new Error("Event not found.");
+    }
+    await store.deleteEvent(event.id);
+    await interaction.update(await renderEventList(store, guildId, interaction.user.id, `Deleted ${event.title}.`));
     return;
   }
 
@@ -1533,7 +1591,20 @@ function renderEventMessagePayload(event: WarEvent) {
   };
 }
 
-async function requireAdministrator(interaction: ChatInputCommandInteraction): Promise<void> {
+function requireButtonGuildId(interaction: ButtonInteraction): string {
+  if (!interaction.guildId) {
+    throw new Error("Use this button inside a Discord server.");
+  }
+  return interaction.guildId;
+}
+
+function assertListButtonOwner(interaction: ButtonInteraction, userId?: string): void {
+  if (!userId || interaction.user.id !== userId) {
+    throw new Error("Only the Administrator who opened this event list can use these buttons.");
+  }
+}
+
+async function requireAdministrator(interaction: ChatInputCommandInteraction | ButtonInteraction): Promise<void> {
   if (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
     return;
   }
