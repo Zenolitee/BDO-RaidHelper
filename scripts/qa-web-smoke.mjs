@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { refreshEventMessage } from "../dist/bot.js";
+import { refreshEventMessage, rollCompletedWeeklyEvents } from "../dist/bot.js";
 import { getGroupEmoji } from "../dist/emojis.js";
 import { renderEventEmbed } from "../dist/render.js";
 import { EventStore } from "../dist/store.js";
@@ -99,6 +99,32 @@ try {
   });
   if (rescheduled.date !== "2026-06-01" || rescheduled.announcementDate !== "2026-05-31" || rescheduled.announcedAt || rescheduled.closed) {
     throw new Error("Rescheduled event did not clear the prior announcement state.");
+  }
+
+  await store.createEvent({
+    ...event,
+    id: "qa-weekly",
+    title: "Sunday T1 Balenos/Serendia 30 Man",
+    day: "sunday",
+    repeatDays: ["sunday", "monday"],
+    date: "2020-05-31",
+    recurrence: "weekly",
+    signups: event.signups.map((signup) => ({ ...signup }))
+  });
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Fresh roster");
+  await rollCompletedWeeklyEvents(
+    { channels: { fetch: async () => undefined } },
+    store,
+    { date: "2026-05-31", hour: 23, minute: 0, weekday: "sunday" }
+  );
+  const weeklyEvents = await store.listEvents();
+  const historical = weeklyEvents.find((candidate) => candidate.id === "qa-weekly");
+  const monday = weeklyEvents.find((candidate) => candidate.id !== "qa-weekly" && candidate.day === "monday" && candidate.date === "2026-06-01");
+  if (!historical?.closed || historical.recurrence !== "once" || historical.signups.length !== 1) {
+    throw new Error("Weekly rollover did not preserve the completed historical roster.");
+  }
+  if (!monday || monday.title !== "Monday T1 Balenos/Serendia 25 Man" || monday.signups.length !== 0 || monday.recurrence !== "weekly") {
+    throw new Error("Weekly rollover did not create a fresh day-specific Monday roster.");
   }
   console.log("Web smoke QA passed.");
 } finally {

@@ -18,6 +18,7 @@ interface DiscordGuild {
   id: string;
   name: string;
   permissions: string;
+  icon?: string | null;
 }
 
 interface DiscordGuildChannel {
@@ -151,39 +152,50 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
     try {
       const tier = parseTier(request.body.tier);
-      const date = parseDate(request.body.date);
-      const day = warDayForDate(date);
-      const totalCapacity = getNodeWarCapacity(tier, day);
-      const groups = parseGroupAllocation(request.body.groups, totalCapacity);
+      const recurrence = request.body.recurrence === "weekly" ? "weekly" : "once";
+      const repeatDays = parseRepeatDays(request.body.repeatDays);
+      if (recurrence === "once" && repeatDays.length !== 1) {
+        throw new Error("One-time events must use exactly one raid day.");
+      }
       const deliveryOptions = await fetchGuildDeliveryOptions(guildId);
       const announcementChannelId = parseAnnouncementChannelId(request.body.announcementChannelId, deliveryOptions.channels);
       const announcementRoleIds = parseAnnouncementRoleIds(request.body.announcementRoleIds, deliveryOptions.roles);
       const announcementTime = parseClockTime(request.body.announcementTime);
-      const event: WarEvent = {
-        id: nanoid(10),
-        title: buildNodeWarTitle(day, tier, totalCapacity),
-        kind: "nodewar",
-        tier,
-        day,
-        repeatDays: [day],
-        date,
-        time: config.nodeWarStartTime,
-        timezone: config.timezone,
-        recurrence: "once",
-        totalCapacity,
-        groups,
-        announcementDate: previousDate(date),
-        announcementTime,
-        announcementChannelId,
-        announcementRoleIds,
-        guildId,
-        createdBy: `web:${session.user.id}`,
-        createdAt: new Date().toISOString(),
-        signups: [],
-        closed: false
-      };
-      await store.createEvent(event);
-      response.redirect(`/events/${event.id}/edit?created=1`);
+      const plannedEvents = repeatDays.map((day) => {
+        const date = nextDateForDay(day);
+        const totalCapacity = getNodeWarCapacity(tier, day);
+        return { day, date, totalCapacity, groups: parseGroupAllocation(request.body.groups, totalCapacity) };
+      });
+      const events = await Promise.all(
+        plannedEvents.map(async ({ day, date, totalCapacity, groups }) => {
+          const event: WarEvent = {
+            id: nanoid(10),
+            title: buildNodeWarTitle(day, tier, totalCapacity),
+            kind: "nodewar",
+            tier,
+            day,
+            repeatDays: recurrence === "weekly" ? [day] : undefined,
+            date,
+            time: config.nodeWarStartTime,
+            timezone: config.timezone,
+            recurrence,
+            totalCapacity,
+            groups,
+            announcementDate: previousDate(date),
+            announcementTime,
+            announcementChannelId,
+            announcementRoleIds,
+            guildId,
+            createdBy: `web:${session.user.id}`,
+            createdAt: new Date().toISOString(),
+            signups: [],
+            closed: false
+          };
+          await store.createEvent(event);
+          return event;
+        })
+      );
+      response.redirect(`/events/${events[0].id}/edit?created=${events.length}`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Create Raid", renderWebError(error)));
     }
@@ -219,11 +231,15 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       return;
     }
     try {
-      const groups = parseGroupAllocation(request.body.groups, event.totalCapacity);
       const recurrence = request.body.recurrence === "weekly" ? "weekly" : "once";
-      const date = parseDate(request.body.date);
-      const dateDay = warDayForDate(date);
-      const repeatDays = recurrence === "weekly" ? parseRepeatDays(request.body.repeatDays, event.day) : [dateDay];
+      const repeatDays = parseRepeatDays(request.body.repeatDays, event.day);
+      if (recurrence === "once" && repeatDays.length !== 1) {
+        throw new Error("One-time events must use exactly one raid day.");
+      }
+      const selectedDay = repeatDays.includes(event.day as WarDay) ? (event.day as WarDay) : repeatDays[0];
+      const date = selectedDay === event.day && !event.closed ? event.date : nextDateForDay(selectedDay);
+      const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, selectedDay) : event.totalCapacity;
+      const groups = parseGroupAllocation(request.body.groups, totalCapacity);
       const announcementTime = parseClockTime(request.body.announcementTime);
       const announcementDate = previousDate(date);
       const previousRepeatDays = event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
@@ -237,11 +253,12 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         repeatDaysChanged;
       const updated = await store.updateEventDetails(event.id, {
         groups,
-        title: event.tier ? buildNodeWarTitle(repeatDays[0], event.tier, event.totalCapacity) : event.title,
+        title: event.tier ? buildNodeWarTitle(selectedDay, event.tier, totalCapacity) : event.title,
         recurrence,
         repeatDays: recurrence === "weekly" ? repeatDays : undefined,
-        day: repeatDays[0],
+        day: selectedDay,
         date,
+        totalCapacity,
         announcementDate,
         announcementTime,
         ...(scheduleChanged ? { announcedAt: undefined, closed: false } : {})
@@ -419,7 +436,13 @@ function renderPage(title: string, body: string): string {
 
 function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string): string {
   const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
-  const cards = events
+  const activeEvents = events.filter((event) => !event.closed);
+  const totalSignups = activeEvents.reduce((sum, event) => sum + event.signups.filter((signup) => signup.group !== "bench").length, 0);
+  const weeklyPosts = activeEvents.filter((event) => event.recurrence === "weekly").length;
+  const nextAnnouncement = [...activeEvents]
+    .filter((event) => event.announcementDate && event.announcementTime && !event.announcedAt)
+    .sort((left, right) => `${left.announcementDate} ${left.announcementTime}`.localeCompare(`${right.announcementDate} ${right.announcementTime}`))[0];
+  const cards = activeEvents
     .map((event) => {
       const signed = event.signups.filter((signup) => signup.group !== "bench").length;
       const capacity = activeRosterCapacity(event);
@@ -437,20 +460,37 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       ? `<section class="server-picker"><header><p class="eyebrow">Your servers</p><h1>Select a server</h1><p>Only servers shared with NW Helper are listed.</p></header><div class="server-grid">${session.guilds
           .map(
             (guild) =>
-              `<a class="server-card group transition duration-200 ease-out" href="/?guild=${encodeURIComponent(guild.id)}"><span class="server-mark">${escapeHtml(guild.name.slice(0, 1).toUpperCase())}</span><span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span></a>`
+              `<a class="server-card group transition duration-200 ease-out" href="/?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span><b>Open</b></a>`
           )
           .join("") || "<p>No shared administrator servers found.</p>"}</div><div class="invite-row"><span>Not seeing your server?</span>${renderInviteButton("Invite the bot")}</div></section>`
       : "";
 
   return `${renderNav(session, guildId)}<main class="shell">
-    ${selectedGuild ? `<section class="dashboard-head"><div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div><a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">Create raid</a></section>` : ""}
+    ${selectedGuild ? `<section class="dashboard-head"><div class="guild-heading">${renderGuildAvatar(selectedGuild)}<div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div></div><a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">+ Create raid</a></section>
+    <section class="stats-row">
+      ${renderStat("Active raids", String(activeEvents.length))}
+      ${renderStat("Weekly posts", String(weeklyPosts))}
+      ${renderStat("Total signups", String(totalSignups))}
+      ${renderStat("Next announcement", nextAnnouncement ? `${formatDateLabel(nextAnnouncement.announcementDate as string)} ${formatTimeLabel(nextAnnouncement.announcementTime as string)}` : "None queued")}
+    </section>` : ""}
     ${serverPicker}
     ${selectedGuild ? `<section class="event-grid">${cards || "<div class=\"empty-state\"><h2>No raids scheduled</h2><p>Create a roster or use the Discord wizard to get started.</p></div>"}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to manage shared servers, schedules, and compositions.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
   </main>`;
 }
 
 function renderNav(session?: WebSession, guildId?: string): string {
-  return `<header class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}">Raids</a><a href="/create?guild=${encodeURIComponent(guildId)}">Create</a>` : ""}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></header>`;
+  return `<aside class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}"><i>R</i><span>Raids</span></a><a href="/create?guild=${encodeURIComponent(guildId)}"><i>+</i><span>Create raid</span></a>` : `<a href="/"><i>H</i><span>Home</span></a>`}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></aside>`;
+}
+
+function renderGuildAvatar(guild: DiscordGuild): string {
+  const avatar = guild.icon ? `https://cdn.discordapp.com/icons/${encodeURIComponent(guild.id)}/${encodeURIComponent(guild.icon)}.png?size=128` : undefined;
+  return avatar
+    ? `<img class="server-mark server-avatar" src="${escapeHtml(avatar)}" alt="">`
+    : `<span class="server-mark">${escapeHtml(guild.name.slice(0, 1).toUpperCase())}</span>`;
+}
+
+function renderStat(label: string, value: string): string {
+  return `<article class="stat-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
 }
 
 function renderInviteButton(label = "Invite to Server"): string {
@@ -491,7 +531,7 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
         <span>signed</span>
       </div>
     </section>
-    <div class="detail-actions"><a class="button button-secondary" href="/">Dashboard</a>${canManage ? `<a class="button" href="/events/${event.id}/edit">Edit raid</a>` : ""}</div>
+    <div class="detail-actions"><a class="button button-secondary" href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Dashboard</a>${canManage ? `<a class="button" href="/events/${event.id}/edit">Edit raid</a>` : ""}</div>
     ${renderDayRail(event)}
     <section class="roster-grid">${renderRosterColumns(event)}</section>
   </main>`;
@@ -505,7 +545,7 @@ function renderDayRail(event: WarEvent): string {
         <span>${labelWarDay(day).slice(0, 3)}</span>
         <strong>${labelWarDay(day)}</strong>
         <small>${event.tier ? NODE_WAR_PRESETS[event.tier].territoryGroup : event.kind}</small>
-        <dl><div><dt>Signed</dt><dd>${event.signups.filter((signup) => signup.group !== "bench").length}/${activeRosterCapacity(event)}</dd></div><div><dt>War</dt><dd>${formatTimeLabel(event.time)}</dd></div><div><dt>Post</dt><dd>${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</dd></div></dl>
+        <dl><div><dt>Roster</dt><dd>${day === event.day ? `${event.signups.filter((signup) => signup.group !== "bench").length}/${activeRosterCapacity(event)} signed` : "Fresh roster"}</dd></div><div><dt>War</dt><dd>${formatTimeLabel(event.time)}</dd></div><div><dt>Post</dt><dd>${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</dd></div></dl>
       </article>`
     )
     .join("") || "<p>No raid days selected.</p>"}</div></section>`;
@@ -595,9 +635,10 @@ function renderCreateRaid(
       <input type="hidden" name="tier" id="tier-value" value="tier1">
       <input type="hidden" name="groups" id="groups-value">
       <section class="schedule-panel">
-        <label>Node War date <input type="date" name="date" id="event-date" value="${defaultNextDate()}" required></label>
+        <label>Repeat mode<select name="recurrence" id="recurrence-value"><option value="once">One-time event</option><option value="weekly">Repeat weekly</option></select></label>
         <label>Announcement time <input type="time" name="announcementTime" value="${escapeHtml(config.nodeWarPostTime)}" required></label>
-        <p>The event starts at ${escapeHtml(config.nodeWarStartTime)} ${escapeHtml(config.timezone)}. Its announcement is scheduled for the prior day.</p>
+        <p>The event starts at ${escapeHtml(config.nodeWarStartTime)} ${escapeHtml(config.timezone)}. One-time raids use one day; weekly schedules can use multiple days.</p>
+        <fieldset><legend>Raid days</legend><div class="day-checks">${renderDayChecks([defaultNextWarDay()])}</div></fieldset>
       </section>
       ${renderDeliveryEditor(deliveryOptions, configuredChannelId)}
       <section class="template-grid" aria-label="Node War templates">
@@ -608,7 +649,7 @@ function renderCreateRaid(
       ${renderAllocationEditor(groups)}
       <div class="editor-actions"><button type="submit">Schedule Raid</button></div>
     </form>
-  </main>${renderAllocationScript(true)}`;
+  </main>${renderRecurrenceDayScript()}${renderAllocationScript(true)}`;
 }
 
 function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {
@@ -649,15 +690,35 @@ function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession)
       <input type="hidden" name="groups" id="groups-value">
       <section class="schedule-editor">
         <div><p class="eyebrow">Schedule</p><h2>Announcement timing</h2></div>
-        <label>Node War date<input name="date" type="date" value="${escapeHtml(event.date)}" required></label>
-        <label>Repeat mode<select name="recurrence"><option value="once"${event.recurrence !== "weekly" ? " selected" : ""}>One-time event</option><option value="weekly"${event.recurrence === "weekly" ? " selected" : ""}>Repeat weekly</option></select></label>
+        <label>Repeat mode<select name="recurrence" id="recurrence-value"><option value="once"${event.recurrence !== "weekly" ? " selected" : ""}>One-time event</option><option value="weekly"${event.recurrence === "weekly" ? " selected" : ""}>Repeat weekly</option></select></label>
         <label>Announcement time<input name="announcementTime" type="time" value="${escapeHtml(event.announcementTime ?? config.nodeWarPostTime)}" required></label>
-        <fieldset><legend>Raid days</legend><div class="day-checks">${WEB_WAR_DAYS.map((day) => `<label><input type="checkbox" name="repeatDays" value="${day}"${repeatDays.includes(day) ? " checked" : ""}><span>${labelWarDay(day).slice(0, 3)}</span></label>`).join("")}</div></fieldset>
+        <fieldset><legend>Raid days</legend><div class="day-checks">${renderDayChecks(repeatDays)}</div></fieldset>
       </section>
       ${renderAllocationEditor(event.groups.filter((group) => group.key !== "bench"))}
       <div class="editor-actions"><button type="submit">Save raid settings</button></div>
     </form>
-  </main>${renderAllocationScript(false)}`;
+  </main>${renderRecurrenceDayScript()}${renderAllocationScript(false)}`;
+}
+
+function renderDayChecks(selectedDays: WarDay[]): string {
+  return WEB_WAR_DAYS.map((day) => `<label><input type="checkbox" name="repeatDays" value="${day}"${selectedDays.includes(day) ? " checked" : ""}><span>${labelWarDay(day).slice(0, 3)}</span></label>`).join("");
+}
+
+function renderRecurrenceDayScript(): string {
+  return `<script>
+    (() => {
+      const recurrence = document.querySelector("#recurrence-value");
+      const checks = [...document.querySelectorAll('.day-checks input[name="repeatDays"]')];
+      const enforce = (changed) => {
+        if (recurrence.value !== "once") return;
+        if (changed?.checked) checks.forEach((check) => { if (check !== changed) check.checked = false; });
+        if (!checks.some((check) => check.checked)) (changed || checks[0]).checked = true;
+      };
+      checks.forEach((check) => check.addEventListener("change", () => enforce(check)));
+      recurrence.addEventListener("change", () => enforce());
+      enforce();
+    })();
+  </script>`;
 }
 
 function renderAllocationEditor(groups: GroupConfig[]): string {
@@ -691,7 +752,6 @@ function renderAllocationScript(useTemplates: boolean): string {
       const table = document.querySelector("#role-table");
       const capacityLabel = document.querySelector("#capacity-value");
       const groupsValue = document.querySelector("#groups-value");
-      const dateInput = document.querySelector("#event-date");
       const tierInput = document.querySelector("#tier-value");
       const presets = ${JSON.stringify(Object.fromEntries(Object.entries(NODE_WAR_PRESETS).map(([tier, preset]) => [tier, preset.maxParticipantsByDay])))};
       const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -742,8 +802,8 @@ function renderAllocationScript(useTemplates: boolean): string {
         serialize();
       });
       ${useTemplates ? `const syncTemplateCapacity = () => {
-        if (!dateInput?.value || !tierInput?.value) return;
-        const day = days[new Date(dateInput.value + "T12:00:00Z").getUTCDay()];
+        const day = document.querySelector('.day-checks input[name="repeatDays"]:checked')?.value;
+        if (!day || !tierInput?.value) return;
         capacity = Number(presets[tierInput.value][day]);
         rebalance();
       };
@@ -753,7 +813,7 @@ function renderAllocationScript(useTemplates: boolean): string {
         tierInput.value = button.dataset.tier;
         syncTemplateCapacity();
       }));
-      dateInput.addEventListener("change", syncTemplateCapacity);
+      document.querySelectorAll('.day-checks input[name="repeatDays"]').forEach((input) => input.addEventListener("change", syncTemplateCapacity));
       syncTemplateCapacity();` : ""}
       form.addEventListener("submit", serialize);
       rebalance();
@@ -837,14 +897,6 @@ function parseTier(value: unknown): NodeWarTier {
   throw new Error("Select a valid Node War template.");
 }
 
-function parseDate(value: unknown): string {
-  const date = String(value ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T12:00:00Z`).getTime())) {
-    throw new Error("Select a valid Node War date.");
-  }
-  return date;
-}
-
 function parseClockTime(value: unknown): string {
   const time = String(value ?? "").trim();
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
@@ -880,11 +932,6 @@ function parseRepeatDays(value: unknown, fallback?: WarDay): WarDay[] {
   return days;
 }
 
-function warDayForDate(date: string): WarDay {
-  const days: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  return days[new Date(`${date}T12:00:00Z`).getUTCDay()];
-}
-
 function formatDateLabel(date: string): string {
   const parsed = new Date(`${date}T12:00:00Z`);
   return Number.isNaN(parsed.getTime())
@@ -907,7 +954,11 @@ function previousDate(date: string): string {
   return value.toISOString().slice(0, 10);
 }
 
-function defaultNextDate(): string {
+function defaultNextWarDay(): WarDay {
+  return warDayForDate(nextDateForDay());
+}
+
+function nextDateForDay(day?: WarDay): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: config.timezone,
     year: "numeric",
@@ -916,8 +967,15 @@ function defaultNextDate(): string {
   }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const value = new Date(`${values.year}-${values.month}-${values.day}T12:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + 1);
+  const currentDay = value.getUTCDay();
+  const targetDay = day ? WEB_WAR_DAYS.indexOf(day) : (currentDay + 1) % 7;
+  const delta = (targetDay - currentDay + 7) % 7;
+  value.setUTCDate(value.getUTCDate() + delta);
   return value.toISOString().slice(0, 10);
+}
+
+function warDayForDate(date: string): WarDay {
+  return WEB_WAR_DAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
 }
 
 function renderWebError(error: unknown): string {

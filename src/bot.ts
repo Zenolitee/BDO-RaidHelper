@@ -1408,6 +1408,7 @@ async function startNodeWarScheduler(client: Client, store: EventStore): Promise
 async function runNodeWarScheduler(client: Client, store: EventStore): Promise<void> {
   const now = zonedNow(config.timezone);
   await closeExpiredOneTimeEvents(client, store);
+  await rollCompletedWeeklyEvents(client, store, now);
   await postDueScheduledEvents(client, store, now);
 
   if (now.hour !== schedulerHour() || now.minute !== schedulerMinute()) {
@@ -1458,6 +1459,74 @@ async function runNodeWarScheduler(client: Client, store: EventStore): Promise<v
       });
     }
   }
+}
+
+export async function rollCompletedWeeklyEvents(
+  client: Client,
+  store: EventStore,
+  now: { date: string; hour: number; minute: number; weekday: string }
+): Promise<void> {
+  const events = await store.listEvents();
+  for (const event of events) {
+    if (event.closed || event.recurrence !== "weekly" || eventEndsAt(event) > Date.now()) {
+      continue;
+    }
+
+    const closed = await store.updateEventDetails(event.id, { closed: true, recurrence: "once" });
+    await refreshEventMessage(client, closed).catch((error) => {
+      console.warn(`Could not refresh completed weekly event ${event.id}:`, error);
+    });
+
+    for (const day of event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : []) {
+      const date = nextDateAfter(now.date, day);
+      const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, day) : event.totalCapacity;
+      try {
+        const nextEvent: WarEvent = {
+          ...event,
+          id: nanoid(10),
+          title: event.tier ? buildNodeWarTitle(day, event.tier, totalCapacity) : event.title,
+          day,
+          repeatDays: [day],
+          date,
+          totalCapacity,
+          groups: groupsForCapacity(event.groups, totalCapacity),
+          announcementDate: announcementDateForEvent(date),
+          announcedAt: undefined,
+          channelId: undefined,
+          messageId: undefined,
+          createdAt: new Date().toISOString(),
+          signups: [],
+          closed: false,
+          recurrence: "weekly"
+        };
+        await store.createEventIfMissing(nextEvent);
+      } catch (error) {
+        console.warn(`Could not roll weekly event ${event.id} into ${day}:`, error);
+      }
+    }
+  }
+}
+
+function groupsForCapacity(groups: WarEvent["groups"], totalCapacity: number): WarEvent["groups"] {
+  const nextGroups = groups.map((group) => ({ ...group }));
+  const mainball = nextGroups.find((group) => group.key === "mainball");
+  const specialistTotal = nextGroups
+    .filter((group) => group.key !== "mainball" && group.key !== "bench")
+    .reduce((sum, group) => sum + group.capacity, 0);
+  if (specialistTotal > totalCapacity) {
+    throw new Error(`Specialist slots (${specialistTotal}) exceed ${totalCapacity}-player capacity.`);
+  }
+  if (mainball) {
+    mainball.capacity = totalCapacity - specialistTotal;
+  }
+  return nextGroups;
+}
+
+function nextDateAfter(date: string, day: WarDay): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  const delta = (weekdayIndex(day) - value.getUTCDay() + 7) % 7 || 7;
+  value.setUTCDate(value.getUTCDate() + delta);
+  return value.toISOString().slice(0, 10);
 }
 
 async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Promise<void> {

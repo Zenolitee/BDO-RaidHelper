@@ -17,6 +17,7 @@ A Discord bot and web roster page for Black Desert Online Node War and Siege pla
 - The web page shows events as Mainball/FFA, Defense, Zerker, Shai, and Bench columns.
 - The web dashboard supports Discord OAuth login, administrator server selection, one-time raid creation, and linked roster allocation sliders.
 - Web raid creation loads channels and roles from the selected Discord server, requires a roster channel, and supports multiple optional ping roles.
+- One-time web raids select one weekday. Weekly web schedules can select multiple weekdays and create an independent fresh roster for each day.
 
 ## Setup
 
@@ -107,6 +108,8 @@ The bot uses the current NA/EU Occupation Mode Node War participant table:
 | Tier 3 | Valencia/Edania | 75 | 55 | 55 | 75 | 55 | 75 |
 
 Create an event through the private wizard. Creation stores the event only; the Discord roster post is sent later when the selected announcement time is reached.
+
+Weekly rosters roll forward after each completed war. The previous Discord post remains as history, while the next matching weekday receives a new event ID, day-correct title, and empty signup list.
 
 ```bash
 /event create
