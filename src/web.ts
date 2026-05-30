@@ -1,11 +1,12 @@
 import express from "express";
 import { randomBytes } from "node:crypto";
 import type { Request } from "express";
+import { nanoid } from "nanoid";
 import { config } from "./config.js";
-import { formatGroupName, getGroupEmoji, getGroupEmojiUrl, getGroupLabel } from "./emojis.js";
-import { labelTier, labelWarDay, NODE_WAR_PRESETS } from "./nodewar-presets.js";
+import { getGroupEmoji, getGroupEmojiUrl, getGroupLabel } from "./emojis.js";
+import { buildNodeWarTitle, getNodeWarCapacity, labelTier, labelWarDay, NODE_WAR_PRESETS } from "./nodewar-presets.js";
 import { activeRosterCapacity, type EventStore } from "./store.js";
-import { type GroupKey, type WarEvent } from "./types.js";
+import { type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
 
 interface UserProfile {
   id: string;
@@ -22,6 +23,7 @@ interface DiscordGuild {
 interface WebSession {
   user: UserProfile;
   guilds: DiscordGuild[];
+  csrfToken: string;
   expiresAt: number;
 }
 
@@ -69,19 +71,24 @@ export function createWebApp(store: EventStore) {
       return;
     }
 
-    const token = await exchangeDiscordCode(code);
-    const [user, guilds] = await Promise.all([
-      fetchDiscord<UserProfile>("/users/@me", token),
-      fetchDiscord<DiscordGuild[]>("/users/@me/guilds", token)
-    ]);
-    const sessionId = randomBytes(32).toString("hex");
-    sessions.set(sessionId, {
-      user,
-      guilds: guilds.filter((guild) => hasAdministratorPermission(guild.permissions)),
-      expiresAt: Date.now() + 24 * 60 * 60_000
-    });
-    response.setHeader("Set-Cookie", sessionCookie(sessionId));
-    response.redirect("/");
+    try {
+      const token = await exchangeDiscordCode(code);
+      const [user, guilds] = await Promise.all([
+        fetchDiscord<UserProfile>("/users/@me", token),
+        fetchDiscord<DiscordGuild[]>("/users/@me/guilds", token)
+      ]);
+      const sessionId = randomBytes(32).toString("hex");
+      sessions.set(sessionId, {
+        user,
+        guilds: guilds.filter((guild) => hasAdministratorPermission(guild.permissions)),
+        csrfToken: randomBytes(24).toString("hex"),
+        expiresAt: Date.now() + 24 * 60 * 60_000
+      });
+      response.setHeader("Set-Cookie", sessionCookie(sessionId));
+      response.redirect("/");
+    } catch {
+      response.status(502).type("html").send(renderPage("Login failed", renderLoginError()));
+    }
   });
 
   app.get("/logout", (request, response) => {
@@ -98,46 +105,90 @@ export function createWebApp(store: EventStore) {
       response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
       return;
     }
-    response.type("html").send(renderPage("Create Raid", renderCreateRaid(guildId)));
+    response.type("html").send(renderPage("Create Raid", renderCreateRaid(guildId, session.csrfToken)));
+  });
+
+  app.post("/create", async (request, response) => {
+    const session = getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    if (!session || !session.guilds.some((guild) => guild.id === guildId) || !validCsrf(request, session)) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const tier = parseTier(request.body.tier);
+      const date = parseDate(request.body.date);
+      const day = warDayForDate(date);
+      const totalCapacity = getNodeWarCapacity(tier, day);
+      const groups = parseGroupAllocation(request.body.groups, totalCapacity);
+      const settings = await store.getSettings();
+      const event: WarEvent = {
+        id: nanoid(10),
+        title: buildNodeWarTitle(day, tier, totalCapacity),
+        kind: "nodewar",
+        tier,
+        day,
+        repeatDays: [day],
+        date,
+        time: config.nodeWarStartTime,
+        timezone: config.timezone,
+        recurrence: "once",
+        totalCapacity,
+        groups,
+        announcementDate: previousDate(date),
+        announcementTime: config.nodeWarPostTime,
+        announcementChannelId: settings.nodeWarChannelIds?.[guildId] ?? config.nodeWarChannelId,
+        announcementRoleId: config.nodeWarRoleId,
+        announcementRoleIds: config.nodeWarRoleId ? [config.nodeWarRoleId] : [],
+        guildId,
+        createdBy: `web:${session.user.id}`,
+        createdAt: new Date().toISOString(),
+        signups: [],
+        closed: false
+      };
+      await store.createEvent(event);
+      response.redirect(`/events/${event.id}/edit?created=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Create Raid", renderWebError(error)));
+    }
   });
 
   app.get("/events/:id", async (request, response) => {
     const event = await store.getEvent(request.params.id);
     const session = getSession(request, sessions);
-    if (!event || !event.guildId || !session?.guilds.some((guild) => guild.id === event.guildId)) {
+    if (!event) {
       response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
       return;
     }
 
-    response.type("html").send(renderPage(event.title, renderEventDetail(event)));
+    const canManage = Boolean(event.guildId && session?.guilds.some((guild) => guild.id === event.guildId));
+    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage)));
   });
 
-  app.post("/events/:id/signup", async (request, response) => {
+  app.get("/events/:id/edit", async (request, response) => {
     const event = await store.getEvent(request.params.id);
     const session = getSession(request, sessions);
-    if (!event || !event.guildId || !session?.guilds.some((guild) => guild.id === event.guildId)) {
-      response.status(404).send("Event not found.");
+    if (!event || !session || !canManageEvent(event, session)) {
+      response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
       return;
     }
+    response.type("html").send(renderPage(`Edit ${event.title}`, renderEditRaid(event, session.csrfToken)));
+  });
 
-    const group = request.body.group as GroupKey;
-    if (!event.groups.some((candidate) => candidate.key === group && candidate.key !== "bench")) {
-      response.status(400).send("Unknown group.");
+  app.post("/events/:id/composition", async (request, response) => {
+    const event = await store.getEvent(request.params.id);
+    const session = getSession(request, sessions);
+    if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
+      response.status(403).send("Not authorized.");
       return;
     }
-
-    const userId = String(request.body.userId ?? "").trim();
-    const displayName = String(request.body.displayName ?? "").trim();
-    if (!userId || !displayName) {
-      response.status(400).send("Discord ID and display name are required.");
-      return;
-    }
-
     try {
-      await store.signup(request.params.id, { userId, displayName, group });
-      response.redirect(`/events/${request.params.id}`);
+      const groups = parseGroupAllocation(request.body.groups, event.totalCapacity);
+      await store.updateEventDetails(event.id, { groups });
+      response.redirect(`/events/${event.id}/edit?saved=1`);
     } catch (error) {
-      response.status(400).send(error instanceof Error ? error.message : "Signup failed.");
+      response.status(400).type("html").send(renderPage("Composition update failed", renderWebError(error)));
     }
   });
 
@@ -178,6 +229,10 @@ function renderAccountControls(session?: WebSession, selectedGuildId?: string): 
 
 function renderLoginRequired(): string {
   return `<main class="shell"><section class="builder-head"><div><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p class="summary">Log in and select a server where you have administrator permission.</p><p><a class="invite-button" href="/auth/discord">Log in with Discord</a></p></div></section></main>`;
+}
+
+function renderLoginError(): string {
+  return `<main class="shell"><section class="builder-head"><div><p class="eyebrow">Private dashboard</p><h1>Discord login failed</h1><p class="summary">The OAuth request could not be completed. Check the configured redirect URI and try again.</p><p><a class="invite-button" href="/auth/discord">Try Discord login again</a></p></div></section></main>`;
 }
 
 async function exchangeDiscordCode(code: string): Promise<string> {
@@ -223,6 +278,14 @@ function getSession(request: Request, sessions: Map<string, WebSession>): WebSes
   return session;
 }
 
+function validCsrf(request: Request, session: WebSession): boolean {
+  return typeof request.body.csrfToken === "string" && request.body.csrfToken === session.csrfToken;
+}
+
+function canManageEvent(event: WarEvent, session: WebSession): boolean {
+  return Boolean(event.guildId && session.guilds.some((guild) => guild.id === event.guildId));
+}
+
 function readCookie(request: Request, name: string): string | undefined {
   const entry = request.headers.cookie?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
   return entry ? decodeURIComponent(entry.slice(name.length + 1)) : undefined;
@@ -249,19 +312,29 @@ function renderPage(title: string, body: string): string {
 }
 
 function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string): string {
+  const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
   const cards = events
     .map((event) => {
       const signed = event.signups.filter((signup) => signup.group !== "bench").length;
       const capacity = activeRosterCapacity(event);
-      return `<a class="event-card" href="/events/${event.id}">
+      return `<article class="event-card">
         <span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span>
-        <strong>${escapeHtml(event.title)}</strong>
+        <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(event.title)}</strong></a>
         <small>${event.date} ${escapeHtml(event.time)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
-        <b>${signed}/${capacity} signed</b>
-      </a>`;
+        <div class="card-footer"><b>${signed}/${capacity} signed</b><a href="/events/${event.id}/edit">Edit slots</a></div>
+      </article>`;
     })
     .join("");
+  const serverPicker =
+    session && !selectedGuild
+      ? `<section class="server-picker"><header><p class="eyebrow">Manage server</p><h2>Select a Discord server</h2></header><div class="server-grid">${session.guilds
+          .map(
+            (guild) =>
+              `<a class="server-card" href="/?guild=${encodeURIComponent(guild.id)}"><strong>${escapeHtml(guild.name)}</strong><span>Open roster manager</span></a>`
+          )
+          .join("") || "<p>No servers found where your Discord account has Administrator permission.</p>"}</div></section>`
+      : "";
 
   return `<main class="shell">
     <section class="topbar">
@@ -271,12 +344,14 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       </div>
       <div class="top-actions">
         <p class="summary">A compact operations board for Node War signups, role allocation, and repeat-day planning.</p>
-        ${session && guildId ? `<a class="invite-button secondary-button" href="/create?guild=${encodeURIComponent(guildId)}">Create Raid</a>` : ""}
+        ${session && selectedGuild ? `<a class="invite-button secondary-button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">Create Raid</a>` : ""}
         ${renderInviteButton()}
         ${renderAccountControls(session, guildId)}
       </div>
     </section>
-    <section class="event-grid">${cards || "<p>Server event lists are private. Use Discord commands until account login is configured.</p>"}</section>
+    ${selectedGuild ? `<section class="section-heading"><div><p class="eyebrow">Selected server</p><h2>${escapeHtml(selectedGuild.name)}</h2></div><a href="/">Change server</a></section>` : ""}
+    ${serverPicker}
+    ${selectedGuild ? `<section class="event-grid">${cards || "<p>No events are stored for this server yet.</p>"}</section>` : !session ? "<section class=\"empty-state\"><p>Log in with Discord to manage servers and roster allocations.</p></section>" : ""}
   </main>`;
 }
 
@@ -303,21 +378,21 @@ function botInviteUrl(): string | undefined {
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
-function renderEventDetail(event: WarEvent): string {
+function renderEventDetail(event: WarEvent, canManage: boolean): string {
   const columns = orderedGroups(event)
     .map((group) => {
       const signups = event.signups.filter((signup) => signup.group === group.key);
       return `<section class="roster-column">
         <header>
-          <h2>${renderGroupIcon(group.key)}${escapeHtml(getGroupLabel(group.key))}</h2>
+          <h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2>
           <b>${group.key === "bench" ? signups.length : `${signups.length}/${group.capacity}`}</b>
         </header>
         <div class="signup-list">
           ${signups
             .map(
               (signup, index) => `<div class="signup-row">
+                  <span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span>
                   <span class="slot">${index + 1}</span>
-                  <span class="class-badge">${renderGroupIcon(group.key === "bench" && signup.requestedGroup ? signup.requestedGroup : signup.group)}</span>
                   <span class="name">${escapeHtml(signup.displayName)}</span>
                 </div>`
             )
@@ -327,14 +402,10 @@ function renderEventDetail(event: WarEvent): string {
     })
     .join("");
 
-  const options = orderedGroups(event)
-    .filter((group) => group.key !== "bench")
-    .map((group) => `<option value="${group.key}">${escapeHtml(formatGroupName(group.key))}</option>`)
-    .join("");
   const signed = event.signups.filter((signup) => signup.group !== "bench").length;
 
   return `<main class="shell detail-shell">
-    <nav><a href="/">All events</a></nav>
+    <nav class="page-nav"><a href="/">Dashboard</a>${canManage ? `<a class="invite-button secondary-button" href="/events/${event.id}/edit">Edit composition</a>` : ""}</nav>
     <section class="event-hero">
       <div>
         <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} / ${NODE_WAR_PRESETS[event.tier].territoryGroup}` : event.kind === "siege" ? "Siege" : "Node War"} / ${labelWarDay(event.day)} / ${labelRecurrence(event.recurrence)}</p>
@@ -350,20 +421,11 @@ function renderEventDetail(event: WarEvent): string {
       ${orderedGroups(event)
         .map((group) => {
           const count = event.signups.filter((signup) => signup.group === group.key).length;
-          return `<span><b>${renderGroupIcon(group.key)}${escapeHtml(getGroupLabel(group.key))}</b> ${group.key === "bench" ? count : `${count}/${group.capacity}`}</span>`;
+          return `<span><b>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</b> ${group.key === "bench" ? count : `${count}/${group.capacity}`}</span>`;
         })
         .join("")}
     </section>
     <section class="roster-grid">${columns}</section>
-    <section class="signup-panel">
-      <h2>Manual web signup</h2>
-      <form method="post" action="/events/${event.id}/signup">
-        <label>Discord ID <input name="userId" required placeholder="1234567890"></label>
-        <label>Display name <input name="displayName" required placeholder="FamilyName"></label>
-        <label>Group <select name="group">${options}</select></label>
-        <button type="submit">Sign up</button>
-      </form>
-    </section>
   </main>`;
 }
 
@@ -385,26 +447,32 @@ function orderedGroups(event: WarEvent): WarEvent["groups"] {
   });
 }
 
-function renderGroupIcon(groupKey: GroupKey): string {
-  const url = getGroupEmojiUrl(groupKey);
+function renderSignupIcon(event: WarEvent, groupKey: GroupKey, requestedGroup?: GroupKey): string {
+  const visibleKey = groupKey === "bench" && requestedGroup ? requestedGroup : groupKey;
+  const group = event.groups.find((candidate) => candidate.key === visibleKey);
+  return renderGroupIcon(visibleKey, group?.emoji);
+}
+
+function renderGroupIcon(groupKey: GroupKey, configuredEmoji?: string): string {
+  const url = getGroupEmojiUrl(groupKey, configuredEmoji);
   if (url) {
     return `<img class="role-icon" src="${escapeHtml(url)}" alt="">`;
   }
 
-  return `<span class="role-emoji">${escapeHtml(getGroupEmoji(groupKey))}</span>`;
+  return `<span class="role-emoji">${escapeHtml(getGroupEmoji(groupKey, configuredEmoji))}</span>`;
 }
 
-function renderCreateRaid(guildId: string): string {
+function renderCreateRaid(guildId: string, csrfToken: string): string {
   const templates = [
     { tier: "tier1", name: "T1 Balenos / Serendia", capacity: 30 },
     { tier: "tier2", name: "T2 Calpheon / Ulukita", capacity: 40 },
     { tier: "tier3", name: "T3 Valencia / Edania", capacity: 55 }
   ];
-  const roles = [
-    { key: "mainball", label: "Mainball / FFA", value: 21 },
-    { key: "defense", label: "Defense", value: 5 },
-    { key: "zerker", label: "Zerker", value: 2 },
-    { key: "shai", label: "Shai", value: 2 }
+  const groups: GroupConfig[] = [
+    { key: "mainball", label: getGroupLabel("mainball"), capacity: 21 },
+    { key: "defense", label: getGroupLabel("defense"), capacity: 5 },
+    { key: "zerker", label: getGroupLabel("zerker"), capacity: 2 },
+    { key: "shai", label: getGroupLabel("shai"), capacity: 2 }
   ];
 
   return `<main class="shell create-shell">
@@ -413,82 +481,258 @@ function renderCreateRaid(guildId: string): string {
       <div>
         <p class="eyebrow">Node War template builder</p>
         <h1>Create Raid</h1>
-        <p class="summary">Plan a roster template with linked slots. Publishing stays in Discord until website admin authentication is enabled.</p>
+        <p class="summary">Schedule one Node War roster. The bot publishes it in Discord at the configured announcement time.</p>
       </div>
       <div class="capacity-box"><span>Capacity</span><strong id="capacity-value">30</strong></div>
     </section>
-    <section class="template-grid" aria-label="Node War templates">
-      ${templates.map((template, index) => `<button class="template-button${index === 0 ? " active" : ""}" type="button" data-capacity="${template.capacity}" data-tier="${template.tier}">
-        <span>${escapeHtml(template.name)}</span><b>${template.capacity} slots</b>
-      </button>`).join("")}
+    <form method="post" action="/create" id="allocation-form">
+      <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
+      <input type="hidden" name="guildId" value="${escapeHtml(guildId)}">
+      <input type="hidden" name="tier" id="tier-value" value="tier1">
+      <input type="hidden" name="groups" id="groups-value">
+      <section class="schedule-panel">
+        <label>Node War date <input type="date" name="date" id="event-date" value="${defaultNextDate()}" required></label>
+        <p>The event starts at ${escapeHtml(config.nodeWarStartTime)} ${escapeHtml(config.timezone)}. Its announcement is scheduled for the prior day at ${escapeHtml(config.nodeWarPostTime)}.</p>
+      </section>
+      <section class="template-grid" aria-label="Node War templates">
+        ${templates.map((template, index) => `<button class="template-button${index === 0 ? " active" : ""}" type="button" data-capacity="${template.capacity}" data-tier="${template.tier}">
+          <span>${escapeHtml(template.name)}</span><b>Preset capacity by weekday</b>
+        </button>`).join("")}
+      </section>
+      ${renderAllocationEditor(groups)}
+      <div class="editor-actions"><button type="submit">Schedule Raid</button></div>
+    </form>
+  </main>${renderAllocationScript(true)}`;
+}
+
+function renderEditRaid(event: WarEvent, csrfToken: string): string {
+  return `<main class="shell create-shell">
+    <nav class="page-nav"><a href="/events/${event.id}">Roster</a><a href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Server events</a></nav>
+    <section class="builder-head">
+      <div><p class="eyebrow">Server roster manager</p><h1>Edit composition</h1><p class="summary">${escapeHtml(event.title)}</p></div>
+      <div class="capacity-box"><span>Capacity</span><strong id="capacity-value">${event.totalCapacity}</strong></div>
     </section>
-    <section class="slot-editor">
-      <header>
-        <div><p class="eyebrow">Composition</p><h2>Linked slot allocation</h2></div>
-        <button type="button" id="add-role">Add custom role</button>
-      </header>
-      <div id="role-table" class="role-table">
-        ${roles.map((role) => renderSliderRow(role.key, role.label, role.value, role.key === "mainball")).join("")}
-      </div>
-      <p class="editor-note">Increasing any specialist role automatically reduces Mainball / FFA. Custom role icons accept raw Discord emoji values such as <code>&lt;:shai:123456789&gt;</code>.</p>
-    </section>
-  </main>
-  <script>
+    <form method="post" action="/events/${event.id}/composition" id="allocation-form">
+      <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
+      <input type="hidden" name="groups" id="groups-value">
+      ${renderAllocationEditor(event.groups.filter((group) => group.key !== "bench"))}
+      <div class="editor-actions"><button type="submit">Save composition</button></div>
+    </form>
+  </main>${renderAllocationScript(false)}`;
+}
+
+function renderAllocationEditor(groups: GroupConfig[]): string {
+  return `<section class="slot-editor">
+    <header>
+      <div><p class="eyebrow">Composition</p><h2>Linked slot allocation</h2></div>
+      <button type="button" id="add-role">Add custom role</button>
+    </header>
+    <div id="role-table" class="role-table">${groups.map((group) => renderSliderRow(group)).join("")}</div>
+    <p class="editor-note">Increasing a specialist role reduces Mainball / FFA. Custom roles accept a raw Discord emoji value such as <code>&lt;:name:123456789&gt;</code>.</p>
+  </section>`;
+}
+
+function renderSliderRow(group: GroupConfig): string {
+  const custom = !["mainball", "defense", "zerker", "shai"].includes(group.key);
+  return `<div class="role-row${custom ? " custom-role" : ""}" data-key="${escapeHtml(group.key)}" data-label="${escapeHtml(group.label)}" data-emoji="${escapeHtml(group.emoji ?? "")}">
+    <div class="role-name">${renderGroupIcon(group.key, group.emoji)}${
+      custom
+        ? `<input class="role-label-input" aria-label="Custom role name" value="${escapeHtml(group.label)}"><input class="role-emoji-input" aria-label="Custom Discord emoji" value="${escapeHtml(group.emoji ?? "")}" placeholder="&lt;:name:id&gt;"><button class="remove-role" type="button" aria-label="Remove custom role">Remove</button>`
+        : `<strong>${escapeHtml(group.label)}</strong>`
+    }</div>
+    <input aria-label="${escapeHtml(group.label)} slots" type="range" min="0" max="100" value="${group.capacity}"${group.key === "mainball" ? " disabled" : ""}>
+    <output>${group.capacity}</output>
+  </div>`;
+}
+
+function renderAllocationScript(useTemplates: boolean): string {
+  return `<script>
     (() => {
+      const form = document.querySelector("#allocation-form");
       const table = document.querySelector("#role-table");
       const capacityLabel = document.querySelector("#capacity-value");
-      let capacity = 30;
+      const groupsValue = document.querySelector("#groups-value");
+      const dateInput = document.querySelector("#event-date");
+      const tierInput = document.querySelector("#tier-value");
+      const presets = ${JSON.stringify(Object.fromEntries(Object.entries(NODE_WAR_PRESETS).map(([tier, preset]) => [tier, preset.maxParticipantsByDay])))};
+      const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      let capacity = Number(capacityLabel.textContent);
+      const rows = () => [...table.querySelectorAll(".role-row")];
+      const specialists = () => rows().filter((row) => row.dataset.key !== "mainball");
+      const serialize = () => {
+        groupsValue.value = JSON.stringify(rows().map((row) => ({
+          key: row.dataset.key,
+          label: row.querySelector(".role-label-input")?.value || row.dataset.label,
+          emoji: row.querySelector(".role-emoji-input")?.value || row.dataset.emoji || undefined,
+          capacity: Number(row.querySelector('input[type="range"]').value)
+        })));
+      };
       const rebalance = () => {
-        const main = table.querySelector('[data-key="mainball"] input[type="range"]');
-        const specialists = [...table.querySelectorAll('.role-row:not([data-key="mainball"]) input[type="range"]')];
-        specialists.forEach((input) => input.max = String(capacity));
-        const used = specialists.reduce((sum, input) => sum + Number(input.value), 0);
-        main.max = String(capacity);
-        main.value = String(Math.max(0, capacity - used));
-        table.querySelector('[data-key="mainball"] output').value = main.value;
+        const main = table.querySelector('[data-key="mainball"]');
+        const mainSlider = main.querySelector('input[type="range"]');
+        specialists().forEach((row) => row.querySelector('input[type="range"]').max = String(capacity));
+        const used = specialists().reduce((sum, row) => sum + Number(row.querySelector('input[type="range"]').value), 0);
+        mainSlider.max = String(capacity);
+        mainSlider.value = String(Math.max(0, capacity - used));
+        main.querySelector("output").value = mainSlider.value;
+        capacityLabel.textContent = String(capacity);
+        serialize();
       };
       const bind = (row) => {
         const slider = row.querySelector('input[type="range"]');
-        const output = row.querySelector("output");
         slider.addEventListener("input", () => {
-          if (row.dataset.key !== "mainball") {
-            const others = [...table.querySelectorAll('.role-row:not([data-key="mainball"]) input[type="range"]')]
-              .filter((input) => input !== slider)
-              .reduce((sum, input) => sum + Number(input.value), 0);
-            slider.value = String(Math.min(Number(slider.value), Math.max(0, capacity - others)));
-          }
-          output.value = slider.value;
-          if (row.dataset.key !== "mainball") rebalance();
+          const others = specialists().filter((candidate) => candidate !== row)
+            .reduce((sum, candidate) => sum + Number(candidate.querySelector('input[type="range"]').value), 0);
+          slider.value = String(Math.min(Number(slider.value), Math.max(0, capacity - others)));
+          row.querySelector("output").value = slider.value;
+          rebalance();
         });
+        row.querySelectorAll("input[type=text], .role-label-input, .role-emoji-input").forEach((input) => input.addEventListener("input", serialize));
+        row.querySelector(".remove-role")?.addEventListener("click", () => { row.remove(); rebalance(); });
       };
-      table.querySelectorAll(".role-row").forEach(bind);
+      rows().forEach(bind);
+      document.querySelector("#add-role").addEventListener("click", () => {
+        const key = "custom-" + Date.now().toString(36);
+        const row = document.createElement("div");
+        row.className = "role-row custom-role";
+        row.dataset.key = key;
+        row.dataset.label = "Custom role";
+        row.innerHTML = '<div class="role-name"><span class="role-emoji">+</span><input class="role-label-input" aria-label="Custom role name" value="Custom role"><input class="role-emoji-input" aria-label="Custom Discord emoji" placeholder="&lt;:name:id&gt;"><button class="remove-role" type="button" aria-label="Remove custom role">Remove</button></div><input aria-label="Custom role slots" type="range" min="0" max="' + capacity + '" value="0"><output>0</output>';
+        table.append(row);
+        bind(row);
+        serialize();
+      });
+      ${useTemplates ? `const syncTemplateCapacity = () => {
+        if (!dateInput?.value || !tierInput?.value) return;
+        const day = days[new Date(dateInput.value + "T12:00:00Z").getUTCDay()];
+        capacity = Number(presets[tierInput.value][day]);
+        rebalance();
+      };
       document.querySelectorAll(".template-button").forEach((button) => button.addEventListener("click", () => {
         document.querySelectorAll(".template-button").forEach((candidate) => candidate.classList.remove("active"));
         button.classList.add("active");
-        capacity = Number(button.dataset.capacity);
-        capacityLabel.textContent = String(capacity);
-        rebalance();
+        tierInput.value = button.dataset.tier;
+        syncTemplateCapacity();
       }));
-      document.querySelector("#add-role").addEventListener("click", () => {
-        const index = table.querySelectorAll(".custom-role").length + 1;
-        const row = document.createElement("div");
-        row.className = "role-row custom-role";
-        row.dataset.key = "custom-" + index;
-        row.innerHTML = '<div class="role-name"><span class="role-emoji">+</span><input aria-label="Custom role name" value="Custom role ' + index + '"><input aria-label="Custom Discord emoji" placeholder="<:name:id>"></div><input aria-label="Custom role slots" type="range" min="0" max="30" value="0"><output>0</output>';
-        table.append(row);
-        bind(row);
-      });
+      dateInput.addEventListener("change", syncTemplateCapacity);
+      syncTemplateCapacity();` : ""}
+      form.addEventListener("submit", serialize);
       rebalance();
     })();
   </script>`;
 }
 
-function renderSliderRow(key: GroupKey, label: string, value: number, readonly: boolean): string {
-  return `<div class="role-row" data-key="${escapeHtml(key)}">
-    <div class="role-name">${renderGroupIcon(key)}<strong>${escapeHtml(label)}</strong></div>
-    <input aria-label="${escapeHtml(label)} slots" type="range" min="0" max="30" value="${value}"${readonly ? " disabled" : ""}>
-    <output>${value}</output>
-  </div>`;
+function parseGroupAllocation(raw: unknown, totalCapacity: number): GroupConfig[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(raw ?? ""));
+  } catch {
+    throw new Error("Role allocation is invalid.");
+  }
+  if (!Array.isArray(parsed) || parsed.length > 12) {
+    throw new Error("Role allocation must contain at most 12 roles.");
+  }
+
+  const coreLabels: Record<string, string> = {
+    defense: getGroupLabel("defense"),
+    zerker: getGroupLabel("zerker"),
+    shai: getGroupLabel("shai")
+  };
+  const groups: GroupConfig[] = [];
+  const keys = new Set<string>();
+  for (const value of parsed) {
+    if (!value || typeof value !== "object") {
+      throw new Error("Role allocation contains an invalid role.");
+    }
+    const candidate = value as Record<string, unknown>;
+    const key = String(candidate.key ?? "").trim().toLowerCase();
+    if (key === "mainball" || key === "bench") {
+      continue;
+    }
+    if (!/^[a-z0-9-]{1,32}$/.test(key) || keys.has(key)) {
+      throw new Error("Custom role keys must be unique letters, numbers, or dashes.");
+    }
+    const capacity = Number(candidate.capacity);
+    if (!Number.isInteger(capacity) || capacity < 0 || capacity > totalCapacity) {
+      throw new Error("Role capacity is outside the allowed roster size.");
+    }
+    const label = (coreLabels[key] ?? String(candidate.label ?? "")).trim();
+    if (!label || label.length > 32) {
+      throw new Error("Role labels must be between 1 and 32 characters.");
+    }
+    const emoji = String(candidate.emoji ?? "").trim();
+    if (emoji && !validRoleEmoji(emoji)) {
+      throw new Error("Role emoji must be a Discord custom emoji value or a short Unicode emoji.");
+    }
+    keys.add(key);
+    groups.push({ key, label, capacity, editable: true, ...(emoji ? { emoji } : {}) });
+  }
+
+  for (const key of ["defense", "zerker", "shai"]) {
+    if (!keys.has(key)) {
+      groups.push({ key, label: coreLabels[key], capacity: 0, editable: true });
+    }
+  }
+  const specialistTotal = groups.reduce((sum, group) => sum + group.capacity, 0);
+  if (specialistTotal > totalCapacity) {
+    throw new Error("Specialist slots cannot exceed the total roster capacity.");
+  }
+  return [
+    { key: "mainball", label: getGroupLabel("mainball"), capacity: totalCapacity - specialistTotal, editable: true },
+    ...groups,
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
+  ];
+}
+
+function validRoleEmoji(emoji: string): boolean {
+  if (/^<a?:[A-Za-z0-9_]{2,32}:\d{5,25}>$/.test(emoji)) {
+    return true;
+  }
+  return !emoji.includes("@") && !emoji.includes("<") && !emoji.includes(">") && !/[\r\n]/.test(emoji) && [...emoji].length <= 12;
+}
+
+function parseTier(value: unknown): NodeWarTier {
+  if (value === "tier1" || value === "tier2" || value === "tier3") {
+    return value;
+  }
+  throw new Error("Select a valid Node War template.");
+}
+
+function parseDate(value: unknown): string {
+  const date = String(value ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T12:00:00Z`).getTime())) {
+    throw new Error("Select a valid Node War date.");
+  }
+  return date;
+}
+
+function warDayForDate(date: string): WarDay {
+  const days: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  return days[new Date(`${date}T12:00:00Z`).getUTCDay()];
+}
+
+function previousDate(date: string): string {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function defaultNextDate(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: config.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const value = new Date(`${values.year}-${values.month}-${values.day}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function renderWebError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "The request could not be completed.";
+  return `<main class="shell"><section class="builder-head"><div><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p class="summary">${escapeHtml(message)}</p><p><a class="invite-button secondary-button" href="/">Return to dashboard</a></p></div></section></main>`;
 }
 
 function escapeHtml(value: string): string {

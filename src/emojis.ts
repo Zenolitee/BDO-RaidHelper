@@ -49,7 +49,11 @@ const GROUP_BADGES: Record<string, string> = {
   shotcaller: "CALL"
 };
 
-export function getGroupEmoji(groupKey: GroupKey): string {
+export function getGroupEmoji(groupKey: GroupKey, configuredEmoji?: string): string {
+  if (configuredEmoji?.trim()) {
+    return configuredEmoji.trim();
+  }
+
   const key = normalizeGroupKey(groupKey);
   return readEmojiEnv(key) ?? DEFAULT_EMOJIS[key] ?? "•";
 }
@@ -67,8 +71,8 @@ export function formatGroupBadge(groupKey: GroupKey): string {
   return `${getGroupEmoji(groupKey)} ${GROUP_BADGES[normalizeGroupKey(groupKey)] ?? getGroupLabel(groupKey)}`;
 }
 
-export function getGroupEmojiUrl(groupKey: GroupKey): string | undefined {
-  return discordEmojiUrl(getGroupEmoji(groupKey));
+export function getGroupEmojiUrl(groupKey: GroupKey, configuredEmoji?: string): string | undefined {
+  return discordEmojiUrl(getGroupEmoji(groupKey, configuredEmoji));
 }
 
 export function getSummaryEmoji(key: SummaryEmojiKey): string {

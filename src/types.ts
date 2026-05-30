@@ -24,6 +24,7 @@ export interface GroupConfig {
   label: string;
   capacity: number;
   editable?: boolean;
+  emoji?: string;
 }
 
 export interface Signup {

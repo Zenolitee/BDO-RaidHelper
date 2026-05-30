@@ -185,6 +185,31 @@ h2 {
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
+.event-title {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.event-title:hover {
+  color: var(--accent);
+}
+
+.card-footer,
+.page-nav,
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-footer a,
+.page-nav a,
+.section-heading a {
+  color: var(--accent-2);
+  font-size: 0.82rem;
+}
+
 .event-card:hover {
   transform: translateY(-2px);
   border-color: rgba(240, 184, 79, 0.75);
@@ -234,7 +259,8 @@ h2 {
   background: linear-gradient(90deg, var(--green), var(--accent));
 }
 
-.detail-shell nav {
+.detail-shell nav,
+.create-shell nav {
   margin-bottom: 20px;
 }
 
@@ -319,12 +345,11 @@ h2 {
   gap: 6px;
 }
 
-.create-shell nav {
-  margin-bottom: 20px;
-}
-
 .builder-head,
-.slot-editor {
+.slot-editor,
+.schedule-panel,
+.server-picker,
+.empty-state {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--board);
@@ -358,6 +383,50 @@ h2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 14px 0;
+}
+
+.schedule-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.schedule-panel p,
+.empty-state,
+.server-card span {
+  color: var(--muted);
+}
+
+.section-heading {
+  margin-top: 26px;
+}
+
+.server-picker,
+.empty-state {
+  margin-top: 26px;
+}
+
+.server-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.server-card {
+  display: grid;
+  gap: 6px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  text-decoration: none;
+}
+
+.server-card:hover {
+  border-color: var(--accent);
 }
 
 .template-button {
@@ -418,7 +487,21 @@ h2 {
 
 .custom-role .role-name {
   display: grid;
-  grid-template-columns: 20px minmax(110px, 1fr) minmax(140px, 1fr);
+  grid-template-columns: 20px minmax(110px, 1fr) minmax(140px, 1fr) auto;
+}
+
+.remove-role {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 0.45rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 output {
@@ -444,7 +527,7 @@ output {
 
 .signup-row {
   display: grid;
-  grid-template-columns: 2ch 3ch minmax(0, 1fr) auto;
+  grid-template-columns: 3ch 2ch minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   padding: 5px 6px;
@@ -549,6 +632,10 @@ select {
   .template-grid {
     grid-template-columns: 1fr;
   }
+
+  .schedule-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -584,5 +671,14 @@ select {
 
   .role-row input[type="range"] {
     grid-column: 1;
+  }
+
+  .custom-role .role-name {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .custom-role .role-name input,
+  .custom-role .role-name button {
+    grid-column: 2;
   }
 }

@@ -15,7 +15,7 @@ A Discord bot and web roster page for Black Desert Online Node War and Siege pla
 - `/event delete` deletes an event.
 - `/event repost` reposts an event immediately to the configured or selected roster channel.
 - The web page shows events as Mainball/FFA, Defense, Zerker, Shai, and Bench columns.
-- The web page also supports manual signup by Discord ID/name until OAuth is added.
+- The web dashboard supports Discord OAuth login, administrator server selection, one-time raid creation, and linked roster allocation sliders.
 
 ## Setup
 
@@ -83,7 +83,7 @@ Use the Discord Developer Portal: https://discord.com/developers/applications
 - `DISCORD_CLIENT_SECRET`: OAuth2 client secret used by the private web dashboard.
 - `DISCORD_REDIRECT_URI`: OAuth2 callback URL. Add the same URL in the Discord Developer Portal. Defaults to `http://localhost:3000/auth/discord/callback`.
 
-For the private web dashboard, open the Discord Developer Portal OAuth2 settings, add the redirect URI, and set `DISCORD_CLIENT_SECRET`. The dashboard requests `identify guilds`, shows administrator servers after login, and filters event lists by the selected server.
+For the private web dashboard, open the Discord Developer Portal OAuth2 settings, add the redirect URI, and set `DISCORD_CLIENT_SECRET`. The dashboard requests `identify guilds`, shows administrator servers after login, and filters event lists by the selected server. Open an event and select `Edit composition` to rebalance slots. Increasing Defense, Zerker, Shai, or a custom role automatically reduces Mainball/FFA. Custom roles can store a raw Discord emoji value such as `<:name:123456789>`.
 - `NODEWAR_POST_TIME`: Daily auto-post time in `HH:mm`. Default is `22:15`, calculated in `TIMEZONE`.
 - `NODEWAR_START_TIME`: Node War start time in `HH:mm`. Default is `21:00`.
 - `NODEWAR_CHANNEL_ID`: Channel where the scheduler and `/event repost` publish roster posts.

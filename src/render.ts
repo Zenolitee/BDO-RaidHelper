@@ -79,8 +79,12 @@ function renderRosterFields(event: WarEvent): Array<{ name: string; value: strin
     const visible = signups.slice(0, 18);
     const more = signups.length - visible.length;
     const names = visible.map((signup, index) => {
-      const requestedEmoji = group.key === "bench" && signup.requestedGroup ? `${getGroupEmoji(signup.requestedGroup)} ` : "";
-      return `\`${index + 1}\` ${requestedEmoji}**${truncate(signup.displayName, 32)}**`;
+      const requestedGroup = event.groups.find((candidate) => candidate.key === signup.requestedGroup);
+      const signupEmoji =
+        group.key === "bench" && signup.requestedGroup
+          ? getGroupEmoji(signup.requestedGroup, requestedGroup?.emoji)
+          : getGroupEmoji(group.key, group.emoji);
+      return `${signupEmoji} \`${index + 1}\` **${truncate(signup.displayName, 32)}**`;
     });
     if (more > 0) {
       names.push(`+${more} more`);
@@ -96,8 +100,8 @@ function renderRosterFields(event: WarEvent): Array<{ name: string; value: strin
 
 function renderGroupTitle(event: WarEvent, group: WarEvent["groups"][number]): string {
   const count = groupSignupCount(event, group.key);
-  const label = getGroupLabel(group.key);
-  const emoji = getGroupEmoji(group.key);
+  const label = group.label;
+  const emoji = getGroupEmoji(group.key, group.emoji);
   const countText = group.key === "bench" ? String(count) : `${count}/${group.capacity}`;
   return `${emoji} ${label} - (${countText})`;
 }

@@ -160,6 +160,7 @@ export class EventStore {
         existing.label = group.label;
         existing.capacity = group.capacity;
         existing.editable = true;
+        existing.emoji = group.emoji;
       } else {
         event.groups.push({ ...group, editable: true });
       }
@@ -508,7 +509,13 @@ function validateEvent(event: WarEvent): void {
   }
 
   for (const group of event.groups) {
-    if (!group || typeof group.key !== "string" || typeof group.label !== "string" || !Number.isInteger(group.capacity)) {
+    if (
+      !group ||
+      typeof group.key !== "string" ||
+      typeof group.label !== "string" ||
+      !Number.isInteger(group.capacity) ||
+      (group.emoji !== undefined && typeof group.emoji !== "string")
+    ) {
       throw new Error("Invalid event store JSON: group entries are invalid.");
     }
   }
