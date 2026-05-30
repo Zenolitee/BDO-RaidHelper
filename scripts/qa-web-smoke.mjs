@@ -117,6 +117,8 @@ try {
     signups: event.signups.map((signup) => ({ ...signup }))
   });
   await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Fresh roster");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "T1 Balenos/Serendia War [qa-weekly]");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Discord post forecast");
   await rollCompletedWeeklyEvents(
     { channels: { fetch: async () => undefined } },
     store,

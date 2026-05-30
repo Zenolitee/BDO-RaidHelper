@@ -40,6 +40,15 @@ interface GuildDeliveryOptions {
   roles: DiscordGuildRole[];
 }
 
+interface UpcomingAnnouncement {
+  date: string;
+  announcementDate: string;
+  announcementTime: string;
+  day: WarDay;
+  title: string;
+  totalCapacity: number;
+}
+
 interface WebAppOptions {
   onEventUpdated?: (event: WarEvent) => Promise<void>;
 }
@@ -210,7 +219,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
 
     const canManage = Boolean(event.guildId && session?.guilds.some((guild) => guild.id === event.guildId));
-    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage, session)));
+    const deliveryOptions = event.guildId ? await fetchGuildDeliveryOptions(event.guildId).catch(() => undefined) : undefined;
+    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage, session, deliveryOptions)));
   });
 
   app.get("/events/:id/edit", async (request, response) => {
@@ -448,8 +458,10 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       const capacity = activeRosterCapacity(event);
       return `<article class="event-card group relative overflow-hidden">
         <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span>${labelRecurrence(event.recurrence)}</span></div>
-        <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(event.title)}</strong></a>
-        <small>${formatDateLabel(event.date)} | War starts ${formatTimeLabel(event.time)}</small>
+        <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(scheduleTitle(event))}</strong></a>
+        <small>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</small>
+        <small>Next post ${formatAnnouncementLabel(event)}</small>
+        <small>War starts ${formatTimeLabel(event.time)} ${escapeHtml(config.timezone)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
         <div class="card-footer"><b>${signed}/${capacity} signed</b><a href="/events/${event.id}/edit">Manage</a></div>
       </article>`;
@@ -516,25 +528,61 @@ function botInviteUrl(): string | undefined {
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
-function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSession): string {
+function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSession, deliveryOptions?: GuildDeliveryOptions): string {
   const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+  const guild = session?.guilds.find((candidate) => candidate.id === event.guildId);
 
   return `${renderNav(session, event.guildId)}<main class="shell detail-shell">
     <section class="event-summary">
       <div>
-        <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} | ${NODE_WAR_PRESETS[event.tier].territoryGroup}` : event.kind === "siege" ? "Siege" : "Node War"}</p>
-        <h1>${escapeHtml(event.title)}</h1>
-        <div class="summary-meta"><span>${formatDateLabel(event.date)}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span></div>
+        <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} schedule` : event.kind === "siege" ? "Siege schedule" : "Node War schedule"}</p>
+        <h1>${escapeHtml(scheduleTitle(event))}</h1>
+        <div class="summary-meta"><span>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span></div>
       </div>
       <div class="hero-count">
         <strong>${signed}/${activeRosterCapacity(event)}</strong>
-        <span>signed</span>
+        <span>current roster signed</span>
       </div>
     </section>
     <div class="detail-actions"><a class="button button-secondary" href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Dashboard</a>${canManage ? `<a class="button" href="/events/${event.id}/edit">Edit raid</a>` : ""}</div>
+    ${renderDeliverySummary(event, guild, deliveryOptions)}
+    ${renderUpcomingAnnouncements(event)}
     ${renderDayRail(event)}
+    <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatTimeLabel(event.time)}</span></section>
     <section class="roster-grid">${renderRosterColumns(event)}</section>
   </main>`;
+}
+
+function renderDeliverySummary(event: WarEvent, guild?: DiscordGuild, options?: GuildDeliveryOptions): string {
+  const channelId = event.announcementChannelId ?? event.channelId;
+  const channel = options?.channels.find((candidate) => candidate.id === channelId);
+  const roleIds = event.announcementRoleIds?.length ? event.announcementRoleIds : event.announcementRoleId ? [event.announcementRoleId] : [];
+  const roles = roleIds.map((id) => options?.roles.find((candidate) => candidate.id === id)?.name ?? id);
+  return `<section class="delivery-summary">
+    <div><p class="eyebrow">Discord delivery</p><h2>Announcement route</h2></div>
+    <dl>
+      <div><dt>Server</dt><dd>${escapeHtml(guild?.name ?? event.guildId ?? "Not assigned")}</dd></div>
+      <div><dt>Channel</dt><dd>${escapeHtml(channel ? `#${channel.name}` : channelId ?? "Not assigned")}</dd></div>
+      <div><dt>Ping roles</dt><dd>${roles.length ? roles.map((role) => `@${escapeHtml(role)}`).join(", ") : "No role ping"}</dd></div>
+      <div><dt>Post time</dt><dd>${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)} ${escapeHtml(config.timezone)}</dd></div>
+    </dl>
+  </section>`;
+}
+
+function renderUpcomingAnnouncements(event: WarEvent): string {
+  const upcoming = getUpcomingAnnouncements(event, 5);
+  return `<section class="preview-section">
+    <div class="section-title"><div><p class="eyebrow">Upcoming announcements</p><h2>Discord post forecast</h2></div><span>Next ${upcoming.length} scheduled posts</span></div>
+    <div class="preview-rail">${upcoming
+      .map(
+        (announcement, index) => `<article class="preview-card${index === 0 ? " preview-card-next" : ""}">
+          <div class="preview-top"><span>${index === 0 ? "Next post" : labelWarDay(announcement.day)}</span><time data-countdown="${announcementTimestamp(announcement)}">${formatAnnouncementDateTime(announcement)}</time></div>
+          <h3>${escapeHtml(announcement.title)}</h3>
+          <dl><div><dt>War date</dt><dd>${formatDateLabel(announcement.date)}</dd></div><div><dt>Capacity</dt><dd>${announcement.totalCapacity} players</dd></div><div><dt>Announces</dt><dd>${formatAnnouncementDateTime(announcement)}</dd></div></dl>
+        </article>`
+      )
+      .join("") || "<p class=\"empty\">No upcoming announcement is scheduled.</p>"}</div>
+  </section>${renderCountdownScript()}`;
 }
 
 function renderDayRail(event: WarEvent): string {
@@ -946,6 +994,97 @@ function formatTimeLabel(time: string): string {
     return time;
   }
   return `${hour % 12 || 12}:${minuteValue.padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
+}
+
+function scheduleTitle(event: WarEvent): string {
+  if (!event.tier) {
+    return `${event.kind === "siege" ? "Siege" : "Node War"} [${event.id}]`;
+  }
+  const tier = event.tier === "tier1" ? "T1" : event.tier === "tier2" ? "T2" : "T3";
+  return `${tier} ${NODE_WAR_PRESETS[event.tier].territoryGroup} War [${event.id}]`;
+}
+
+function formatAnnouncementLabel(event: WarEvent): string {
+  const next = getUpcomingAnnouncements(event, 1)[0];
+  if (next) {
+    return formatAnnouncementDateTime(next);
+  }
+  return event.announcedAt ? "Already posted" : "Not queued";
+}
+
+function getUpcomingAnnouncements(event: WarEvent, limit: number): UpcomingAnnouncement[] {
+  const announcementTime = event.announcementTime ?? config.nodeWarPostTime;
+  if (event.recurrence !== "weekly") {
+    const announcement = {
+      date: event.date,
+      announcementDate: event.announcementDate ?? previousDate(event.date),
+      announcementTime,
+      day: event.day ?? warDayForDate(event.date),
+      title: event.title,
+      totalCapacity: event.totalCapacity
+    };
+    return !event.announcedAt && announcementTimestamp(announcement) > Date.now() ? [announcement] : [];
+  }
+
+  const days = event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
+  const start = new Date(`${currentDateInTimezone()}T12:00:00Z`);
+  const announcements: UpcomingAnnouncement[] = [];
+  for (let offset = 0; announcements.length < limit && offset < 28; offset += 1) {
+    const warDate = new Date(start);
+    warDate.setUTCDate(start.getUTCDate() + offset);
+    const date = warDate.toISOString().slice(0, 10);
+    const day = warDayForDate(date);
+    if (!days.includes(day)) {
+      continue;
+    }
+    const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, day) : event.totalCapacity;
+    const announcement: UpcomingAnnouncement = {
+      date,
+      announcementDate: previousDate(date),
+      announcementTime,
+      day,
+      title: event.tier ? buildNodeWarTitle(day, event.tier, totalCapacity) : event.title,
+      totalCapacity
+    };
+    if (announcementTimestamp(announcement) > Date.now()) {
+      announcements.push(announcement);
+    }
+  }
+  return announcements;
+}
+
+function formatAnnouncementDateTime(announcement: Pick<UpcomingAnnouncement, "announcementDate" | "announcementTime">): string {
+  return `${formatDateLabel(announcement.announcementDate)} ${formatTimeLabel(announcement.announcementTime)}`;
+}
+
+function announcementTimestamp(announcement: Pick<UpcomingAnnouncement, "announcementDate" | "announcementTime">): number {
+  return new Date(`${announcement.announcementDate}T${announcement.announcementTime}:00+08:00`).getTime();
+}
+
+function currentDateInTimezone(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: config.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function renderCountdownScript(): string {
+  return `<script>
+    (() => {
+      const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+      const update = () => document.querySelectorAll("[data-countdown]").forEach((node) => {
+        const remaining = Number(node.dataset.countdown) - Date.now();
+        const units = Math.abs(remaining) >= 86400000 ? ["day", 86400000] : Math.abs(remaining) >= 3600000 ? ["hour", 3600000] : ["minute", 60000];
+        node.textContent = formatter.format(Math.round(remaining / units[1]), units[0]);
+      });
+      update();
+      window.setInterval(update, 60000);
+    })();
+  </script>`;
 }
 
 function previousDate(date: string): string {

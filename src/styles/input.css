@@ -1201,6 +1201,109 @@ h1 {
   margin-top: 14px;
 }
 
+.delivery-summary {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.7fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(23, 26, 33, 0.9);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.1);
+}
+
+.delivery-summary dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.delivery-summary dl div,
+.preview-card dl div {
+  display: grid;
+  gap: 3px;
+}
+
+.delivery-summary dt,
+.preview-card dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.delivery-summary dd,
+.preview-card dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-section {
+  margin-top: 20px;
+}
+
+.preview-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.preview-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(23, 26, 33, 0.76);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.1);
+}
+
+.preview-card-next {
+  border-color: rgba(242, 184, 75, 0.74);
+  background: rgba(242, 184, 75, 0.08);
+}
+
+.preview-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.preview-top time {
+  color: var(--muted);
+  text-align: right;
+}
+
+.preview-card h3 {
+  min-height: 3.2em;
+  margin: 10px 0 12px;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.preview-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.roster-title {
+  margin-top: 22px;
+  margin-bottom: 0;
+}
+
 .roster-column {
   min-height: 190px;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.13);
@@ -1287,6 +1390,10 @@ h1 {
     margin: 0 auto;
     padding-bottom: 82px;
   }
+
+  .preview-rail {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
 }
 
 @media (max-width: 680px) {
@@ -1304,6 +1411,27 @@ h1 {
     padding: 12px 0 0;
     border-top: 1px solid var(--line);
     border-left: 0;
+  }
+
+  .delivery-summary {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .delivery-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .preview-rail {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 5px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .preview-card {
+    min-width: min(78vw, 250px);
+    scroll-snap-align: start;
   }
 
   .app-nav {
