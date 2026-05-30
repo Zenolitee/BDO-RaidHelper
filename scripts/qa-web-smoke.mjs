@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { refreshEventMessage } from "../dist/bot.js";
 import { getGroupEmoji } from "../dist/emojis.js";
 import { renderEventEmbed } from "../dist/render.js";
 import { EventStore } from "../dist/store.js";
@@ -63,6 +64,27 @@ try {
   const mainball = embed.fields?.find((field) => field.name.includes("Mainball"));
   if (!mainball?.value.includes(`${getGroupEmoji("mainball")} \`1\` **Zen**`)) {
     throw new Error("Discord roster row did not render the selected role icon before the boxed number.");
+  }
+
+  let editedPayload;
+  await refreshEventMessage(
+    {
+      channels: {
+        fetch: async () => ({
+          messages: {
+            fetch: async () => ({
+              edit: async (payload) => {
+                editedPayload = payload;
+              }
+            })
+          }
+        })
+      }
+    },
+    { ...event, channelId: "qa-channel", messageId: "qa-message" }
+  );
+  if (!editedPayload?.embeds?.[0]?.toJSON().fields?.some((field) => field.value.includes("Zen"))) {
+    throw new Error("Refreshing a posted event did not edit the existing Discord message with preserved signups.");
   }
 
   await store.updateEventDetails(event.id, {

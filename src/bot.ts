@@ -1599,7 +1599,7 @@ function getAnnouncementRoleIds(event: WarEvent): string[] {
   return roleId ? [roleId] : [];
 }
 
-async function refreshEventMessage(client: Client, event: WarEvent): Promise<void> {
+export async function refreshEventMessage(client: Client, event: WarEvent): Promise<void> {
   if (!event.channelId || !event.messageId) {
     return;
   }

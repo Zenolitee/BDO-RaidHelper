@@ -39,6 +39,10 @@ interface GuildDeliveryOptions {
   roles: DiscordGuildRole[];
 }
 
+interface WebAppOptions {
+  onEventUpdated?: (event: WarEvent) => Promise<void>;
+}
+
 interface WebSession {
   user: UserProfile;
   guilds: DiscordGuild[];
@@ -48,7 +52,7 @@ interface WebSession {
 
 const WEB_WAR_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
-export function createWebApp(store: EventStore) {
+export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   const app = express();
   const oauthStates = new Map<string, number>();
   const sessions = new Map<string, WebSession>();
@@ -231,7 +235,7 @@ export function createWebApp(store: EventStore) {
         announcementTime !== event.announcementTime ||
         recurrence !== event.recurrence ||
         repeatDaysChanged;
-      await store.updateEventDetails(event.id, {
+      const updated = await store.updateEventDetails(event.id, {
         groups,
         title: event.tier ? buildNodeWarTitle(repeatDays[0], event.tier, event.totalCapacity) : event.title,
         recurrence,
@@ -242,6 +246,7 @@ export function createWebApp(store: EventStore) {
         announcementTime,
         ...(scheduleChanged ? { announcedAt: undefined, closed: false } : {})
       });
+      await refreshPostedEvent(options, updated);
       response.redirect(`/events/${event.id}/edit?saved=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Composition update failed", renderWebError(error)));
@@ -263,6 +268,17 @@ export function createWebApp(store: EventStore) {
   });
 
   return app;
+}
+
+async function refreshPostedEvent(options: WebAppOptions, event: WarEvent): Promise<void> {
+  if (!event.channelId || !event.messageId || !options.onEventUpdated) {
+    return;
+  }
+  try {
+    await options.onEventUpdated(event);
+  } catch (error) {
+    console.warn(`Could not refresh posted event ${event.id} after web update:`, error);
+  }
 }
 
 function renderAccountControls(session?: WebSession, selectedGuildId?: string): string {
