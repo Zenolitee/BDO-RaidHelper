@@ -7,6 +7,7 @@ import { getGroupEmoji, getGroupEmojiUrl, getGroupLabel } from "./emojis.js";
 import { buildNodeWarTitle, getNodeWarCapacity, labelTier, labelWarDay, NODE_WAR_PRESETS } from "./nodewar-presets.js";
 import { activeRosterCapacity, type EventStore } from "./store.js";
 import { type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
+import { createWebSessionStore, type WebSessionStore } from "./web-session-store.js";
 
 interface UserProfile {
   id: string;
@@ -65,14 +66,22 @@ const WEB_WAR_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thu
 export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   const app = express();
   const oauthStates = new Map<string, number>();
-  const sessions = new Map<string, WebSession>();
+  const sessions = createWebSessionStore(config.supabaseUrl, config.supabaseServiceRoleKey, validateWebSession);
 
+  app.disable("x-powered-by");
+  app.use(setSecurityHeaders);
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use("/assets", express.static("src/public"));
+  app.use((_request, response, next) => {
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Pragma", "no-cache");
+    response.setHeader("Expires", "0");
+    next();
+  });
 
   app.get("/", async (request, response) => {
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     const events = guild ? (await store.listEvents()).filter((event) => event.guildId === guild.id) : [];
@@ -83,6 +92,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     if (!config.discordClientId || !config.discordClientSecret) {
       response.status(503).send("Discord login is not configured.");
       return;
+    }
+    for (const [key, expiresAt] of oauthStates) {
+      if (expiresAt < Date.now()) oauthStates.delete(key);
     }
     const state = randomBytes(24).toString("hex");
     oauthStates.set(state, Date.now() + 10 * 60_000);
@@ -114,12 +126,12 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       ]);
       const botGuildIds = await fetchBotGuildIds();
       const sessionId = randomBytes(32).toString("hex");
-      sessions.set(sessionId, {
+      await sessions.set(sessionId, {
         user,
         guilds: guilds.filter((guild) => hasAdministratorPermission(guild.permissions) && botGuildIds.has(guild.id)),
         csrfToken: randomBytes(24).toString("hex"),
         expiresAt: Date.now() + 24 * 60 * 60_000
-      });
+      }, Date.now() + 24 * 60 * 60_000);
       response.setHeader("Set-Cookie", sessionCookie(sessionId));
       response.redirect("/");
     } catch {
@@ -127,15 +139,15 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
   });
 
-  app.get("/logout", (request, response) => {
-    const sessionId = readCookie(request, "nw_session");
-    if (sessionId) sessions.delete(sessionId);
+  app.get("/logout", async (request, response) => {
+    const sessionId = readCookie(request, sessionCookieName());
+    if (sessionId) await sessions.delete(sessionId).catch(() => undefined);
     response.setHeader("Set-Cookie", sessionCookie("", 0));
     response.redirect("/");
   });
 
   app.get("/create", async (request, response) => {
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     if (!session || !guildId || !session.guilds.some((guild) => guild.id === guildId)) {
       response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
@@ -152,7 +164,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   });
 
   app.post("/create", async (request, response) => {
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     if (!session || !session.guilds.some((guild) => guild.id === guildId) || !validCsrf(request, session)) {
       response.status(403).send("Not authorized.");
@@ -206,7 +218,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.get("/events/:id", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event) {
       response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
       return;
@@ -219,7 +231,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.get("/events/:id/edit", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event || !session || !canManageEvent(event, session)) {
       response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
       return;
@@ -229,7 +241,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.post("/events/:id/composition", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
       response.status(403).send("Not authorized.");
       return;
@@ -277,7 +289,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.post("/events/:id/delete", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
       response.status(403).send("Not authorized.");
       return;
@@ -288,7 +300,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.post("/events/:id/status", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
       response.status(403).send("Not authorized.");
       return;
@@ -303,7 +315,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.post("/events/:id/auto-repost", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
       response.status(403).send("Not authorized.");
       return;
@@ -318,7 +330,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.get("/api/events/:id", async (request, response) => {
     const event = await store.getEvent(request.params.id);
-    const session = getSession(request, sessions);
+    const session = await getSession(request, sessions);
     if (!event || !event.guildId || !session?.guilds.some((guild) => guild.id === event.guildId)) {
       response.status(404).json({ error: "Event not found." });
       return;
@@ -433,14 +445,20 @@ function hasAdministratorPermission(permissions: string): boolean {
   return (BigInt(permissions) & 8n) === 8n;
 }
 
-function getSession(request: Request, sessions: Map<string, WebSession>): WebSession | undefined {
-  const sessionId = readCookie(request, "nw_session");
-  const session = sessionId ? sessions.get(sessionId) : undefined;
-  if (!session || session.expiresAt < Date.now()) {
-    if (sessionId) sessions.delete(sessionId);
+async function getSession(request: Request, sessions: WebSessionStore<WebSession>): Promise<WebSession | undefined> {
+  const sessionId = readCookie(request, sessionCookieName());
+  if (!sessionId || !/^[a-f0-9]{64}$/.test(sessionId)) return undefined;
+  try {
+    const session = await sessions.get(sessionId);
+    if (!session || session.expiresAt < Date.now()) {
+      await sessions.delete(sessionId).catch(() => undefined);
+      return undefined;
+    }
+    return session;
+  } catch (error) {
+    console.warn("Could not load dashboard session:", error);
     return undefined;
   }
-  return session;
 }
 
 function validCsrf(request: Request, session: WebSession): boolean {
@@ -458,7 +476,49 @@ function readCookie(request: Request, name: string): string | undefined {
 
 function sessionCookie(value: string, maxAge = 24 * 60 * 60): string {
   const secure = config.publicBaseUrl.startsWith("https://") ? "; Secure" : "";
-  return `nw_session=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  return `${sessionCookieName()}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}; Priority=High`;
+}
+
+function sessionCookieName(): string {
+  return config.publicBaseUrl.startsWith("https://") ? "__Host-nw_session" : "nw_session";
+}
+
+function validateWebSession(value: unknown): WebSession | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const session = value as Partial<WebSession>;
+  if (
+    !session.user ||
+    typeof session.user.id !== "string" ||
+    typeof session.user.username !== "string" ||
+    !Array.isArray(session.guilds) ||
+    !session.guilds.every(
+      (guild) =>
+        guild &&
+        typeof guild.id === "string" &&
+        typeof guild.name === "string" &&
+        typeof guild.permissions === "string" &&
+        (guild.icon === undefined || guild.icon === null || typeof guild.icon === "string")
+    ) ||
+    typeof session.csrfToken !== "string" ||
+    !/^[a-f0-9]{48}$/.test(session.csrfToken) ||
+    typeof session.expiresAt !== "number"
+  ) {
+    return undefined;
+  }
+  return session as WebSession;
+}
+
+function setSecurityHeaders(_request: Request, response: express.Response, next: express.NextFunction): void {
+  response.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; base-uri 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' https://cdn.discordapp.com data:; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+  );
+  response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
 }
 
 function renderPage(title: string, body: string): string {

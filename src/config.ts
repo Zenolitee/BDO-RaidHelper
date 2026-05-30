@@ -20,6 +20,7 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   dataFile: path.resolve(process.env.DATA_FILE ?? "./data/events.json"),
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   supabaseKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPABASE_ANON_KEY ??

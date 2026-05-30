@@ -70,7 +70,21 @@ values ('default', '{"events":[]}'::jsonb)
 on conflict (key) do nothing;
 
 alter table public.nodewar_store enable row level security;
+
+create table if not exists public.web_sessions (
+  token_hash text primary key,
+  data jsonb not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists web_sessions_expires_at_idx
+  on public.web_sessions (expires_at);
+
+alter table public.web_sessions enable row level security;
 ```
+
+The private dashboard stores a SHA-256 hash of its opaque session cookie in `web_sessions`. This keeps Discord logins active across Railway restarts without storing the raw browser token or Discord OAuth access token. Use `SUPABASE_SERVICE_ROLE_KEY` for the bot process so the server can access the RLS-protected session table.
 
 ## Discord values to collect
 

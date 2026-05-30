@@ -54,6 +54,7 @@ try {
   if (!address || typeof address === "string") throw new Error("QA server did not bind to a TCP port.");
   const baseUrl = `http://127.0.0.1:${address.port}`;
   await expectResponse(`${baseUrl}/`, 200, "Log in with Discord");
+  await expectSecurityHeaders(`${baseUrl}/`);
   await expectResponse(`${baseUrl}/assets/styles.css`, 200, ".delivery-editor");
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Zen");
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Raid day");
@@ -150,5 +151,16 @@ async function expectResponse(url, status, expectedText) {
   const body = await response.text();
   if (response.status !== status || !body.includes(expectedText)) {
     throw new Error(`${url} returned ${response.status}; expected ${status} with ${JSON.stringify(expectedText)}.`);
+  }
+}
+
+async function expectSecurityHeaders(url) {
+  const response = await fetch(url);
+  if (
+    response.headers.get("cache-control") !== "no-store" ||
+    response.headers.get("x-frame-options") !== "DENY" ||
+    !response.headers.get("content-security-policy")?.includes("frame-ancestors 'none'")
+  ) {
+    throw new Error(`${url} did not return the expected dashboard security headers.`);
   }
 }

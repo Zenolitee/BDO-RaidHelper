@@ -1099,13 +1099,13 @@ body {
 
 .shell {
   width: min(1240px, calc(100% - 252px));
-  margin: 0 20px 0 auto;
+  margin: 0 auto 0 calc(212px + max(20px, (100vw - 1452px) / 2));
   padding: 28px 0 48px;
 }
 
 .narrow-shell {
   width: min(720px, calc(100% - 252px));
-  margin: 0 auto;
+  margin-left: calc(212px + max(20px, (100vw - 932px) / 2));
 }
 
 h1 {
@@ -1142,6 +1142,19 @@ h1 {
 .server-card b {
   color: var(--accent);
   font-size: 0.76rem;
+}
+
+.server-card > span:not(.server-mark) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.server-card strong,
+.server-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .server-mark {
