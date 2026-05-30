@@ -252,8 +252,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       if (recurrence === "once" && repeatDays.length !== 1) {
         throw new Error("One-time events must use exactly one raid day.");
       }
-      const selectedDay = repeatDays.includes(event.day as WarDay) ? (event.day as WarDay) : repeatDays[0];
-      const date = selectedDay === event.day && !event.closed ? event.date : nextDateForDay(selectedDay);
+      const next = nextScheduledRaid(repeatDays);
+      const selectedDay = next.day;
+      const date = next.date;
       const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, selectedDay) : event.totalCapacity;
       const groups = parseGroupAllocation(request.body.groups, totalCapacity);
       const announcementTime = parseClockTime(request.body.announcementTime);
@@ -278,6 +279,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         totalCapacity,
         announcementDate,
         announcementTime,
+        ...(date !== event.date ? { signups: [] } : {}),
         ...(scheduleChanged ? { announcedAt: undefined, closed: false } : {})
       });
       await refreshPostedEvent(options, updated);
@@ -1244,10 +1246,25 @@ function nextDateForDay(day?: WarDay): string {
   return value.toISOString().slice(0, 10);
 }
 
-function nextScheduledRaid(days: WarDay[]): { day: WarDay; date: string } {
+export function nextScheduledRaid(days: WarDay[], today = currentDateInTimezone(), now = Date.now()): { day: WarDay; date: string } {
+  const todayDay = warDayForDate(today);
+  if (days.includes(todayDay) && now < warEndsAt(today)) {
+    return { day: todayDay, date: today };
+  }
   return days
-    .map((day) => ({ day, date: nextDateForDay(day) }))
+    .map((day) => ({ day, date: nextDateAfter(today, day) }))
     .sort((left, right) => left.date.localeCompare(right.date))[0];
+}
+
+function nextDateAfter(date: string, day: WarDay): string {
+  const value = new Date(`${date}T12:00:00Z`);
+  const delta = (WEB_WAR_DAYS.indexOf(day) - value.getUTCDay() + 7) % 7 || 7;
+  value.setUTCDate(value.getUTCDate() + delta);
+  return value.toISOString().slice(0, 10);
+}
+
+function warEndsAt(date: string): number {
+  return new Date(`${date}T${config.nodeWarStartTime}:00+08:00`).getTime() + 60 * 60_000;
 }
 
 function warDayForDate(date: string): WarDay {

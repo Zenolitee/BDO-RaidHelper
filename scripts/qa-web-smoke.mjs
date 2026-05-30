@@ -1,10 +1,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { eventEndsAt, refreshEventMessage, rollCompletedWeeklyEvents } from "../dist/bot.js";
+import { eventEndsAt, nextWarDayFromSelection, refreshEventMessage, rollCompletedWeeklyEvents } from "../dist/bot.js";
 import { getGroupEmoji } from "../dist/emojis.js";
 import { renderEventEmbed } from "../dist/render.js";
 import { EventStore } from "../dist/store.js";
-import { createWebApp } from "../dist/web.js";
+import { createWebApp, nextScheduledRaid } from "../dist/web.js";
 
 const tempDir = path.resolve(".tmp");
 const tempFile = path.join(tempDir, "qa-web-events.json");
@@ -74,6 +74,21 @@ try {
   const nodeWarEnd = eventEndsAt({ ...event, date: "2026-05-31", time: "21:00" });
   if (nodeWarEnd !== new Date("2026-05-31T22:00:00+08:00").getTime()) {
     throw new Error("Node War lifecycle must end one hour after the 9:00 PM start.");
+  }
+  const selectedDays = ["sunday", "monday"];
+  const sundayBeforeWar = { date: "2026-05-31", hour: 2, minute: 23, weekday: "sunday" };
+  const sundayAfterWar = { date: "2026-05-31", hour: 22, minute: 15, weekday: "sunday" };
+  if (nextWarDayFromSelection(selectedDays, "Asia/Singapore", sundayBeforeWar).day !== "sunday") {
+    throw new Error("Discord schedule selection skipped a selected Sunday before its Node War ended.");
+  }
+  if (nextWarDayFromSelection(selectedDays, "Asia/Singapore", sundayAfterWar).day !== "monday") {
+    throw new Error("Discord schedule selection did not advance after Sunday's Node War ended.");
+  }
+  if (nextScheduledRaid(selectedDays, "2026-05-31", new Date("2026-05-31T02:23:00+08:00").getTime()).day !== "sunday") {
+    throw new Error("Web schedule selection skipped a selected Sunday before its Node War ended.");
+  }
+  if (nextScheduledRaid(selectedDays, "2026-05-31", new Date("2026-05-31T22:15:00+08:00").getTime()).day !== "monday") {
+    throw new Error("Web schedule selection did not advance after Sunday's Node War ended.");
   }
 
   let editedPayload;

@@ -600,29 +600,36 @@ async function handleEditWizardButton(
   }
 
   if (parsed.action === "confirm") {
-    const totalSlots = state.mainball + state.defense + state.zerker + state.shai;
-    if (totalSlots > event.totalCapacity) {
-      throw new Error(`Group slots (${totalSlots}) exceed total roster size (${event.totalCapacity}).`);
+    const next = nextWarDayFromSelection(state.days, config.timezone);
+    const day = next.day;
+    const nextDate = next.date;
+    const totalCapacity = event.tier ? getNodeWarCapacity(event.tier, day) : event.totalCapacity;
+    const specialistSlots = state.defense + state.zerker + state.shai;
+    const mainball = totalCapacity !== event.totalCapacity && state.mainball + specialistSlots === event.totalCapacity
+      ? totalCapacity - specialistSlots
+      : state.mainball;
+    const totalSlots = mainball + specialistSlots;
+    if (totalSlots > totalCapacity) {
+      throw new Error(`Group slots (${totalSlots}) exceed total roster size (${totalCapacity}).`);
     }
 
-    const day = state.days[0] ?? event.day ?? "sunday";
-    const nextDate = day === event.day ? event.date : nextWarDateInTimezone(day, config.timezone);
-    const nextAnnouncementDate =
-      day === event.day ? event.announcementDate : announcementDateForEvent(nextDate);
+    const nextAnnouncementDate = announcementDateForEvent(nextDate);
     const announcementScheduleChanged =
       nextAnnouncementDate !== event.announcementDate || state.announcementTime !== event.announcementTime;
     const updated = await store.updateEventDetails(state.eventId, {
-      title: event.tier ? buildNodeWarTitle(day, event.tier, event.totalCapacity) : event.title,
+      title: event.tier ? buildNodeWarTitle(day, event.tier, totalCapacity) : event.title,
       day,
       repeatDays: state.recurrence === "weekly" ? state.days : undefined,
       recurrence: state.recurrence,
       autoRepost: state.recurrence === "weekly",
       date: nextDate,
+      totalCapacity,
       announcementDate: nextAnnouncementDate,
       announcementTime: state.announcementTime,
       announcedAt: announcementScheduleChanged ? undefined : event.announcedAt,
+      ...(nextDate !== event.date ? { signups: [] } : {}),
       groups: [
-        { key: "mainball", label: getGroupLabel("mainball"), capacity: state.mainball, editable: true },
+        { key: "mainball", label: getGroupLabel("mainball"), capacity: mainball, editable: true },
         { key: "defense", label: getGroupLabel("defense"), capacity: state.defense, editable: true },
         { key: "zerker", label: getGroupLabel("zerker"), capacity: state.zerker, editable: true },
         { key: "shai", label: getGroupLabel("shai"), capacity: state.shai, editable: true },
@@ -1869,17 +1876,29 @@ function currentWarDay(timezone: string): WarDay {
   return day;
 }
 
-function nextWarDayFromSelection(days: WarDay[], timezone: string): { day: WarDay; date: string } {
+export function nextWarDayFromSelection(
+  days: WarDay[],
+  timezone: string,
+  now = zonedNow(timezone)
+): { day: WarDay; date: string } {
   const allowedDays = days.length ? days : WIZARD_DAYS;
-  const next = nextWarDayAfterToday(timezone, allowedDays);
+  const today = warDayFromWeekday(now.weekday);
+  if (today && allowedDays.includes(today) && now.hour * 60 + now.minute < minutesSinceMidnight(config.nodeWarStartTime) + NODEWAR_DURATION_MS / 60_000) {
+    return { day: today, date: now.date };
+  }
+
+  const next = nextWarDayAfterToday(timezone, allowedDays, now);
   if (!next) {
     throw new Error("No valid future Node War day selected.");
   }
   return next;
 }
 
-function nextWarDayAfterToday(timezone: string, allowedDays: WarDay[] = WIZARD_DAYS): { day: WarDay; date: string } | undefined {
-  const now = zonedNow(timezone);
+function nextWarDayAfterToday(
+  timezone: string,
+  allowedDays: WarDay[] = WIZARD_DAYS,
+  now = zonedNow(timezone)
+): { day: WarDay; date: string } | undefined {
   const todayIndex = weekdayIndex(now.weekday);
   const baseDate = new Date(`${now.date}T00:00:00Z`);
 
