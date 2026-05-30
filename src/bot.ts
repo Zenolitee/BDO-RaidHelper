@@ -202,43 +202,46 @@ async function handleCommand(
 
 async function listEvents(interaction: ChatInputCommandInteraction, store: EventStore): Promise<void> {
   const guildId = requireGuildId(interaction);
-  await interaction.reply({ ...(await renderEventList(store, guildId, interaction.user.id)), ephemeral: true });
+  const allEvents = (await store.listEvents()).filter((event) => event.guildId === guildId && !event.closed);
+  const events = allEvents.slice(0, 10);
+  if (events.length === 0) {
+    await interaction.reply({ content: "No open events yet.", ephemeral: true });
+    return;
+  }
+
+  await interaction.reply({ ...renderEventListCard(events[0], 0, interaction.user.id), ephemeral: true });
+  for (const [index, event] of events.slice(1).entries()) {
+    await interaction.followUp({ ...renderEventListCard(event, index + 1, interaction.user.id), ephemeral: true });
+  }
+
+  if (allEvents.length > events.length) {
+    await interaction.followUp({
+      content: `Showing the first ${events.length} of ${allEvents.length} open events.`,
+      ephemeral: true
+    });
+  }
 }
 
-async function renderEventList(
-  store: EventStore,
-  guildId: string,
-  userId: string,
-  notice?: string
-): Promise<{ content: string; components: Array<ActionRowBuilder<ButtonBuilder>> }> {
-  const allEvents = (await store.listEvents()).filter((event) => event.guildId === guildId && !event.closed);
-  const events = allEvents.slice(0, 5);
-  if (events.length === 0) {
-    return { content: notice ? `${notice}\n\nNo open events yet.` : "No open events yet.", components: [] };
-  }
-
-  const lines = events.map((event, index) => {
-    const signed = event.signups.filter((signup) => signup.group !== "bench").length;
-    return `${index + 1}. ID: \`${event.id}\` - **${event.title}** - ${event.date} ${event.time} - ${signed}/${activeRosterCapacity(event)}`;
-  });
-  if (allEvents.length > events.length) {
-    lines.push(`\nShowing the first ${events.length} of ${allEvents.length} open events.`);
-  }
-
+function renderEventListCard(
+  event: WarEvent,
+  index: number,
+  userId: string
+): { content: string; components: Array<ActionRowBuilder<ButtonBuilder>> } {
+  const signed = event.signups.filter((signup) => signup.group !== "bench").length;
   return {
-    content: notice ? `${notice}\n\n${lines.join("\n")}` : lines.join("\n"),
-    components: events.map((event, index) =>
+    content: `${index + 1}. ID: \`${event.id}\` - **${event.title}** - ${event.date} ${event.time} - ${signed}/${activeRosterCapacity(event)}`,
+    components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(`event-list-edit:${event.id}:${userId}`)
-          .setLabel(`Edit ${index + 1}`)
+          .setLabel("Edit")
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId(`event-list-delete:${event.id}:${userId}`)
-          .setLabel(`Delete ${index + 1}`)
+          .setLabel("Delete")
           .setStyle(ButtonStyle.Danger)
       )
-    )
+    ]
   };
 }
 
@@ -881,7 +884,7 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
       throw new Error("Event not found.");
     }
     await store.deleteEvent(event.id);
-    await interaction.update(await renderEventList(store, guildId, interaction.user.id, `Deleted ${event.title}.`));
+    await interaction.update({ content: `Deleted ${event.title}.`, components: [] });
     return;
   }
 
