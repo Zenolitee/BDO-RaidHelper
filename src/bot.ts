@@ -314,7 +314,11 @@ async function showEvent(interaction: ChatInputCommandInteraction, store: EventS
         new ButtonBuilder()
           .setCustomId(`event-post-now:${event.id}`)
           .setLabel("Post now")
-          .setStyle(ButtonStyle.Primary)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`event-show-edit:${event.id}`)
+          .setLabel("Edit")
+          .setStyle(ButtonStyle.Secondary)
       )
     ],
     files: renderEventAttachments(),
@@ -885,6 +889,14 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
     }
     await store.deleteEvent(event.id);
     await interaction.update({ content: `Deleted ${event.title}.`, components: [] });
+    return;
+  }
+
+  if (action === "event-show-edit") {
+    await requireAdministrator(interaction);
+    const guildId = requireButtonGuildId(interaction);
+    const { state, event } = await createEditWizardState(store, guildId, interaction.user.id, eventId);
+    await interaction.update(renderEditWizard(state, event));
     return;
   }
 
