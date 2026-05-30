@@ -59,6 +59,10 @@ try {
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Raid day");
   await expectResponse(`${baseUrl}/events/${event.id}/edit`, 404, "Event not found");
   await expectResponse(`${baseUrl}/create?guild=qa-guild`, 403, "Discord login required");
+  const deleteResponse = await fetch(`${baseUrl}/events/${event.id}/delete`, { method: "POST" });
+  if (deleteResponse.status !== 403 || !(await store.getEvent(event.id))) {
+    throw new Error("Unauthenticated web request could delete an event.");
+  }
 
   const embed = renderEventEmbed(event).toJSON();
   const mainball = embed.fields?.find((field) => field.name.includes("Mainball"));
@@ -118,7 +122,8 @@ try {
   });
   await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Fresh roster");
   await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "T1 Balenos/Serendia War [qa-weekly]");
-  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Discord post forecast");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Current live roster");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Future signup announcement queue");
   await rollCompletedWeeklyEvents(
     { channels: { fetch: async () => undefined } },
     store,

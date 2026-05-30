@@ -280,6 +280,17 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
   });
 
+  app.post("/events/:id/delete", async (request, response) => {
+    const event = await store.getEvent(request.params.id);
+    const session = getSession(request, sessions);
+    if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+    await store.deleteEvent(event.id);
+    response.redirect(`/?guild=${encodeURIComponent(event.guildId ?? "")}`);
+  });
+
   app.get("/api/events", async (_request, response) => {
     response.status(403).json({ error: "Server-scoped event listing requires Discord login." });
   });
@@ -460,10 +471,11 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
         <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span>${labelRecurrence(event.recurrence)}</span></div>
         <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(scheduleTitle(event))}</strong></a>
         <small>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</small>
-        <small>Next post ${formatAnnouncementLabel(event)}</small>
+        <small>Current roster ${escapeHtml(event.title)}</small>
+        <small>Following signup post ${formatAnnouncementLabel(event)}</small>
         <small>War starts ${formatTimeLabel(event.time)} ${escapeHtml(config.timezone)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
-        <div class="card-footer"><b>${signed}/${capacity} signed</b><a href="/events/${event.id}/edit">Manage</a></div>
+        <div class="card-footer"><b>${signed}/${capacity} signed</b><span class="card-actions"><a href="/events/${event.id}/edit">Manage</a>${session ? `<form method="post" action="/events/${event.id}/delete" onsubmit="return confirm('Delete this raid event?')"><input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}"><button class="link-button danger-link" type="submit">Delete</button></form>` : ""}</span></div>
       </article>`;
     })
     .join("");
@@ -546,11 +558,30 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
     </section>
     <div class="detail-actions"><a class="button button-secondary" href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Dashboard</a>${canManage ? `<a class="button" href="/events/${event.id}/edit">Edit raid</a>` : ""}</div>
     ${renderDeliverySummary(event, guild, deliveryOptions)}
+    ${renderCurrentRosterSummary(event)}
     ${renderUpcomingAnnouncements(event)}
     ${renderDayRail(event)}
     <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatTimeLabel(event.time)}</span></section>
     <section class="roster-grid">${renderRosterColumns(event)}</section>
   </main>`;
+}
+
+function renderCurrentRosterSummary(event: WarEvent): string {
+  const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+  const postStatus = event.announcedAt
+    ? "Signup post sent"
+    : event.announcementDate && event.announcementTime
+      ? `Queues ${formatDateLabel(event.announcementDate)} ${formatTimeLabel(event.announcementTime)}`
+      : "Not queued";
+  return `<section class="current-roster-summary">
+    <div><p class="eyebrow">Current live roster</p><h2>${escapeHtml(event.title)}</h2><p>This remains the active signup roster until the one-hour Node War ends.</p></div>
+    <dl>
+      <div><dt>War date</dt><dd>${formatDateLabel(event.date)}</dd></div>
+      <div><dt>War time</dt><dd>${formatTimeLabel(event.time)}</dd></div>
+      <div><dt>Signup post</dt><dd>${escapeHtml(postStatus)}</dd></div>
+      <div><dt>Signed</dt><dd>${signed}/${activeRosterCapacity(event)}</dd></div>
+    </dl>
+  </section>`;
 }
 
 function renderDeliverySummary(event: WarEvent, guild?: DiscordGuild, options?: GuildDeliveryOptions): string {
@@ -572,7 +603,7 @@ function renderDeliverySummary(event: WarEvent, guild?: DiscordGuild, options?: 
 function renderUpcomingAnnouncements(event: WarEvent): string {
   const upcoming = getUpcomingAnnouncements(event, 5);
   return `<section class="preview-section">
-    <div class="section-title"><div><p class="eyebrow">Upcoming announcements</p><h2>Discord post forecast</h2></div><span>Next ${upcoming.length} scheduled posts</span></div>
+    <div class="section-title"><div><p class="eyebrow">After the current roster</p><h2>Future signup announcement queue</h2></div><span>Next ${upcoming.length} scheduled posts</span></div>
     <div class="preview-rail">${upcoming
       .map(
         (announcement, index) => `<article class="preview-card${index === 0 ? " preview-card-next" : ""}">
