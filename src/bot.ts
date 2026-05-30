@@ -318,7 +318,11 @@ async function showEvent(interaction: ChatInputCommandInteraction, store: EventS
         new ButtonBuilder()
           .setCustomId(`event-show-edit:${event.id}`)
           .setLabel("Edit")
-          .setStyle(ButtonStyle.Secondary)
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`event-show-delete:${event.id}`)
+          .setLabel("Delete")
+          .setStyle(ButtonStyle.Danger)
       )
     ],
     files: renderEventAttachments(),
@@ -897,6 +901,18 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
     const guildId = requireButtonGuildId(interaction);
     const { state, event } = await createEditWizardState(store, guildId, interaction.user.id, eventId);
     await interaction.update(renderEditWizard(state, event));
+    return;
+  }
+
+  if (action === "event-show-delete") {
+    await requireAdministrator(interaction);
+    const guildId = requireButtonGuildId(interaction);
+    const event = await getGuildEvent(store, guildId, eventId);
+    if (!event) {
+      throw new Error("Event not found.");
+    }
+    await store.deleteEvent(event.id);
+    await interaction.update({ content: `Deleted ${event.title}.`, embeds: [], components: [], attachments: [] });
     return;
   }
 
