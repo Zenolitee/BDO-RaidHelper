@@ -559,14 +559,20 @@ async function handleEditWizardButton(
     }
 
     const day = state.days[0] ?? event.day ?? "sunday";
+    const nextDate = day === event.day ? event.date : nextWarDateInTimezone(day, config.timezone);
+    const nextAnnouncementDate =
+      day === event.day ? event.announcementDate : announcementDateForEvent(nextDate);
+    const announcementScheduleChanged =
+      nextAnnouncementDate !== event.announcementDate || state.announcementTime !== event.announcementTime;
     const updated = await store.updateEventDetails(state.eventId, {
       title: event.tier ? buildNodeWarTitle(day, event.tier, event.totalCapacity) : event.title,
       day,
       repeatDays: state.recurrence === "weekly" ? state.days : undefined,
       recurrence: state.recurrence,
-      date: day === event.day ? event.date : nextWarDateInTimezone(day, config.timezone),
-      announcementDate: day === event.day ? event.announcementDate : announcementDateForEvent(nextWarDateInTimezone(day, config.timezone)),
+      date: nextDate,
+      announcementDate: nextAnnouncementDate,
       announcementTime: state.announcementTime,
+      announcedAt: announcementScheduleChanged ? undefined : event.announcedAt,
       groups: [
         { key: "mainball", label: getGroupLabel("mainball"), capacity: state.mainball, editable: true },
         { key: "defense", label: getGroupLabel("defense"), capacity: state.defense, editable: true },
@@ -1392,7 +1398,7 @@ async function postDueScheduledEvents(
 ): Promise<void> {
   const events = await store.listEvents();
   for (const event of events) {
-    if (event.closed || event.messageId || !event.announcementDate || !event.announcementTime) {
+    if (event.closed || event.announcedAt || !event.announcementDate || !event.announcementTime) {
       continue;
     }
     if (!announcementIsDue(event.announcementDate, event.announcementTime, now)) {
