@@ -347,7 +347,6 @@ async function handleRoleSelect(interaction: RoleSelectMenuInteraction): Promise
 
   const state = getWizardState(parsed.userId, interaction.user.id);
   state.pingRoleIds = interaction.values;
-  state.step = "slots";
   refreshWizardTimeout(state);
   await interaction.update(renderWizard(state));
 }
@@ -911,12 +910,11 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
   }
 
   if (parsed.action === "ping") {
-    if (value === "custom") {
-      refreshWizardTimeout(state);
-      await interaction.update(renderWizardRolePicker(state));
-      return;
+    if (value === "default") {
+      state.pingRoleIds = config.nodeWarRoleId ? [config.nodeWarRoleId] : [];
+    } else if (value === "none") {
+      state.pingRoleIds = [];
     }
-    state.pingRoleIds = value === "default" && config.nodeWarRoleId ? [config.nodeWarRoleId] : [];
     state.step = "slots";
     refreshWizardTimeout(state);
     await interaction.update(renderWizard(state));
@@ -961,26 +959,6 @@ function renderWizard(state: EventWizardState): {
   const summary = renderWizardSummary(state);
   const content = `${state.createToday ? "Today's Node War setup" : "Node War event setup"}\n\n${summary}\n\n${wizardPrompt(state)}`;
   return { content, components: [...wizardStepComponents(state), cancelRow(state.userId)] };
-}
-
-function renderWizardRolePicker(state: EventWizardState): {
-  content: string;
-  components: Array<ActionRowBuilder<ButtonBuilder | RoleSelectMenuBuilder>>;
-} {
-  const summary = renderWizardSummary(state);
-  return {
-    content: `Node War event setup\n\n${summary}\n\nSelect one or more roles to ping for this event.`,
-    components: [
-      new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
-        new RoleSelectMenuBuilder()
-          .setCustomId(`wizard-ping-role:${state.userId}`)
-          .setPlaceholder("Select one or more ping roles")
-          .setMinValues(1)
-          .setMaxValues(25)
-      ),
-      cancelRow(state.userId)
-    ]
-  };
 }
 
 function wizardPrompt(state: EventWizardState): string {
@@ -1054,10 +1032,17 @@ function wizardStepComponents(
 
   if (state.step === "ping") {
     return [
+      new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`wizard-ping-role:${state.userId}`)
+          .setPlaceholder("Select one or more ping roles")
+          .setMinValues(1)
+          .setMaxValues(25)
+      ),
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         wizardButton(`wizard-ping:${state.userId}:default`, "Use default NODEWAR_ROLE_ID", ButtonStyle.Primary, !config.nodeWarRoleId),
         wizardButton(`wizard-ping:${state.userId}:none`, "No ping", ButtonStyle.Secondary),
-        wizardButton(`wizard-ping:${state.userId}:custom`, "Custom roles", ButtonStyle.Secondary)
+        wizardButton(`wizard-ping:${state.userId}:continue`, "Continue with selected roles", ButtonStyle.Success, state.pingRoleIds.length === 0)
       )
     ];
   }
