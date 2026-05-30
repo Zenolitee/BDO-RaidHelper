@@ -21,7 +21,6 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): Em
       { name: `${getSummaryEmoji("status")} Status`, value: `**${status}**`, inline: true },
       { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: true },
       { name: "\u200b", value: "\u200b", inline: true },
-      { name: "\u200b", value: "----------------------------------------------------------------------", inline: false },
       ...renderRosterFields(event)
     )
     .setFooter({ text: `NW Helper | Event ${event.id} | If something breaks ask Zenolite` })
