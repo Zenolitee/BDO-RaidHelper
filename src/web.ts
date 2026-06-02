@@ -5,8 +5,9 @@ import { nanoid } from "nanoid";
 import { config } from "./config.js";
 import { getGroupEmoji, getGroupEmojiUrl, getGroupLabel } from "./emojis.js";
 import { buildNodeWarTitle, getNodeWarCapacity, labelTier, labelWarDay, NODE_WAR_PRESETS } from "./nodewar-presets.js";
-import { activeRosterCapacity, type EventStore } from "./store.js";
-import { type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
+import { activeRosterCapacity, activeRosterSignupCount, isRosterGroup, type EventStore } from "./store.js";
+import { formatClockTime } from "./time-format.js";
+import { WEEKDAYS, type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
 import { createWebSessionStore, type WebSessionStore } from "./web-session-store.js";
 
 interface UserProfile {
@@ -61,8 +62,12 @@ interface WebSession {
   expiresAt: number;
 }
 
-const WEB_WAR_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const WEB_WAR_DAYS: WarDay[] = [...WEEKDAYS];
 
+/**
+ * Creates the Express dashboard with Discord OAuth, public roster pages,
+ * authenticated raid management routes, and security middleware.
+ */
 export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   const app = express();
   const oauthStates = new Map<string, number>();
@@ -542,14 +547,14 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
   const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
   const visibleEvents = events.filter((event) => !event.closed || (event.recurrence === "once" && event.active === false));
   const activeEvents = visibleEvents.filter(isEventActive);
-  const totalSignups = activeEvents.reduce((sum, event) => sum + event.signups.filter((signup) => signup.group !== "bench").length, 0);
+  const totalSignups = activeEvents.reduce((sum, event) => sum + activeRosterSignupCount(event), 0);
   const weeklyPosts = activeEvents.filter((event) => event.recurrence === "weekly").length;
   const nextAnnouncement = [...activeEvents]
     .filter((event) => event.announcementDate && event.announcementTime && !event.announcedAt)
     .sort((left, right) => `${left.announcementDate} ${left.announcementTime}`.localeCompare(`${right.announcementDate} ${right.announcementTime}`))[0];
   const cards = visibleEvents
     .map((event) => {
-      const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+      const signed = activeRosterSignupCount(event);
       const capacity = activeRosterCapacity(event);
       const active = isEventActive(event);
       const autoRepost = event.autoRepost ?? event.recurrence === "weekly";
@@ -559,7 +564,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
         <small>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</small>
         <small>Current roster ${escapeHtml(event.title)}</small>
         <small>Following signup post ${formatAnnouncementLabel(event)}</small>
-        <small>War starts ${formatTimeLabel(event.time)} ${escapeHtml(config.timezone)}</small>
+        <small>War starts ${formatClockTime(event.time)} ${escapeHtml(config.timezone)}</small>
         <small>Schedule ${labelRecurrence(event.recurrence)} | ${formatRaidDays(event)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
         <div class="card-switches">${session ? `${renderCardToggle(event, session.csrfToken, "status", "Status", active)}${renderCardToggle(event, session.csrfToken, "auto-repost", "Auto repost", autoRepost, event.recurrence !== "weekly")}` : ""}</div>
@@ -583,7 +588,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       ${renderStat("Active raids", String(activeEvents.length))}
       ${renderStat("Weekly posts", String(weeklyPosts))}
       ${renderStat("Total signups", String(totalSignups))}
-      ${renderStat("Next announcement", nextAnnouncement ? `${formatDateLabel(nextAnnouncement.announcementDate as string)} ${formatTimeLabel(nextAnnouncement.announcementTime as string)}` : "None queued")}
+      ${renderStat("Next announcement", nextAnnouncement ? `${formatDateLabel(nextAnnouncement.announcementDate as string)} ${formatClockTime(nextAnnouncement.announcementTime as string)}` : "None queued")}
     </section>` : ""}
     ${serverPicker}
     ${selectedGuild ? `<section class="event-grid">${cards || "<div class=\"empty-state\"><h2>No raids scheduled</h2><p>Create a roster or use the Discord wizard to get started.</p></div>"}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to manage shared servers, schedules, and compositions.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
@@ -634,7 +639,7 @@ function botInviteUrl(): string | undefined {
 }
 
 function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSession, deliveryOptions?: GuildDeliveryOptions): string {
-  const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+  const signed = activeRosterSignupCount(event);
   const guild = session?.guilds.find((candidate) => candidate.id === event.guildId);
 
   return `${renderNav(session, event.guildId)}<main class="shell detail-shell">
@@ -642,7 +647,7 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
       <div>
         <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} schedule` : event.kind === "siege" ? "Siege schedule" : "Node War schedule"}</p>
         <h1>${escapeHtml(scheduleTitle(event))}</h1>
-        <div class="summary-meta"><span>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</span><span>${formatTimeLabel(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span><span>Status: ${isEventActive(event) ? "Active" : "Inactive"}</span><span>Auto repost: ${(event.autoRepost ?? event.recurrence === "weekly") ? "On" : "Off"}</span></div>
+        <div class="summary-meta"><span>Created ${formatDateLabel(event.createdAt.slice(0, 10))}</span><span>${formatClockTime(event.time)} war start</span><span>${labelRecurrence(event.recurrence)}</span><span>Status: ${isEventActive(event) ? "Active" : "Inactive"}</span><span>Auto repost: ${(event.autoRepost ?? event.recurrence === "weekly") ? "On" : "Off"}</span></div>
       </div>
       <div class="hero-count">
         <strong>${signed}/${activeRosterCapacity(event)}</strong>
@@ -654,23 +659,23 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
     ${renderCurrentRosterSummary(event)}
     ${renderUpcomingAnnouncements(event)}
     ${renderDayRail(event)}
-    <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatTimeLabel(event.time)}</span></section>
+    <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatClockTime(event.time)}</span></section>
     <section class="roster-grid">${renderRosterColumns(event)}</section>
   </main>`;
 }
 
 function renderCurrentRosterSummary(event: WarEvent): string {
-  const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+  const signed = activeRosterSignupCount(event);
   const postStatus = event.announcedAt
     ? "Signup post sent"
     : event.announcementDate && event.announcementTime
-      ? `Queues ${formatDateLabel(event.announcementDate)} ${formatTimeLabel(event.announcementTime)}`
+      ? `Queues ${formatDateLabel(event.announcementDate)} ${formatClockTime(event.announcementTime)}`
       : "Not queued";
   return `<section class="current-roster-summary">
     <div><p class="eyebrow">Current live roster</p><h2>${escapeHtml(event.title)}</h2><p>This remains the active signup roster until the one-hour Node War ends.</p></div>
     <dl>
       <div><dt>War date</dt><dd>${formatDateLabel(event.date)}</dd></div>
-      <div><dt>War time</dt><dd>${formatTimeLabel(event.time)}</dd></div>
+      <div><dt>War time</dt><dd>${formatClockTime(event.time)}</dd></div>
       <div><dt>Signup post</dt><dd>${escapeHtml(postStatus)}</dd></div>
       <div><dt>Signed</dt><dd>${signed}/${activeRosterCapacity(event)}</dd></div>
     </dl>
@@ -688,7 +693,7 @@ function renderDeliverySummary(event: WarEvent, guild?: DiscordGuild, options?: 
       <div><dt>Server</dt><dd>${escapeHtml(guild?.name ?? event.guildId ?? "Not assigned")}</dd></div>
       <div><dt>Channel</dt><dd>${escapeHtml(channel ? `#${channel.name}` : channelId ?? "Not assigned")}</dd></div>
       <div><dt>Ping roles</dt><dd>${roles.length ? roles.map((role) => `@${escapeHtml(role)}`).join(", ") : "No role ping"}</dd></div>
-      <div><dt>Post time</dt><dd>${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)} ${escapeHtml(config.timezone)}</dd></div>
+      <div><dt>Post time</dt><dd>${formatClockTime(event.announcementTime ?? config.nodeWarPostTime)} ${escapeHtml(config.timezone)}</dd></div>
     </dl>
   </section>`;
 }
@@ -711,13 +716,13 @@ function renderUpcomingAnnouncements(event: WarEvent): string {
 
 function renderDayRail(event: WarEvent): string {
   const days = event.recurrence === "weekly" && event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
-  return `<section class="day-section"><div class="section-title"><div><p class="eyebrow">Schedule</p><h2>${event.recurrence === "weekly" ? "Weekly raid days" : "Raid day"}</h2></div><span>Announces ${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</span></div><div class="day-rail">${days
+  return `<section class="day-section"><div class="section-title"><div><p class="eyebrow">Schedule</p><h2>${event.recurrence === "weekly" ? "Weekly raid days" : "Raid day"}</h2></div><span>Announces ${formatClockTime(event.announcementTime ?? config.nodeWarPostTime)}</span></div><div class="day-rail">${days
     .map(
       (day) => `<article class="day-card relative overflow-hidden">
         <span>${labelWarDay(day).slice(0, 3)}</span>
         <strong>${labelWarDay(day)}</strong>
         <small>${event.tier ? NODE_WAR_PRESETS[event.tier].territoryGroup : event.kind}</small>
-        <dl><div><dt>Roster</dt><dd>${day === event.day ? `${event.signups.filter((signup) => signup.group !== "bench").length}/${activeRosterCapacity(event)} signed` : "Fresh roster"}</dd></div><div><dt>War</dt><dd>${formatTimeLabel(event.time)}</dd></div><div><dt>Post</dt><dd>${formatTimeLabel(event.announcementTime ?? config.nodeWarPostTime)}</dd></div></dl>
+        <dl><div><dt>Roster</dt><dd>${day === event.day ? `${activeRosterSignupCount(event)}/${activeRosterCapacity(event)} signed` : "Fresh roster"}</dd></div><div><dt>War</dt><dd>${formatClockTime(event.time)}</dd></div><div><dt>Post</dt><dd>${formatClockTime(event.announcementTime ?? config.nodeWarPostTime)}</dd></div></dl>
       </article>`
     )
     .join("") || "<p>No raid days selected.</p>"}</div></section>`;
@@ -728,7 +733,7 @@ function renderRosterColumns(event: WarEvent): string {
     .map((group) => {
       const signups = event.signups.filter((signup) => signup.group === group.key);
       return `<section class="roster-column">
-        <header><h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2><b>${group.key === "bench" ? signups.length : `${signups.length}/${group.capacity}`}</b></header>
+        <header><h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2><b>${isRosterGroup(group.key) ? `${signups.length}/${group.capacity}` : signups.length}</b></header>
         <div class="signup-list">${signups
           .map(
             (signup, index) => `<div class="signup-row"><span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span><span class="slot">${index + 1}</span><span class="name">${escapeHtml(signup.displayName)}</span></div>`
@@ -749,7 +754,7 @@ function labelRecurrence(recurrence: WarEvent["recurrence"]): string {
 }
 
 function orderedGroups(event: WarEvent): WarEvent["groups"] {
-  const order = ["mainball", "defense", "zerker", "shai", "bench"];
+  const order = ["mainball", "defense", "zerker", "shai", "bench", "tentative", "absence"];
   return [...event.groups].sort((a, b) => {
     const left = order.indexOf(a.key);
     const right = order.indexOf(b.key);
@@ -866,7 +871,7 @@ function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession)
         <label>Announcement time<input name="announcementTime" type="time" value="${escapeHtml(event.announcementTime ?? config.nodeWarPostTime)}" required></label>
         <fieldset><legend>Raid days</legend><div class="day-checks">${renderDayChecks(repeatDays)}</div></fieldset>
       </section>
-      ${renderAllocationEditor(event.groups.filter((group) => group.key !== "bench"))}
+      ${renderAllocationEditor(event.groups.filter((group) => isRosterGroup(group.key)))}
       <div class="editor-actions"><button type="submit">Save raid settings</button></div>
     </form>
   </main>${renderRecurrenceDayScript()}${renderAllocationScript(false)}`;
@@ -1111,15 +1116,6 @@ function formatDateLabel(date: string): string {
     : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(parsed);
 }
 
-function formatTimeLabel(time: string): string {
-  const [hourValue, minuteValue = "00"] = time.split(":");
-  const hour = Number.parseInt(hourValue, 10);
-  if (!Number.isInteger(hour)) {
-    return time;
-  }
-  return `${hour % 12 || 12}:${minuteValue.padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
-}
-
 function scheduleTitle(event: WarEvent): string {
   if (!event.tier) {
     return `${event.kind === "siege" ? "Siege" : "Node War"} [${event.id}]`;
@@ -1187,7 +1183,7 @@ function getUpcomingAnnouncements(event: WarEvent, limit: number): UpcomingAnnou
 }
 
 function formatAnnouncementDateTime(announcement: Pick<UpcomingAnnouncement, "announcementDate" | "announcementTime">): string {
-  return `${formatDateLabel(announcement.announcementDate)} ${formatTimeLabel(announcement.announcementTime)}`;
+  return `${formatDateLabel(announcement.announcementDate)} ${formatClockTime(announcement.announcementTime)}`;
 }
 
 function announcementTimestamp(announcement: Pick<UpcomingAnnouncement, "announcementDate" | "announcementTime">): number {
@@ -1246,6 +1242,7 @@ function nextDateForDay(day?: WarDay): string {
   return value.toISOString().slice(0, 10);
 }
 
+/** Returns today's selected raid before war end or the nearest selected future date. */
 export function nextScheduledRaid(days: WarDay[], today = currentDateInTimezone(), now = Date.now()): { day: WarDay; date: string } {
   const todayDay = warDayForDate(today);
   if (days.includes(todayDay) && now < warEndsAt(today)) {

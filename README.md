@@ -1,181 +1,239 @@
 # NW Helper
 
-A Discord bot and web roster page for Black Desert Online Node War and Siege planning.
+NW Helper is a Discord bot and web dashboard for planning Black Desert Online Node War rosters. It creates scheduled raid announcements, lets guild members sign up from Discord buttons, tracks specialist slot limits, and gives server administrators a browser-based view of raid schedules and rosters.
 
-## First slice
+## Project Overview
 
-- `/event create` opens a private interactive setup wizard.
-- `/event create-today` opens a one-time setup wizard for today's Node War.
-- `/event create-test` creates a simple test announcement using only day and announcement time.
-- `/event set-slots` adjusts DEF, ZERK, and SHAI caps after creation; Mainball/FFA is recalculated.
-- `/event edit` opens a private wizard for day and slot changes.
-- Discord signup happens through DEF, ZERK, SHAI, FFA, and Leave buttons on the event message.
-- `/event list` shows upcoming events.
-- `/event show` shows event information.
-- `/event delete` deletes an event.
-- `/event repost` reposts an event immediately to the configured or selected roster channel.
-- The web page shows events as Mainball/FFA, Defense, Zerker, Shai, and Bench columns.
-- The web dashboard supports Discord OAuth login, administrator server selection, one-time raid creation, and linked roster allocation sliders.
-- Web raid creation loads channels and roles from the selected Discord server, requires a roster channel, and supports multiple optional ping roles.
-- One-time web raids select one weekday. Weekly web schedules can select multiple weekdays and create an independent fresh roster for each day.
+NW Helper is intended for guild administrators, officers, and members:
 
-## Setup
+- Administrators create, edit, list, repost, and delete Node War events.
+- The interaction router retains officer-aware legacy handlers for roster refresh and close actions when `OFFICER_ROLE_ID` is configured.
+- Guild members sign up for roster groups directly from a Discord announcement.
+- Administrators can log in to the web dashboard with Discord, choose a shared server, and manage raids for that server.
 
-1. Copy `.env.example` to `.env`.
-2. Fill in `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, and `DISCORD_GUILD_ID`.
-3. Install dependencies:
+Main features:
+
+- One-time and weekly recurring Node War rosters.
+- Tier and weekday capacity presets for Tier 1, Tier 2, and Tier 3 wars.
+- Discord creation and editing wizards with buttons, select menus, and modals.
+- Mainball/FFA, Defense, Zerker, Shai, Bench, and optional custom roster groups.
+- Automatic overflow to Bench when a requested group is full.
+- A minute-based scheduler with restart recovery and duplicate-post prevention.
+- JSON-file storage for local use or Supabase storage for persistent deployments.
+- Discord OAuth dashboard login with administrator-only server selection.
+
+## Architecture
+
+The application starts from `src/index.ts` and runs the Discord bot and Express web server in one Node.js process.
+
+| Area | Responsibility |
+| --- | --- |
+| Discord bot | `src/bot.ts` handles slash commands, buttons, selects, modals, roster posting, and the scheduler. |
+| Scheduler | `src/bot.ts` runs once at startup and every 60 seconds to close expired raids, roll weekly schedules, post due announcements, and create configured automatic Tier 1 announcements. |
+| Web dashboard | `src/web.ts` serves public raid pages and authenticated administrator management pages. |
+| Storage layer | `src/store.ts` implements serialized JSON storage and roster mutations. `src/supabase-store.ts` overrides persistence for Supabase. |
+| Authentication | `src/web.ts` uses Discord OAuth. `src/web-session-store.ts` stores opaque session tokens in memory or stores SHA-256 token hashes in Supabase. |
+| Event system | A `WarEvent` in `src/types.ts` stores schedule, capacity, groups, signups, delivery settings, Discord message IDs, and lifecycle flags. |
+
+See [docs/architecture.md](docs/architecture.md) for file responsibilities and end-to-end flows.
+
+## Installation
+
+### Requirements
+
+- Node.js 20 or newer.
+- npm.
+- A Discord application with a bot token and application ID.
+- A Discord server where the bot is installed.
+- Optional: a Supabase project for persistent production storage.
+
+### Setup
+
+1. Install dependencies:
 
    ```bash
    npm install
    ```
 
-4. Register slash commands for your test guild:
+2. Copy `.env.example` to `.env`.
+
+3. Set at least:
+
+   ```env
+   DISCORD_TOKEN=
+   DISCORD_CLIENT_ID=
+   DISCORD_GUILD_ID=
+   PUBLIC_BASE_URL=http://localhost:3000
+   ```
+
+4. Register commands:
 
    ```bash
    npm run register:commands
    ```
 
-5. Start the bot and web server:
+5. Start local development:
 
    ```bash
    npm run dev
    ```
 
-Open `http://localhost:3000` for the roster dashboard.
+6. Open `http://localhost:3000`.
 
-The dashboard stylesheet is authored in `src/styles/input.css` and compiled with the Tailwind CLI. Both `npm run dev` and `npm run build` regenerate `src/public/styles.css`.
+The web dashboard requires `DISCORD_CLIENT_SECRET` and a matching `DISCORD_REDIRECT_URI`. Scheduled posting requires a channel set with `/set-nwchannel` or `NODEWAR_CHANNEL_ID`.
 
-## Supabase storage
-
-The bot uses JSON storage unless Supabase is configured. To store events in Supabase, create the table below in the Supabase SQL editor, then add these values to `.env`:
-
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-```
-
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_ANON_KEY` are accepted as fallback names, but `SUPABASE_SERVICE_ROLE_KEY` is recommended for the bot process.
-
-SQL:
-
-```sql
-create table if not exists public.nodewar_store (
-  key text primary key,
-  data jsonb not null default '{"events":[]}'::jsonb,
-  updated_at timestamptz not null default now()
-);
-
-insert into public.nodewar_store (key, data)
-values ('default', '{"events":[]}'::jsonb)
-on conflict (key) do nothing;
-
-alter table public.nodewar_store enable row level security;
-
-create table if not exists public.web_sessions (
-  token_hash text primary key,
-  data jsonb not null,
-  expires_at timestamptz not null,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists web_sessions_expires_at_idx
-  on public.web_sessions (expires_at);
-
-alter table public.web_sessions enable row level security;
-```
-
-The private dashboard stores a SHA-256 hash of its opaque session cookie in `web_sessions`. This keeps Discord logins active across Railway restarts without storing the raw browser token or Discord OAuth access token. Use `SUPABASE_SERVICE_ROLE_KEY` for the bot process so the server can access the RLS-protected session table.
-
-## Discord values to collect
-
-Use the Discord Developer Portal: https://discord.com/developers/applications
-
-- `DISCORD_CLIENT_ID`: Open your application, then `General Information`, then copy `Application ID`.
-- `DISCORD_TOKEN`: Open your application, then `Bot`, then copy or reset the token. Keep this private. If it is pasted into chat or committed, reset it immediately.
-- `DISCORD_GUILD_ID`: In Discord, enable `User Settings > Advanced > Developer Mode`, right-click your server, then `Copy Server ID`.
-- `DISCORD_GUILD_IDS`: Optional comma-separated server IDs for instant slash-command registration in more than one server.
-- `REGISTER_COMMANDS_GLOBAL`: Set to `true` to register commands globally instead of per server. Global commands can take up to 1 hour to appear.
-- Bot invite: In the Developer Portal, open `OAuth2 > URL Generator`. Select scopes `bot` and `applications.commands`. Add permissions `Send Messages`, `Use Slash Commands`, `Embed Links`, `Read Message History`, and `View Channels`, then open the generated URL.
-- `PUBLIC_BASE_URL`: Use `http://localhost:3000` for local testing. For guild members to open web roster links, use a deployed URL or a tunnel URL such as Cloudflare Tunnel/ngrok.
-- `TIMEZONE`: Timezone used by the scheduler. Default is `Asia/Singapore`.
-- `DISCORD_CLIENT_SECRET`: OAuth2 client secret used by the private web dashboard.
-- `DISCORD_REDIRECT_URI`: OAuth2 callback URL. Add the same URL in the Discord Developer Portal. Defaults to `http://localhost:3000/auth/discord/callback`.
-
-For the private web dashboard, open the Discord Developer Portal OAuth2 settings, add the redirect URI, and set `DISCORD_CLIENT_SECRET`. The dashboard requests `identify guilds` and only shows administrator servers shared with the bot. Open an event and select `Edit raid` to update weekly raid days, announcement time, and roster allocation. Increasing Defense, Zerker, Shai, or a custom role automatically reduces Mainball/FFA. Custom roles can store a Unicode emoji, an alias such as `:mage:`, or a raw Discord emoji value such as `<:name:123456789>`.
-- `NODEWAR_POST_TIME`: Daily auto-post time in `HH:mm`. Default is `22:15`, calculated in `TIMEZONE`.
-- `NODEWAR_START_TIME`: Node War start time in `HH:mm`. Default is `21:00`.
-- `NODEWAR_CHANNEL_ID`: Channel where the scheduler and `/event repost` publish roster posts.
-- `NODEWAR_ROLE_ID`: Role pinged by scheduled posts, for example `<@&ROLE_ID>`.
-- `OFFICER_ROLE_ID`: Optional role allowed to edit, close, delete, and repost events.
-- The website home page includes an `Invite to Server` button. Its invite URL requests `Use External Emojis` and `Mention Everyone, @here, and All Roles` along with the bot's normal message/embed permissions.
-
-It is fine to paste the client ID and guild ID here. Do not paste the bot token here unless you plan to reset it afterward; put it directly in `D:\NW-Helper\.env`.
-
-## Node War presets
-
-The bot uses the current NA/EU Occupation Mode Node War participant table:
-
-| Tier | Territory group | Sunday | Monday | Tuesday | Wednesday | Thursday | Friday |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Tier 1 | Balenos/Serendia | 30 | 25 | 30 | 25 | 30 | 25 |
-| Tier 2 | Calpheon/Ulukita | 50 | 40 | 40 | 40 | 40 | 50 |
-| Tier 3 | Valencia/Edania | 75 | 55 | 55 | 75 | 55 | 75 |
-
-Create an event through the private wizard. Creation stores the event only; the Discord roster post is sent later when the selected announcement time is reached.
-
-Weekly rosters use one persistent raid ID. After each completed war, the previous Discord post remains as history while the same raid card rotates to the next selected weekday with a day-correct title and empty signup list. The web dashboard can pause a raid with `Status` or disable future rotation with `Auto repost`.
-One-time raids switch to inactive immediately after their announcement is posted. Their Discord signup message remains usable until the war ends.
-Node War is treated as a one-hour event from `21:00` to `22:00` GMT+8, so the next-day roster can announce at `22:15`.
+### Build
 
 ```bash
-/event create
+npm run typecheck
+npm run build
+npm start
 ```
 
-Create a one-time event for today's war. This uses today's weekday automatically and also waits for today's selected announcement time:
+`npm run build` compiles `src/styles/input.css` into `src/public/styles.css`, then compiles TypeScript into `dist/`.
 
-```bash
-/event create-today
+See [docs/configuration.md](docs/configuration.md) for every environment variable and [docs/deployment.md](docs/deployment.md) for production setup.
+
+## Commands
+
+All registered slash commands require Discord server Administrator permission. Signup buttons are available to guild members. Legacy management handlers use Administrator permission or `OFFICER_ROLE_ID` where noted.
+
+| Command | Purpose |
+| --- | --- |
+| `/event create` | Open the private Node War setup wizard. |
+| `/event create-today` | Open a one-time wizard for today's Node War preset. |
+| `/event create-test day:<day> time:<HH:mm> ping-role:<role>` | Create a scheduled Tier 1 test announcement. |
+| `/event edit id:<event_id>` | Open the private edit wizard. |
+| `/event recurring id:<event_id> enabled:<true|false>` | Enable or disable weekly recurrence. |
+| `/event set-slots id:<event_id> def:<n> zerk:<n> shai:<n>` | Update specialist capacities and recalculate Mainball/FFA. |
+| `/event repost id:<event_id>` | Immediately publish a new roster message. |
+| `/event delete id:<event_id>` | Delete an event from storage. |
+| `/event list` | List up to ten open events for the current server. |
+| `/event show id:<event_id>` | Show a private event preview with Post now, Edit, and Delete buttons. |
+| `/set-nwchannel` | Save the current text channel as this server's announcement channel. |
+
+The following names are not registered slash commands in the current implementation:
+
+| Requested name | Current way to perform the action |
+| --- | --- |
+| `/event rename` | Titles are generated from tier, weekday, territory group, and capacity. There is no standalone rename command. |
+| `/event set-time` | Use `/event edit` and choose `Time to post`. The war start time comes from `NODEWAR_START_TIME`. |
+| `/event close` | No current slash command or rendered button exposes manual closing. One-time events close automatically after the war window. |
+
+See [docs/commands.md](docs/commands.md) for parameters, permissions, examples, and wizard behavior.
+
+## Event Lifecycle
+
+### Event Creation
+
+`/event create` opens a private wizard. The administrator selects a tier, one or more weekdays, one-time or weekly recurrence, announcement time, ping roles, specialist slots, and an announcement channel. The wizard stores one event representing the next selected raid date. The web dashboard provides the same core scheduling controls and supports optional custom roster groups.
+
+`/event create-today` uses today's weekday and forces a one-time schedule. `/event create-test` creates a Tier 1 test event for the selected weekday and scheduled announcement time.
+
+### Scheduling And Posting
+
+Each event stores its war date and time plus an announcement date and time. Normal wizard and web events announce on the day before the war. The scheduler posts due announcements, records the Discord message location and `announcedAt`, and marks one-time schedules inactive after posting.
+
+`/event repost` and the event preview's `Post now` button publish immediately. Reposting creates a new Discord message and updates the stored message reference.
+
+### Signups
+
+Members click `FFA`, `DEF`, `ZERK`, or `SHAI` on the Discord message. A member has one response and clicking another option moves it. `Tentative` and `Absence` record non-roster responses without consuming capacity. `Sign off` removes the response. When a requested roster group is full, the member is assigned to Bench and the requested group is retained for display.
+
+After a deployment, the bot edits tracked open Discord roster messages in place so ongoing events receive newly rendered buttons and columns without clearing existing responses.
+
+### Editing
+
+`/event edit` can change selected days, announcement time, composition, and repeat mode. Updating slots or schedule details refreshes the current Discord message when one exists. If the raid date changes, signups are cleared for the fresh roster.
+
+### Closing
+
+One-time events close automatically one hour after their configured start time. Weekly schedules close the previous roster display, then reuse the same event ID for the next selected day with cleared signups. The current UI does not expose a manual close control.
+
+## Roster System
+
+The standard Tier 1 layout is:
+
+| Group | Behavior |
+| --- | --- |
+| Mainball/FFA | Receives the remaining roster capacity after specialist slots are allocated. Discord button label: `FFA`. |
+| Defense | Specialist group with a configurable cap. Discord button label: `DEF`. |
+| Zerker | Specialist group with a configurable cap. Discord button label: `ZERK`. |
+| Shai | Specialist group with a configurable cap. Discord button label: `SHAI`. |
+| Tentative | Non-roster response that does not consume capacity. Discord button label: `Tentative`. |
+| Absence | Non-roster response that does not consume capacity. Discord button label: `Absence`. |
+| Bench | Overflow destination. It is not directly selectable and has no active-roster cap. |
+
+Tier 1 defaults are Defense `5`, Zerker `2`, and Shai `2`. Mainball/FFA is:
+
+```text
+total capacity - all non-Mainball, non-Bench group capacities
 ```
 
-Create a quick ping test:
+Tier 2 and Tier 3 presets start with Mainball/FFA, Defense, Flex, and Bench. The web dashboard can add enabled custom roles from supported presets or validated custom role inputs. When capacities shrink, overflowing existing signups are moved to Bench in stored order.
 
-```bash
-/event create-test day:Monday time:22:15
-```
+## Scheduler
 
-At announcement time, the bot posts the normal Discord roster embed with configured custom emojis inline. The message keeps signup buttons below the embed:
+- Runs immediately when the Discord client becomes ready.
+- Runs every 60 seconds afterward.
+- Uses `TIMEZONE` for scheduler calendar decisions and announcement matching.
+- Uses `NODEWAR_POST_TIME` as the default announcement time.
+- Uses `NODEWAR_START_TIME` as the default war start time.
+- Treats a war as one hour long.
+- Posts overdue unannounced events after a restart.
+- Skips events with `announcedAt`, closed events, and inactive events.
+- Rolls weekly events into the next selected weekday using the same event ID and a fresh signup list.
+- Uses `createEventIfMissing` for the configured automatic Tier 1 creation path to avoid duplicate event records for the same guild, kind, tier, day, and date.
 
-- `DEF`, `ZERK`, `SHAI`, and `FFA`: sign up or move to that group.
-- `Leave`: remove your signup.
-- `Refresh` and `Close`: officer/admin controls.
+## Discord Integration
 
-For Tier 1 events, default slots are Defense 5, Zerker 2, Shai 2, and Mainball/FFA gets the remaining capacity. If a role is full and someone clicks its signup button, the bot places them in `Bench` automatically.
+### Buttons
 
-Then tune the roster split:
+Posted event messages include member signup buttons. `/event show` includes Administrator-only `Post now`, `Edit`, and `Delete` controls. The interaction router retains handlers for older `Refresh` and `Close` custom IDs, but current renderers do not emit those buttons.
 
-```bash
-/event set-slots id:<event_id> def:5 zerk:2 shai:2
-```
+### Modals And Select Menus
 
-Edit event details:
+Creation and editing use ephemeral Discord interactions:
 
-```bash
-/event edit id:<event_id>
-/event recurring id:<event_id> enabled:false
-```
+- Select menus choose tier, weekdays, recurrence, roles, and channels.
+- Modals collect custom announcement time and slot counts.
+- Wizard state is stored in memory and expires after ten minutes.
+- Only the user who started a wizard can operate it.
 
-## Class emojis
+### Permissions
 
-Unicode emojis work immediately in `.env`, for example `EMOJI_MAINBALL=⚔️`.
+- Slash commands are registered with Administrator default permissions and re-check Administrator access at runtime.
+- `/set-nwchannel` must run in a guild text channel.
+- Signup and sign-off buttons validate that the event belongs to the Discord server where the button was clicked.
+- Legacy `Post now`, `Refresh`, and `Close` interaction handlers allow Administrators or members with `OFFICER_ROLE_ID`. In the current UI, `/event show` is Administrator-only and renders `Post now`.
 
-For BDO class icons, upload small class images or emotes to the Discord server. In Discord, type the emoji with a backslash before it, such as `\:shai:`. Copy the output format, such as `<:shai:123456789012345678>`, then paste it into `.env`:
+## Web Dashboard
 
-```env
-EMOJI_MAINBALL=<:Striker_icon:1509992261889560626>
-EMOJI_DEFENSE=<:Warrior_icon:1509984324689334362>
-EMOJI_ZERKER=<:Berserker_icon:1509984343614029874>
-EMOJI_SHAI=<:shai:1509984302149140520>
-EMOJI_BENCH=⏳
-```
+The dashboard is served from the same process as the bot.
 
-Aliases are supported for older env files: `EMOJI_FFA` maps to Mainball/FFA, `EMOJI_DEF` maps to Defense, and `EMOJI_ZERK` maps to Zerker.
+### Server Selection
+
+Discord OAuth requests `identify guilds`. After login, the dashboard shows only servers where:
+
+- The user has Discord Administrator permission.
+- The bot is also installed.
+
+### Dashboard
+
+The selected server dashboard lists its raid schedules, signup counts, active state, and auto-repost state. Administrators can create raids, open detail pages, manage schedules, toggle status, toggle weekly auto repost, or delete events.
+
+### Raid Detail Pages
+
+`/events/:id` shows a public roster view for a known event ID. Authenticated administrators get management controls. `/events/:id/edit` is restricted to administrators of the event's Discord server.
+
+### Raid Management
+
+Web creation and editing support tier, selected days, recurrence, announcement time, delivery channel, ping roles, and roster allocation. Management writes to the same event store used by Discord and refreshes an existing Discord post when possible.
+
+## Storage And Authentication
+
+Without Supabase configuration, the bot stores JSON at `DATA_FILE`. Writes are queued and use a temporary file followed by rename.
+
+With `SUPABASE_URL` and a Supabase key, events are stored as JSON in `public.nodewar_store`. With `SUPABASE_SERVICE_ROLE_KEY`, dashboard sessions are stored in `public.web_sessions`; otherwise sessions are in memory and are lost on restart. The session cookie stores an opaque random token. Supabase stores only its SHA-256 hash.
+
+See [docs/security.md](docs/security.md) for the security model and [docs/configuration.md](docs/configuration.md) for the required SQL.

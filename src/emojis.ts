@@ -8,6 +8,8 @@ const DEFAULT_EMOJIS: Record<string, string> = {
   zerker: "<:Berserker_icon:1509984343614029874>",
   shai: "<:shai:1509984302149140520>",
   bench: "\u{1F455}",
+  tentative: "<:scale:1511395699357384785>",
+  absence: "\u{274C}",
   flex: "🧭",
   cannon: "💣",
   ranger: "🏹",
@@ -29,6 +31,8 @@ const GROUP_LABELS: Record<string, string> = {
   zerker: "Zerker",
   shai: "Shai",
   bench: "Benched",
+  tentative: "Tentative",
+  absence: "Absence",
   flex: "Flex",
   cannon: "Cannon",
   ranger: "Archer/Ranger",
@@ -42,6 +46,8 @@ const GROUP_BADGES: Record<string, string> = {
   zerker: "ZERK",
   shai: "SHAI",
   bench: "BENCH",
+  tentative: "TENTATIVE",
+  absence: "ABSENCE",
   flex: "FLEX",
   cannon: "CANNON",
   ranger: "RANGER",
@@ -49,6 +55,7 @@ const GROUP_BADGES: Record<string, string> = {
   shotcaller: "CALL"
 };
 
+/** Resolves a configured, aliased, or default emoji for a roster group. */
 export function getGroupEmoji(groupKey: GroupKey, configuredEmoji?: string): string {
   if (configuredEmoji?.trim()) {
     return configuredEmoji.trim();
@@ -58,27 +65,33 @@ export function getGroupEmoji(groupKey: GroupKey, configuredEmoji?: string): str
   return readEmojiEnv(key) ?? DEFAULT_EMOJIS[key] ?? "•";
 }
 
+/** Returns the display label for a normalized roster group key. */
 export function getGroupLabel(groupKey: GroupKey): string {
   const key = normalizeGroupKey(groupKey);
   return GROUP_LABELS[key] ?? groupKey;
 }
 
+/** Formats an emoji and full group label for user-facing text. */
 export function formatGroupName(groupKey: GroupKey): string {
   return `${getGroupEmoji(groupKey)} ${getGroupLabel(groupKey)}`;
 }
 
+/** Formats an emoji and compact badge for Discord responses. */
 export function formatGroupBadge(groupKey: GroupKey): string {
   return `${getGroupEmoji(groupKey)} ${GROUP_BADGES[normalizeGroupKey(groupKey)] ?? getGroupLabel(groupKey)}`;
 }
 
+/** Returns the Discord CDN URL when a group emoji is a Discord custom emoji. */
 export function getGroupEmojiUrl(groupKey: GroupKey, configuredEmoji?: string): string | undefined {
   return discordEmojiUrl(getGroupEmoji(groupKey, configuredEmoji));
 }
 
+/** Resolves the configured or default emoji for an embed summary field. */
 export function getSummaryEmoji(key: SummaryEmojiKey): string {
   return process.env[`EMOJI_${key.toUpperCase()}`]?.trim() || DEFAULT_SUMMARY_EMOJIS[key];
 }
 
+/** Converts a raw Discord custom emoji value into its CDN image URL. */
 export function discordEmojiUrl(emoji: string): string | undefined {
   const match = /^<a?:[^:]+:(\d+)>$/.exec(emoji.trim());
   return match ? `https://cdn.discordapp.com/emojis/${match[1]}.webp?size=48&quality=lossless` : undefined;
@@ -98,6 +111,8 @@ function readEmojiEnv(groupKey: string): string | undefined {
     zerker: ["EMOJI_ZERKER", "EMOJI_ZERK"],
     shai: ["EMOJI_SHAI"],
     bench: ["EMOJI_BENCH"],
+    tentative: ["EMOJI_TENTATIVE"],
+    absence: ["EMOJI_ABSENCE"],
     flex: ["EMOJI_FLEX"],
     cannon: ["EMOJI_CANNON"],
     ranger: ["EMOJI_RANGER"],

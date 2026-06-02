@@ -35,14 +35,14 @@ import {
   NODE_WAR_PRESETS
 } from "./nodewar-presets.js";
 import { formatAnnouncementSchedule, renderEventAttachments, renderEventComponents, renderEventEmbed } from "./render.js";
-import { activeRosterCapacity, type EventStore } from "./store.js";
-import { type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
+import { activeRosterCapacity, activeRosterSignupCount, type EventStore } from "./store.js";
+import { WEEKDAYS, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
 
 const AUTO_SCHEDULER_USER = "nodewar-scheduler";
 const SCHEDULER_INTERVAL_MS = 60_000;
 const NODEWAR_DURATION_MS = 60 * 60 * 1000;
 const WIZARD_TIMEOUT_MS = 10 * 60_000;
-const WIZARD_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const WIZARD_DAYS: WarDay[] = [...WEEKDAYS];
 
 type WizardStep = "tier" | "days" | "repeat" | "post-time" | "ping" | "slots" | "channel" | "confirm";
 
@@ -85,6 +85,10 @@ interface EditWizardState {
 
 const editWizardStates = new Map<string, EditWizardState>();
 
+/**
+ * Creates the Discord client, routes supported interaction types, and starts
+ * scheduler polling after the client becomes ready.
+ */
 export function createDiscordClient(store: EventStore): Client {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -93,6 +97,9 @@ export function createDiscordClient(store: EventStore): Client {
     readyClient.user.setPresence({
       activities: [{ name: "Meow", type: ActivityType.Listening }],
       status: "online"
+    });
+    await refreshOpenEventMessages(client, store).catch((error) => {
+      console.warn("Could not refresh open event messages:", error);
     });
     startNodeWarScheduler(client, store).catch((error) => {
       console.error("Node War scheduler failed:", error);
@@ -132,6 +139,7 @@ export function createDiscordClient(store: EventStore): Client {
   return client;
 }
 
+/** Routes registered slash commands after applying their runtime permission checks. */
 async function handleCommand(
   interaction: ChatInputCommandInteraction,
   store: EventStore,
@@ -227,7 +235,7 @@ function renderEventListCard(
   index: number,
   userId: string
 ): { content: string; components: Array<ActionRowBuilder<ButtonBuilder>> } {
-  const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+  const signed = activeRosterSignupCount(event);
   return {
     content: `${index + 1}. ID: \`${event.id}\` - **${event.title}** - ${event.date} ${event.time} - ${signed}/${activeRosterCapacity(event)}`,
     components: [
@@ -351,6 +359,7 @@ async function startEventWizard(interaction: ChatInputCommandInteraction, store:
   await interaction.reply({ ...renderWizard(state), ephemeral: true });
 }
 
+/** Applies creation-wizard and edit-wizard select-menu changes. */
 async function handleSelect(
   interaction: StringSelectMenuInteraction,
   _store: EventStore,
@@ -383,6 +392,7 @@ async function handleSelect(
   }
 }
 
+/** Captures selected announcement roles for the active creation wizard. */
 async function handleRoleSelect(interaction: RoleSelectMenuInteraction): Promise<void> {
   const parsed = parseWizardCustomId(interaction.customId);
   if (!parsed || parsed.action !== "ping-role") {
@@ -395,6 +405,7 @@ async function handleRoleSelect(interaction: RoleSelectMenuInteraction): Promise
   await interaction.update(renderWizard(state));
 }
 
+/** Captures the selected delivery channel for the active creation wizard. */
 async function handleChannelSelect(interaction: ChannelSelectMenuInteraction): Promise<void> {
   const parsed = parseWizardCustomId(interaction.customId);
   if (!parsed || parsed.action !== "channel") {
@@ -408,6 +419,7 @@ async function handleChannelSelect(interaction: ChannelSelectMenuInteraction): P
   await interaction.update(renderWizard(state));
 }
 
+/** Applies custom time and slot values submitted from creation or edit modals. */
 async function handleModal(
   interaction: ModalSubmitInteraction,
   _store: EventStore,
@@ -867,6 +879,7 @@ async function repostEvent(
   await interaction.reply({ content: `Reposted ${event.title}.`, ephemeral: true });
 }
 
+/** Routes wizard, roster-signup, list-management, and posted-roster control buttons. */
 async function handleButton(interaction: ButtonInteraction, store: EventStore, client: Client): Promise<void> {
   if (interaction.customId.startsWith("editwizard-")) {
     await handleEditWizardButton(interaction, store, client);
@@ -874,7 +887,7 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
   }
 
   if (interaction.customId.startsWith("wizard-")) {
-    await handleWizardButton(interaction, store, client);
+    await handleWizardButton(interaction, store);
     return;
   }
 
@@ -988,7 +1001,8 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
   }
 }
 
-async function handleWizardButton(interaction: ButtonInteraction, store: EventStore, client: Client): Promise<void> {
+/** Advances or confirms the in-memory event-creation wizard. */
+async function handleWizardButton(interaction: ButtonInteraction, store: EventStore): Promise<void> {
   const parsed = parseWizardCustomId(interaction.customId);
   if (!parsed) {
     return;
@@ -1410,6 +1424,7 @@ function validateWizardSlots(state: EventWizardState): void {
   }
 }
 
+/** Runs scheduler recovery immediately and starts minute-based lifecycle polling. */
 async function startNodeWarScheduler(client: Client, store: EventStore): Promise<void> {
   await runNodeWarScheduler(client, store);
   setInterval(() => {
@@ -1419,6 +1434,10 @@ async function startNodeWarScheduler(client: Client, store: EventStore): Promise
   }, SCHEDULER_INTERVAL_MS);
 }
 
+/**
+ * Processes expired events, weekly rollover, due announcements, and the
+ * configured automatic Tier 1 announcement path for the current minute.
+ */
 async function runNodeWarScheduler(client: Client, store: EventStore): Promise<void> {
   const now = zonedNow(config.timezone);
   await closeExpiredOneTimeEvents(client, store);
@@ -1476,6 +1495,7 @@ async function runNodeWarScheduler(client: Client, store: EventStore): Promise<v
   }
 }
 
+/** Rotates completed weekly raids in place so one schedule keeps one persistent event ID. */
 export async function rollCompletedWeeklyEvents(
   client: Client,
   store: EventStore,
@@ -1551,6 +1571,7 @@ function nextSelectedRaidAfter(date: string, days: WarDay[]): { day: WarDay; dat
     .sort((left, right) => left.date.localeCompare(right.date))[0];
 }
 
+/** Closes one-time raids after their one-hour war window and refreshes posted messages. */
 async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Promise<void> {
   const events = await store.listEvents();
   const now = Date.now();
@@ -1566,11 +1587,13 @@ async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Pro
   }
 }
 
+/** Returns the fixed one-hour Node War end timestamp for an event. */
 export function eventEndsAt(event: WarEvent): number {
   const parsed = new Date(`${event.date}T${event.time}:00+08:00`).getTime();
   return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed + NODEWAR_DURATION_MS;
 }
 
+/** Posts active due or overdue events once, using persisted `announcedAt` as the guard. */
 async function postDueScheduledEvents(
   client: Client,
   store: EventStore,
@@ -1695,6 +1718,7 @@ function getAnnouncementRoleIds(event: WarEvent): string[] {
   return roleId ? [roleId] : [];
 }
 
+/** Edits the currently tracked Discord message when an event has already been posted. */
 export async function refreshEventMessage(client: Client, event: WarEvent): Promise<void> {
   if (!event.channelId || !event.messageId) {
     return;
@@ -1707,6 +1731,16 @@ export async function refreshEventMessage(client: Client, event: WarEvent): Prom
 
   const message = await channel.messages.fetch(event.messageId);
   await message.edit(renderEventMessagePayload(event));
+}
+
+/** Updates tracked open roster posts after deployment without modifying signup data. */
+async function refreshOpenEventMessages(client: Client, store: EventStore): Promise<void> {
+  const events = (await store.listEvents()).filter((event) => !event.closed && event.channelId && event.messageId);
+  for (const event of events) {
+    await refreshEventMessage(client, event).catch((error) => {
+      console.warn(`Could not refresh open event message ${event.id}:`, error);
+    });
+  }
 }
 
 function renderEventMessagePayload(event: WarEvent) {
@@ -1799,11 +1833,6 @@ function schedulerMinute(): number {
   return Number.parseInt(config.nodeWarPostTime.split(":")[1] ?? "10", 10);
 }
 
-function timeMatches(time: string, hour: number, minute: number): boolean {
-  const [hourValue, minuteValue = "00"] = time.split(":");
-  return Number.parseInt(hourValue, 10) === hour && Number.parseInt(minuteValue, 10) === minute;
-}
-
 function announcementIsDue(
   date: string,
   time: string,
@@ -1876,6 +1905,7 @@ function currentWarDay(timezone: string): WarDay {
   return day;
 }
 
+/** Selects today's raid before its end window or the next allowed future raid day. */
 export function nextWarDayFromSelection(
   days: WarDay[],
   timezone: string,
@@ -1926,7 +1956,5 @@ function warDayFromWeekday(weekday: string): WarDay | undefined {
 }
 
 function weekdayIndex(day: string): number {
-  return WEEKDAYS.indexOf(day);
+  return WEEKDAYS.findIndex((weekday) => weekday === day);
 }
-
-const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];

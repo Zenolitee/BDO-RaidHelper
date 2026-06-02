@@ -1,12 +1,14 @@
 import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from "discord.js";
 import { config } from "./config.js";
 import { formatGroupBadge, formatGroupName, getGroupEmoji, getGroupLabel, getSummaryEmoji } from "./emojis.js";
-import { activeRosterCapacity, groupSignupCount } from "./store.js";
+import { activeRosterCapacity, activeRosterSignupCount, groupSignupCount, isRosterGroup } from "./store.js";
+import { formatClockTime } from "./time-format.js";
 import { type WarEvent } from "./types.js";
 
+/** Renders the Discord roster embed for an event's current lifecycle and signup state. */
 export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): EmbedBuilder {
   const status = event.closed ? "Closed" : "Open";
-  const signed = event.signups.filter((signup) => signup.group !== "bench").length;
+  const signed = activeRosterSignupCount(event);
   const unix = eventUnixSeconds(event);
   const relativeTime = unix ? `<t:${unix}:R>` : formatEventDate(event);
 
@@ -29,10 +31,12 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): Em
   return embed;
 }
 
+/** Returns event message attachments. Kept as an extension point for future artwork. */
 export function renderEventAttachments(): AttachmentBuilder[] {
   return [];
 }
 
+/** Renders member signup, response-status, and sign-off buttons. */
 export function renderEventComponents(event: WarEvent): Array<ActionRowBuilder<ButtonBuilder>> {
   const signupDisabled = event.closed;
 
@@ -47,11 +51,13 @@ export function renderEventComponents(event: WarEvent): Array<ActionRowBuilder<B
         .setLabel("Sign off")
         .setStyle(ButtonStyle.Danger)
         .setDisabled(signupDisabled)
+    ),
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      signupButton(event, "tentative", "Tentative", ButtonStyle.Secondary, signupDisabled),
+      signupButton(event, "absence", "Absence", ButtonStyle.Secondary, signupDisabled)
     )
   ];
 }
-
-export const renderSignupMenu = renderEventComponents;
 
 function signupButton(
   event: WarEvent,
@@ -102,12 +108,12 @@ function renderGroupTitle(event: WarEvent, group: WarEvent["groups"][number]): s
   const count = groupSignupCount(event, group.key);
   const label = group.label;
   const emoji = getGroupEmoji(group.key, group.emoji);
-  const countText = group.key === "bench" ? String(count) : `${count}/${group.capacity}`;
+  const countText = isRosterGroup(group.key) ? `${count}/${group.capacity}` : String(count);
   return `${emoji} ${label} - (${countText})`;
 }
 
 function orderedGroups(event: WarEvent): WarEvent["groups"] {
-  const order = ["mainball", "defense", "zerker", "shai", "bench"];
+  const order = ["mainball", "defense", "zerker", "shai", "bench", "tentative", "absence"];
   return [...event.groups].sort((a, b) => {
     const left = order.indexOf(a.key);
     const right = order.indexOf(b.key);
@@ -129,18 +135,6 @@ function formatLongDate(date: string, timezone: string): string {
   }).format(parsed);
 }
 
-function formatTime(time: string): string {
-  const [hourValue, minute = "00"] = time.split(":");
-  const hour = Number.parseInt(hourValue, 10);
-  if (!Number.isInteger(hour)) {
-    return time;
-  }
-
-  const suffix = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${minute.padStart(2, "0")} ${suffix}`;
-}
-
 function formatEventDate(event: WarEvent): string {
   const unix = eventUnixSeconds(event);
   return unix ? `<t:${unix}:D>` : formatLongDate(event.date, event.timezone);
@@ -148,7 +142,7 @@ function formatEventDate(event: WarEvent): string {
 
 function formatEventTime(event: WarEvent): string {
   const unix = eventUnixSeconds(event);
-  return unix ? `<t:${unix}:t>` : `${formatTime(event.time)} GMT+8`;
+  return unix ? `<t:${unix}:t>` : `${formatClockTime(event.time)} GMT+8`;
 }
 
 function eventUnixSeconds(event: WarEvent): number | undefined {
@@ -167,6 +161,7 @@ function eventUnixSeconds(event: WarEvent): number | undefined {
   return Math.floor(parsed.getTime() / 1000);
 }
 
+/** Formats an event announcement schedule for Discord previews. */
 export function formatAnnouncementSchedule(event: WarEvent): string {
   if (!event.announcementDate || !event.announcementTime) {
     return "Not scheduled";
@@ -175,7 +170,7 @@ export function formatAnnouncementSchedule(event: WarEvent): string {
   const unix = unixSeconds(event.announcementDate, event.announcementTime);
   return unix
     ? `<t:${unix}:F> (<t:${unix}:R>)`
-    : `${event.announcementDate} ${formatTime(event.announcementTime)} GMT+8`;
+    : `${event.announcementDate} ${formatClockTime(event.announcementTime)} GMT+8`;
 }
 
 function unixSeconds(date: string, time: string): number | undefined {

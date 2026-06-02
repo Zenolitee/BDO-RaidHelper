@@ -6,12 +6,14 @@ interface SessionRow {
   expires_at: string;
 }
 
+/** Persistence contract for opaque dashboard sessions. */
 export interface WebSessionStore<T> {
   get(token: string): Promise<T | undefined>;
   set(token: string, value: T, expiresAt: number): Promise<void>;
   delete(token: string): Promise<void>;
 }
 
+/** Stores dashboard sessions in process memory for local or non-persistent use. */
 class MemoryWebSessionStore<T> implements WebSessionStore<T> {
   private readonly sessions = new Map<string, { value: T; expiresAt: number }>();
 
@@ -34,6 +36,7 @@ class MemoryWebSessionStore<T> implements WebSessionStore<T> {
   }
 }
 
+/** Stores dashboard sessions in Supabase under a SHA-256 hash of the cookie token. */
 class SupabaseWebSessionStore<T> implements WebSessionStore<T> {
   private readonly supabase: SupabaseClient;
 
@@ -84,6 +87,7 @@ class SupabaseWebSessionStore<T> implements WebSessionStore<T> {
   }
 }
 
+/** Selects persistent Supabase sessions when a service-role key is available, otherwise memory sessions. */
 export function createWebSessionStore<T>(
   url: string | undefined,
   serviceRoleKey: string | undefined,

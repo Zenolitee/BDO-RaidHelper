@@ -33,6 +33,7 @@ export const config = {
   nodeWarStartTime: process.env.NODEWAR_START_TIME ?? "21:00"
 };
 
+/** Returns the Discord credentials required by the slash-command registration script. */
 export function readDiscordConfig() {
   return {
     token: readRequired("DISCORD_TOKEN"),

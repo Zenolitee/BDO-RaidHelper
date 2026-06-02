@@ -1,14 +1,11 @@
-export const GROUPS = [
-  "mainball",
-  "defense",
-  "flex",
-  "cannon",
-  "shai",
-  "zerker",
-  "ranger",
-  "wizwitch",
-  "shotcaller",
-  "bench"
+export const WEEKDAYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday"
 ] as const;
 
 export type GroupKey = string;
@@ -17,7 +14,7 @@ export type Recurrence = "once" | "daily" | "every_other_day" | "weekly";
 
 export type NodeWarTier = "tier1" | "tier2" | "tier3";
 
-export type WarDay = "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+export type WarDay = (typeof WEEKDAYS)[number];
 
 export interface GroupConfig {
   key: GroupKey;

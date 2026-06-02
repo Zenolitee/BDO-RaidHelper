@@ -63,14 +63,12 @@ export const NODE_WAR_PRESETS: Record<NodeWarTier, NodeWarPreset> = {
   }
 };
 
+/** Returns preset participant capacity for a tier and weekday. */
 export function getNodeWarCapacity(tier: NodeWarTier, day: WarDay): number {
   return NODE_WAR_PRESETS[tier].maxParticipantsByDay[day];
 }
 
-export function getDefaultGroups(totalCapacity: number): GroupConfig[] {
-  return getT1DefaultGroups(totalCapacity);
-}
-
+/** Builds the standard Tier 1 roster layout and non-capacity response groups. */
 export function getT1DefaultGroups(totalCapacity: number): GroupConfig[] {
   const defense = 5;
   const zerker = 2;
@@ -82,10 +80,11 @@ export function getT1DefaultGroups(totalCapacity: number): GroupConfig[] {
     { key: "defense", label: getGroupLabel("defense"), capacity: defense, editable: true },
     { key: "zerker", label: getGroupLabel("zerker"), capacity: zerker, editable: true },
     { key: "shai", label: getGroupLabel("shai"), capacity: shai, editable: true },
-    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
+    ...getResponseGroups()
   ];
 }
 
+/** Builds the initial roster layout for a Node War tier. */
 export function getGroupsForPreset(tier: NodeWarTier, totalCapacity: number): GroupConfig[] {
   if (tier === "tier1") {
     return getT1DefaultGroups(totalCapacity);
@@ -99,19 +98,31 @@ export function getGroupsForPreset(tier: NodeWarTier, totalCapacity: number): Gr
     { key: "mainball", label: getGroupLabel("mainball"), capacity: mainball, editable: true },
     { key: "defense", label: getGroupLabel("defense"), capacity: defense, editable: true },
     { key: "flex", label: getGroupLabel("flex"), capacity: flex, editable: true },
-    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
+    ...getResponseGroups()
   ];
 }
 
+/** Returns non-capacity groups shown alongside the active roster. */
+export function getResponseGroups(): GroupConfig[] {
+  return [
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false },
+    { key: "tentative", label: getGroupLabel("tentative"), capacity: 0, editable: false },
+    { key: "absence", label: getGroupLabel("absence"), capacity: 0, editable: false }
+  ];
+}
+
+/** Builds the generated Node War title shown in Discord and the dashboard. */
 export function buildNodeWarTitle(day: WarDay, tier: NodeWarTier, totalCapacity: number): string {
   const tierLabel = tier === "tier1" ? "T1" : labelTier(tier);
   return `${labelWarDay(day)} ${tierLabel} ${NODE_WAR_PRESETS[tier].territoryGroup} ${totalCapacity} Man`;
 }
 
+/** Returns a display label for a tier or custom event. */
 export function labelTier(tier?: NodeWarTier): string {
   return tier ? NODE_WAR_PRESETS[tier].label : "Custom";
 }
 
+/** Returns a title-cased weekday label or a custom fallback. */
 export function labelWarDay(day?: WarDay): string {
   if (!day) {
     return "Custom";

@@ -9,6 +9,7 @@ interface StoreRow {
   data: unknown;
 }
 
+/** Persists the shared event-store document in the Supabase `nodewar_store` table. */
 export class SupabaseEventStore extends EventStore {
   private readonly supabase: SupabaseClient;
 
@@ -55,6 +56,7 @@ export class SupabaseEventStore extends EventStore {
   }
 }
 
+/** Creates the Supabase-backed event store used when a URL and key are configured. */
 export function createSupabaseEventStore(url: string, serviceRoleKey: string): SupabaseEventStore {
   return new SupabaseEventStore(url, serviceRoleKey);
 }

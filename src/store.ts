@@ -1,27 +1,39 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { formatGroupBadge, formatGroupName, getGroupLabel } from "./emojis.js";
+import { formatGroupName, getGroupLabel } from "./emojis.js";
 import type { BotSettings, EventStoreData, GroupKey, Signup, WarEvent } from "./types.js";
 
+const NON_ROSTER_GROUPS = new Set<GroupKey>(["bench", "tentative", "absence"]);
+
+/**
+ * Serializes event mutations and persists roster state to a JSON file.
+ *
+ * Storage adapters can override {@link read} and {@link write} while reusing the
+ * validation, capacity-balancing, signup, and lifecycle operations.
+ */
 export class EventStore {
   private operationQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly filePath: string) {}
 
+  /** Returns all events ordered by war date and start time. */
   async listEvents(): Promise<WarEvent[]> {
     return this.withStore(async (data) =>
       [...data.events].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
     );
   }
 
+  /** Looks up one event by its full ID. */
   async getEvent(id: string): Promise<WarEvent | undefined> {
     return this.withStore(async (data) => data.events.find((event) => event.id === id));
   }
 
+  /** Returns persisted bot settings without exposing the mutable store object. */
   async getSettings(): Promise<BotSettings> {
     return this.withStore(async (data) => ({ ...(data.settings ?? {}) }));
   }
 
+  /** Saves the announcement channel selected for a Discord guild. */
   async setNodeWarChannelId(guildId: string, channelId: string): Promise<BotSettings> {
     return this.withStore(async (data) => {
       data.settings = {
@@ -33,14 +45,17 @@ export class EventStore {
     });
   }
 
+  /** Persists a newly created event. */
   async createEvent(event: WarEvent): Promise<WarEvent> {
     return this.withStore(async (data) => {
+      event.groups = ensureResponseGroups(event.groups);
       data.events.push(event);
       await this.write(data);
       return event;
     });
   }
 
+  /** Creates an event unless an equivalent guild, tier, day, and date record already exists. */
   async createEventIfMissing(event: WarEvent): Promise<{ event: WarEvent; created: boolean }> {
     return this.withStore(async (data) => {
       const existing = data.events.find(
@@ -55,37 +70,14 @@ export class EventStore {
         return { event: existing, created: false };
       }
 
+      event.groups = ensureResponseGroups(event.groups);
       data.events.push(event);
       await this.write(data);
       return { event, created: true };
     });
   }
 
-  async updateEventMessage(id: string, message: { guildId: string; channelId: string; messageId: string }): Promise<void> {
-    await this.updateEvent(id, (event) => {
-      event.guildId = message.guildId;
-      event.channelId = message.channelId;
-      event.messageId = message.messageId;
-    });
-  }
-
-  async allocateGroups(eventId: string, groups: WarEvent["groups"]): Promise<WarEvent> {
-    let updatedEvent: WarEvent | undefined;
-
-    await this.updateEvent(eventId, (event) => {
-      const total = groups.filter((group) => group.key !== "bench").reduce((sum, group) => sum + group.capacity, 0);
-      if (total > event.totalCapacity) {
-        throw new Error(`Group slots (${total}) cannot exceed total roster size (${event.totalCapacity}).`);
-      }
-
-      event.groups = ensureBenchGroup(groups);
-      moveOverflowToBench(event);
-      updatedEvent = event;
-    });
-
-    return requireUpdated(updatedEvent);
-  }
-
+  /** Updates specialist capacities and assigns the remaining roster capacity to Mainball/FFA. */
   async setBalancedGroups(eventId: string, updates: Record<string, number>): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
 
@@ -101,7 +93,7 @@ export class EventStore {
       }
 
       rebalanceMainBall(nextGroups, event.totalCapacity);
-      event.groups = ensureBenchGroup(nextGroups);
+      event.groups = ensureResponseGroups(nextGroups);
       moveOverflowToBench(event);
       updatedEvent = event;
     });
@@ -109,6 +101,7 @@ export class EventStore {
     return requireUpdated(updatedEvent);
   }
 
+  /** Applies lifecycle, schedule, and roster updates to an existing event. */
   async updateEventDetails(
     eventId: string,
     updates: Partial<Pick<WarEvent, "title" | "tier" | "day" | "date" | "time" | "timezone" | "recurrence" | "totalCapacity" | "groups" | "repeatDays" | "announcementDate" | "announcementTime" | "announcementChannelId" | "announcementRoleId" | "announcementRoleIds" | "announcedAt" | "closed" | "active" | "autoRepost" | "channelId" | "messageId" | "signups">>
@@ -118,7 +111,7 @@ export class EventStore {
     await this.updateEvent(eventId, (event) => {
       Object.assign(event, updates);
       if (updates.groups) {
-        event.groups = ensureBenchGroup(updates.groups);
+        event.groups = ensureResponseGroups(updates.groups);
       }
       moveOverflowToBench(event);
       validateEventCapacity(event);
@@ -128,73 +121,7 @@ export class EventStore {
     return requireUpdated(updatedEvent);
   }
 
-  async setGroupCapacity(eventId: string, groupKey: GroupKey, capacity: number): Promise<WarEvent> {
-    let updatedEvent: WarEvent | undefined;
-
-    await this.updateEvent(eventId, (event) => {
-      const group = event.groups.find((candidate) => candidate.key === groupKey);
-      if (!group) {
-        throw new Error("Group not found.");
-      }
-
-      if (groupKey === "mainball") {
-        throw new Error(`${formatGroupName("mainball")} is calculated from ${formatGroupBadge("defense")}, ${formatGroupBadge("zerker")}, and ${formatGroupBadge("shai")}.`);
-      }
-
-      group.capacity = capacity;
-      rebalanceMainBall(event.groups, event.totalCapacity);
-      event.groups = ensureBenchGroup(event.groups);
-      moveOverflowToBench(event);
-      updatedEvent = event;
-    });
-
-    return requireUpdated(updatedEvent);
-  }
-
-  async upsertGroup(eventId: string, group: WarEvent["groups"][number]): Promise<WarEvent> {
-    let updatedEvent: WarEvent | undefined;
-
-    await this.updateEvent(eventId, (event) => {
-      const existing = event.groups.find((candidate) => candidate.key === group.key);
-      if (existing) {
-        existing.label = group.label;
-        existing.capacity = group.capacity;
-        existing.editable = true;
-        existing.emoji = group.emoji;
-      } else {
-        event.groups.push({ ...group, editable: true });
-      }
-
-      rebalanceMainBall(event.groups, event.totalCapacity);
-      event.groups = ensureBenchGroup(event.groups);
-      moveOverflowToBench(event);
-      updatedEvent = event;
-    });
-
-    return requireUpdated(updatedEvent);
-  }
-
-  async setEnabledRoles(eventId: string, enabledGroups: WarEvent["groups"]): Promise<WarEvent> {
-    let updatedEvent: WarEvent | undefined;
-
-    await this.updateEvent(eventId, (event) => {
-      for (const group of event.groups) {
-        const stillEnabled = enabledGroups.some((candidate) => candidate.key === group.key);
-        const hasSignups = event.signups.some((signup) => signup.group === group.key);
-        if (!stillEnabled && hasSignups) {
-          throw new Error(`Cannot remove ${group.label}; it has signups.`);
-        }
-      }
-
-      event.groups = ensureBenchGroup(enabledGroups.map((group) => ({ ...group, editable: group.key !== "bench" })));
-      rebalanceMainBall(event.groups, event.totalCapacity);
-      moveOverflowToBench(event);
-      updatedEvent = event;
-    });
-
-    return requireUpdated(updatedEvent);
-  }
-
+  /** Inserts or moves a member signup, assigning Bench when the requested group is full. */
   async signup(eventId: string, signup: Omit<Signup, "createdAt" | "updatedAt">): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
     const now = new Date().toISOString();
@@ -205,6 +132,7 @@ export class EventStore {
       }
 
       const targetGroup = signup.group;
+      event.groups = ensureResponseGroups(event.groups);
       const group = event.groups.find((candidate) => candidate.key === targetGroup);
       if (!group || targetGroup === "bench") {
         throw new Error("Unknown signup group.");
@@ -215,8 +143,7 @@ export class EventStore {
         (candidate) => candidate.group === signup.group && candidate.userId !== signup.userId
       ).length;
 
-      event.groups = ensureBenchGroup(event.groups);
-      const assignedGroup = groupCount >= group.capacity ? "bench" : targetGroup;
+      const assignedGroup = isRosterGroup(targetGroup) && groupCount >= group.capacity ? "bench" : targetGroup;
       const requestedGroup = assignedGroup === "bench" ? targetGroup : undefined;
 
       if (existing) {
@@ -234,6 +161,7 @@ export class EventStore {
     return requireUpdated(updatedEvent);
   }
 
+  /** Removes a member from an event roster. */
   async removeSignup(eventId: string, userId: string): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
 
@@ -245,6 +173,7 @@ export class EventStore {
     return requireUpdated(updatedEvent);
   }
 
+  /** Closes an event so new Discord signups are rejected. */
   async closeEvent(eventId: string): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
 
@@ -256,6 +185,7 @@ export class EventStore {
     return requireUpdated(updatedEvent);
   }
 
+  /** Records the published Discord message and marks the announcement as sent. */
   async markEventAnnounced(id: string, message: { guildId: string; channelId: string; messageId: string }): Promise<void> {
     await this.updateEvent(id, (event) => {
       event.guildId = message.guildId;
@@ -265,17 +195,7 @@ export class EventStore {
     });
   }
 
-  async setEventTime(eventId: string, time: string): Promise<WarEvent> {
-    let updatedEvent: WarEvent | undefined;
-
-    await this.updateEvent(eventId, (event) => {
-      event.time = time;
-      updatedEvent = event;
-    });
-
-    return requireUpdated(updatedEvent);
-  }
-
+  /** Permanently removes an event from storage. */
   async deleteEvent(eventId: string): Promise<void> {
     await this.withStore(async (data) => {
       const nextEvents = data.events.filter((event) => event.id !== eventId);
@@ -301,12 +221,14 @@ export class EventStore {
     });
   }
 
+  /** Runs one read-modify-write operation after previously queued operations settle. */
   private async withStore<T>(operation: (data: EventStoreData) => Promise<T>): Promise<T> {
     const run = this.operationQueue.then(async () => operation(await this.read()));
     this.operationQueue = run.catch(() => undefined);
     return run;
   }
 
+  /** Reads and validates the JSON store, returning an empty store when the file is absent. */
   protected async read(): Promise<EventStoreData> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
@@ -319,6 +241,7 @@ export class EventStore {
     }
   }
 
+  /** Validates and atomically replaces the JSON store through a temporary file. */
   protected async write(data: EventStoreData): Promise<void> {
     validateStoreData(data);
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
@@ -328,14 +251,26 @@ export class EventStore {
   }
 }
 
+/** Counts members currently assigned to a roster group. */
 export function groupSignupCount(event: WarEvent, group: GroupKey): number {
   return event.signups.filter((signup) => signup.group === group).length;
 }
 
+/** Returns the total capacity of active roster groups. */
 export function activeRosterCapacity(event: WarEvent): number {
   return event.groups
-    .filter((group) => group.key !== "bench")
+    .filter((group) => isRosterGroup(group.key))
     .reduce((sum, group) => sum + group.capacity, 0);
+}
+
+/** Counts members assigned to capacity-bearing roster groups. */
+export function activeRosterSignupCount(event: WarEvent): number {
+  return event.signups.filter((signup) => isRosterGroup(signup.group)).length;
+}
+
+/** Returns whether a group consumes one of the active roster slots. */
+export function isRosterGroup(group: GroupKey): boolean {
+  return !NON_ROSTER_GROUPS.has(group);
 }
 
 function ensureT1CoreGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
@@ -345,7 +280,9 @@ function ensureT1CoreGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
     { key: "defense", label: getGroupLabel("defense"), capacity: 5, editable: true },
     { key: "zerker", label: getGroupLabel("zerker"), capacity: 2, editable: true },
     { key: "shai", label: getGroupLabel("shai"), capacity: 2, editable: true },
-    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }
+    { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false },
+    { key: "tentative", label: getGroupLabel("tentative"), capacity: 0, editable: false },
+    { key: "absence", label: getGroupLabel("absence"), capacity: 0, editable: false }
   ];
 
   for (const group of required) {
@@ -357,18 +294,21 @@ function ensureT1CoreGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
   return nextGroups;
 }
 
-function ensureBenchGroup(groups: WarEvent["groups"]): WarEvent["groups"] {
-  if (groups.some((group) => group.key === "bench")) {
-    return groups;
+function ensureResponseGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
+  const nextGroups = [...groups];
+  for (const key of ["bench", "tentative", "absence"] as const) {
+    if (!nextGroups.some((group) => group.key === key)) {
+      nextGroups.push({ key, label: getGroupLabel(key), capacity: 0, editable: false });
+    }
   }
 
-  return [...groups, { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false }];
+  return nextGroups;
 }
 
 function moveOverflowToBench(event: WarEvent): void {
-  event.groups = ensureBenchGroup(event.groups);
+  event.groups = ensureResponseGroups(event.groups);
   for (const group of event.groups) {
-    if (group.key === "bench") {
+    if (!isRosterGroup(group.key)) {
       continue;
     }
 
@@ -388,7 +328,7 @@ function rebalanceMainBall(groups: WarEvent["groups"], totalCapacity: number): v
   }
 
   const nonMainTotal = groups
-    .filter((group) => group.key !== "mainball" && group.key !== "bench")
+    .filter((group) => group.key !== "mainball" && isRosterGroup(group.key))
     .reduce((sum, group) => sum + group.capacity, 0);
   const nextMainball = totalCapacity - nonMainTotal;
   if (nextMainball < 0) {
@@ -400,14 +340,14 @@ function rebalanceMainBall(groups: WarEvent["groups"], totalCapacity: number): v
 
 function validateEventCapacity(event: WarEvent): void {
   const activeTotal = event.groups
-    .filter((group) => group.key !== "bench")
+    .filter((group) => isRosterGroup(group.key))
     .reduce((sum, group) => sum + group.capacity, 0);
   if (activeTotal > event.totalCapacity) {
     throw new Error(`Group slots (${activeTotal}) cannot exceed total roster size (${event.totalCapacity}).`);
   }
 
   for (const group of event.groups) {
-    if (group.key === "bench") {
+    if (!isRosterGroup(group.key)) {
       continue;
     }
 
@@ -425,6 +365,7 @@ function requireUpdated(event: WarEvent | undefined): WarEvent {
   return event;
 }
 
+/** Validates persisted store shape and backfills lifecycle defaults for older records. */
 export function validateStoreData(value: unknown): EventStoreData {
   if (!value || typeof value !== "object" || !Array.isArray((value as EventStoreData).events)) {
     throw new Error("Invalid event store JSON: expected { events: [] }.");
@@ -435,6 +376,7 @@ export function validateStoreData(value: unknown): EventStoreData {
   validateSettings(data.settings);
   for (const event of data.events) {
     validateEvent(event);
+    event.groups = ensureResponseGroups(event.groups);
     event.active ??= !event.closed;
     event.autoRepost ??= event.recurrence === "weekly";
   }
