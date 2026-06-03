@@ -984,10 +984,10 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
         <label>Screenshot<input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp" required></label>
         <button type="submit">Upload and scan</button>
       </form>
-      <section class="stats-analysis-panel">
-        <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-        ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
-      </section>
+    </section>
+    <section class="stats-analysis-panel">
+      <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
+      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
     <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>

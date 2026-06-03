@@ -1394,7 +1394,7 @@ h1 {
 
 .stats-workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: 12px;
   margin-top: 14px;
   align-items: start;
@@ -1410,12 +1410,14 @@ h1 {
 
 .stats-upload-panel {
   display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
   gap: 12px;
   padding: 16px;
 }
 
 .stats-upload-panel header,
 .stats-analysis-panel header {
+  grid-column: 1 / -1;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -1448,12 +1450,13 @@ h1 {
 
 .stats-analysis-panel {
   min-width: 0;
+  margin-top: 14px;
   padding: 16px;
 }
 
 .score-graphics {
   display: grid;
-  grid-template-columns: minmax(260px, 1.1fr) repeat(2, minmax(210px, 0.9fr)) minmax(190px, 0.65fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
   gap: 10px;
   margin-top: 14px;
 }
