@@ -1051,13 +1051,13 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
       <div class="score-ring" style="--damage:${Math.round((totalDamage / impactTotal) * 100)}%; --support:${Math.round((totalSupport / impactTotal) * 100)}%;"><span>${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills)}</span><small>Team K/D</small></div>
       <div class="mix-bars">
         ${renderMixBar("Damage", totalDamage, impactTotal, "damage")}
-        ${renderMixBar("Healing + Support", totalSupport, impactTotal, "support")}
+        ${renderMixBar("Healing Support", totalSupport, impactTotal, "support")}
         ${renderMixBar("Taken", totalTaken, impactTotal, "taken")}
         ${renderMixBar("Fort Damage", totalStructure, Math.max(1, totalStructure), "cc")}
       </div>
     </div>
     ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
-    ${renderMetricLeaderboard("Support leaders", "Healing + allies", players, (player) => player.hpHealed + player.allySupport)}
+    ${renderMetricLeaderboard("Support leaders", "Healing allies", players, (player) => player.hpHealed + player.allySupport)}
     <div class="score-trend-card">
       <header><p class="eyebrow">Recent wars</p><h3>Damage trend</h3></header>
       <div class="trend-bars">${recentReports
