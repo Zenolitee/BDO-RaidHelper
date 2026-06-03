@@ -1655,6 +1655,70 @@ h1 {
   color: var(--accent);
 }
 
+.player-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.player-rename {
+  position: relative;
+  display: inline-block;
+  text-align: left;
+}
+
+.player-rename summary {
+  display: inline-grid;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  place-items: center;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+  background: var(--panel);
+}
+
+.player-rename summary::-webkit-details-marker {
+  display: none;
+}
+
+.player-rename[open] summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.player-rename form {
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto;
+  gap: 6px;
+  width: min(250px, 62vw);
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--board);
+  box-shadow: var(--shadow);
+}
+
+.player-rename input {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.player-rename button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.74rem;
+}
+
 .score-edit-form {
   display: grid;
   gap: 14px;

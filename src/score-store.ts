@@ -64,6 +64,7 @@ export interface ScoreStore {
     reportId: string,
     extraction: Pick<ScoreReportInput, "ocrEngine" | "rawOcrText" | "ocrConfidence" | "rows">
   ): Promise<ScoreReport>;
+  renamePlayer(guildId: string, oldName: string, newName: string): Promise<number>;
   deleteReport(guildId: string, reportId: string): Promise<void>;
 }
 
@@ -169,6 +170,32 @@ export class JsonScoreStore implements ScoreStore {
       await fs.rm(absoluteImagePath, { force: true });
       await fs.rm(path.dirname(absoluteImagePath), { force: true, recursive: true });
     }
+  }
+
+  async renamePlayer(guildId: string, oldName: string, newName: string): Promise<number> {
+    const normalizedOldName = oldName.trim().toLowerCase();
+    const cleanedNewName = newName.trim();
+    if (!normalizedOldName || !cleanedNewName) return 0;
+
+    const data = await this.read();
+    let renamed = 0;
+    for (const report of data.reports) {
+      if (report.guildId !== guildId) continue;
+      let reportRenamed = 0;
+      for (const row of report.rows) {
+        if (row.familyName.trim().toLowerCase() === normalizedOldName) {
+          row.familyName = cleanedNewName;
+          renamed += 1;
+          reportRenamed += 1;
+        }
+      }
+      if (reportRenamed && !report.ocrEngine.includes("+manual")) {
+        report.ocrEngine = `${report.ocrEngine}+manual`;
+      }
+    }
+
+    if (renamed) await this.write(data);
+    return renamed;
   }
 
   private async read(): Promise<ScoreStoreData> {
@@ -397,6 +424,22 @@ export class SupabaseScoreStore implements ScoreStore {
     const { error: imageError } = await this.supabase.storage.from(existing.imageBucket).remove([existing.imagePath]);
     if (imageError) throw new Error(`Score screenshot delete failed: ${imageError.message}`);
   }
+
+  async renamePlayer(guildId: string, oldName: string, newName: string): Promise<number> {
+    const cleanedOldName = oldName.trim();
+    const cleanedNewName = newName.trim();
+    if (!cleanedOldName || !cleanedNewName) return 0;
+
+    const { data, error } = await this.supabase
+      .from("score_rows")
+      .update({ family_name: cleanedNewName })
+      .eq("guild_id", guildId)
+      .ilike("family_name", escapePostgrestLike(cleanedOldName))
+      .select("id");
+
+    if (error) throw new Error(`Score player rename failed: ${error.message}`);
+    return data?.length ?? 0;
+  }
 }
 
 export function createScoreStore(options: {
@@ -488,4 +531,8 @@ function safeFileName(fileName: string): string {
   const extension = path.extname(fileName).toLowerCase();
   const base = path.basename(fileName, extension).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80) || "score";
   return `${base}${[".png", ".jpg", ".jpeg", ".webp"].includes(extension) ? extension : ".png"}`;
+}
+
+function escapePostgrestLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }

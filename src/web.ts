@@ -212,7 +212,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
               ? "saved"
               : request.query.deleted === "1"
                 ? "deleted"
-                : undefined;
+                : request.query.renamed === "1"
+                  ? "renamed"
+                  : undefined;
       response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey)));
     } catch (error) {
       response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
@@ -311,6 +313,28 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&saved=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error)));
+    }
+  });
+
+  app.post("/stats/players/rename", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const oldName = parseOptionalText(request.body.oldName, 80);
+      const newName = parseOptionalText(request.body.familyName, 80);
+      if (!oldName || !newName) throw new Error("Enter a player name to rename.");
+      const renamed = await options.scoreStore.renamePlayer(guild.id, oldName, newName);
+      if (!renamed) throw new Error(`No score rows matched ${oldName}.`);
+      console.info(`Score player ${oldName} renamed to ${newName} by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); updated ${renamed} rows.`);
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&renamed=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats player rename failed", renderWebError(error)));
     }
   });
 
@@ -959,7 +983,7 @@ function renderStatsDashboard(
   guild: DiscordGuild,
   session: WebSession,
   reports: ScoreReport[],
-  notice?: "uploaded" | "rescanned" | "saved" | "deleted",
+  notice?: "uploaded" | "rescanned" | "saved" | "deleted" | "renamed",
   sortKey: ScoreSortKey = "wars"
 ): string {
   const rows = reports.flatMap((report) => report.rows);
@@ -996,25 +1020,26 @@ function renderStatsDashboard(
     </section>
     <section class="stats-analysis-panel">
       <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, sortKey)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
+      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, sortKey, guild.id, session.csrfToken)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
     <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
   </main>`;
 }
 
-function renderStatsNotice(notice: "uploaded" | "rescanned" | "saved" | "deleted"): string {
+function renderStatsNotice(notice: "uploaded" | "rescanned" | "saved" | "deleted" | "renamed"): string {
   if (notice === "uploaded") return "Scoreboard uploaded and parsed. Review the extracted rows before using them for final calls.";
   if (notice === "rescanned") return "Scoreboard rescanned from the stored image. Review the extracted rows before using them for final calls.";
   if (notice === "saved") return "Scoreboard edits saved.";
+  if (notice === "renamed") return "Player name updated across matching score rows.";
   return "Scoreboard deleted.";
 }
 
 function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreReport[]): string {
   const totalDamage = players.reduce((sum, player) => sum + player.damageDealt, 0);
   const totalTaken = players.reduce((sum, player) => sum + player.damageTaken, 0);
-  const totalSupport = players.reduce((sum, player) => sum + player.hpHealed + player.allySupport, 0);
-  const totalCc = players.reduce((sum, player) => sum + player.crowdControls, 0);
+  const totalSupport = players.reduce((sum, player) => sum + player.allySupport, 0);
+  const totalStructure = players.reduce((sum, player) => sum + player.structureDamage, 0);
   const totalKills = players.reduce((sum, player) => sum + player.kills, 0);
   const totalDeaths = players.reduce((sum, player) => sum + player.deaths, 0);
   const impactTotal = Math.max(1, totalDamage + totalSupport + totalTaken);
@@ -1026,13 +1051,13 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
       <div class="score-ring" style="--damage:${Math.round((totalDamage / impactTotal) * 100)}%; --support:${Math.round((totalSupport / impactTotal) * 100)}%;"><span>${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills)}</span><small>Team K/D</small></div>
       <div class="mix-bars">
         ${renderMixBar("Damage", totalDamage, impactTotal, "damage")}
-        ${renderMixBar("Support", totalSupport, impactTotal, "support")}
+        ${renderMixBar("Ally Support", totalSupport, impactTotal, "support")}
         ${renderMixBar("Taken", totalTaken, impactTotal, "taken")}
-        ${renderMixBar("CCs", totalCc, Math.max(1, totalCc), "cc")}
+        ${renderMixBar("Fort Damage", totalStructure, Math.max(1, totalStructure), "cc")}
       </div>
     </div>
     ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
-    ${renderMetricLeaderboard("Support leaders", "Recovery", players, (player) => player.hpHealed + player.allySupport)}
+    ${renderMetricLeaderboard("Support leaders", "Allies healed", players, (player) => player.allySupport)}
     <div class="score-trend-card">
       <header><p class="eyebrow">Recent wars</p><h3>Damage trend</h3></header>
       <div class="trend-bars">${recentReports
@@ -1069,7 +1094,7 @@ function renderMetricLeaderboard(
   </div>`;
 }
 
-function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey): string {
+function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string): string {
   return `<div class="score-table-wrap"><table class="score-table" data-score-table data-score-sort="${sortKey}">
     <thead><tr><th>${renderScoreSortButton("Player", "player", sortKey)}</th><th>${renderScoreSortButton("Wars", "wars", sortKey)}</th><th>${renderScoreSortButton("K", "kills", sortKey)}</th><th>${renderScoreSortButton("D", "deaths", sortKey)}</th><th>${renderScoreSortButton("A", "assists", sortKey)}</th><th>${renderScoreSortButton("K/D", "kd", sortKey)}</th><th>${renderScoreSortButton("Damage", "damage", sortKey)}</th><th>${renderScoreSortButton("Taken", "taken", sortKey)}</th><th>${renderScoreSortButton("CC", "cc", sortKey)}</th><th>${renderScoreSortButton("Healed", "healed", sortKey)}</th><th>${renderScoreSortButton("Structure", "structure", sortKey)}</th></tr></thead>
     <tbody>${players
@@ -1078,7 +1103,7 @@ function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, so
           const healed = player.hpHealed + player.allySupport;
           const kd = player.deaths ? player.kills / player.deaths : player.kills;
           return `<tr data-player="${escapeHtml(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-assists="${player.assists}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${healed}" data-structure="${player.structureDamage}">
-          <td><strong>${escapeHtml(player.familyName)}</strong><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
+          <td><span class="player-cell"><strong>${escapeHtml(player.familyName)}</strong>${renderPlayerRenameControl(player.familyName, guildId, csrfToken)}</span><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
           <td>${player.participations}</td>
           <td>${formatStatNumber(player.kills)}</td>
           <td>${formatStatNumber(player.deaths)}</td>
@@ -1094,6 +1119,19 @@ function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, so
       )
       .join("")}</tbody>
   </table></div>${renderScoreSortScript()}`;
+}
+
+function renderPlayerRenameControl(familyName: string, guildId: string, csrfToken: string): string {
+  return `<details class="player-rename">
+    <summary>Edit</summary>
+    <form method="post" action="/stats/players/rename">
+      <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
+      <input type="hidden" name="guildId" value="${escapeHtml(guildId)}">
+      <input type="hidden" name="oldName" value="${escapeHtml(familyName)}">
+      <input name="familyName" value="${escapeHtml(familyName)}" maxlength="80" required>
+      <button type="submit">Save</button>
+    </form>
+  </details>`;
 }
 
 function renderScoreSortButton(label: string, key: string, sortKey: ScoreSortKey): string {
