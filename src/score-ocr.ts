@@ -162,6 +162,9 @@ function buildGeminiScorePrompt(): string {
     "Use this exact shape: {\"rows\":[{\"familyName\":\"\",\"kills\":0,\"deaths\":0,\"assists\":0,\"damageDealt\":0,\"damageTaken\":0,\"crowdControls\":0,\"hpHealed\":0,\"allySupport\":0,\"structureDamage\":0,\"lynchCannonKills\":0,\"siegeAssists\":0,\"resurrections\":0,\"siegeDeaths\":0,\"specialKills\":0,\"timeAlive\":\"\",\"totalWarTime\":\"\"}]}",
     "Read player names from the left Family Name column.",
     "Return all visible player rows, top to bottom.",
+    "The assists field is the kill streak column, not player assists.",
+    "Use hpHealed only for the self HP healed / recovery column.",
+    "Use allySupport only for the right-side Support / healing given to allies column marked with the plus + support icon.",
     "Convert K/M values to full integers. Example: 614.1K is 614100 and 5.4M is 5400000.",
     "If a cell is blank, unreadable, or not visible, use 0 for numeric fields and an empty string for time fields.",
     "Do not invent players or stats."

@@ -1039,6 +1039,7 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
   const totalDamage = players.reduce((sum, player) => sum + player.damageDealt, 0);
   const totalTaken = players.reduce((sum, player) => sum + player.damageTaken, 0);
   const totalSupport = players.reduce((sum, player) => sum + player.allySupport, 0);
+  const totalCc = players.reduce((sum, player) => sum + player.crowdControls, 0);
   const totalStructure = players.reduce((sum, player) => sum + player.structureDamage, 0);
   const totalKills = players.reduce((sum, player) => sum + player.kills, 0);
   const totalDeaths = players.reduce((sum, player) => sum + player.deaths, 0);
@@ -1053,11 +1054,14 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
         ${renderMixBar("Damage", totalDamage, impactTotal, "damage")}
         ${renderMixBar("+ Ally Support", totalSupport, impactTotal, "support")}
         ${renderMixBar("Taken", totalTaken, impactTotal, "taken")}
+        ${renderMixBar("CCs", totalCc, Math.max(1, totalCc), "cc")}
         ${renderMixBar("Fort Damage", totalStructure, Math.max(1, totalStructure), "cc")}
       </div>
     </div>
     ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
     ${renderMetricLeaderboard("Support leaders", "+ Allies healed", players, (player) => player.allySupport)}
+    ${renderMetricLeaderboard("Fort Damage leaders", "Structure", players, (player) => player.structureDamage)}
+    ${renderMetricLeaderboard("CC leaders", "Crowd control", players, (player) => player.crowdControls)}
     <div class="score-trend-card">
       <header><p class="eyebrow">Recent wars</p><h3>Damage trend</h3></header>
       <div class="trend-bars">${recentReports
@@ -1096,18 +1100,17 @@ function renderMetricLeaderboard(
 
 function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string): string {
   return `<div class="score-table-wrap"><table class="score-table" data-score-table data-score-sort="${sortKey}">
-    <thead><tr><th>${renderScoreSortButton("Player", "player", sortKey)}</th><th>${renderScoreSortButton("Wars", "wars", sortKey)}</th><th>${renderScoreSortButton("K", "kills", sortKey)}</th><th>${renderScoreSortButton("D", "deaths", sortKey)}</th><th>${renderScoreSortButton("A", "assists", sortKey)}</th><th>${renderScoreSortButton("K/D", "kd", sortKey)}</th><th>${renderScoreSortButton("Damage", "damage", sortKey)}</th><th>${renderScoreSortButton("Taken", "taken", sortKey)}</th><th>${renderScoreSortButton("CC", "cc", sortKey)}</th><th>${renderScoreSortButton("Healed", "healed", sortKey)}</th><th>${renderScoreSortButton("Structure", "structure", sortKey)}</th></tr></thead>
+    <thead><tr><th>${renderScoreSortButton("Player", "player", sortKey)}</th><th>${renderScoreSortButton("Wars", "wars", sortKey)}</th><th>${renderScoreSortButton("K", "kills", sortKey)}</th><th>${renderScoreSortButton("D", "deaths", sortKey)}</th><th>${renderScoreSortButton("K/D", "kd", sortKey)}</th><th>${renderScoreSortButton("Damage", "damage", sortKey)}</th><th>${renderScoreSortButton("Taken", "taken", sortKey)}</th><th>${renderScoreSortButton("CC", "cc", sortKey)}</th><th>${renderScoreSortButton("Healed", "healed", sortKey)}</th><th>${renderScoreSortButton("Structure", "structure", sortKey)}</th></tr></thead>
     <tbody>${players
       .map(
         (player) => {
-          const healed = player.hpHealed + player.allySupport;
+          const healed = player.allySupport;
           const kd = player.deaths ? player.kills / player.deaths : player.kills;
-          return `<tr data-player="${escapeHtml(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-assists="${player.assists}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${healed}" data-structure="${player.structureDamage}">
+          return `<tr data-player="${escapeHtml(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${healed}" data-structure="${player.structureDamage}">
           <td><span class="player-cell"><strong>${escapeHtml(player.familyName)}</strong>${renderPlayerRenameControl(player.familyName, guildId, csrfToken)}</span><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
           <td>${player.participations}</td>
           <td>${formatStatNumber(player.kills)}</td>
           <td>${formatStatNumber(player.deaths)}</td>
-          <td>${formatStatNumber(player.assists)}</td>
           <td>${player.deaths ? kd.toFixed(2) : formatStatNumber(player.kills)}</td>
           <td>${formatStatNumber(player.damageDealt)}</td>
           <td>${formatStatNumber(player.damageTaken)}</td>
