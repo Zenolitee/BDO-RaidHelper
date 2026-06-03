@@ -1634,13 +1634,24 @@ h1 {
   text-transform: uppercase;
 }
 
-.score-sort-link {
+.score-sort-button {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--muted);
-  text-decoration: none;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
 }
 
-.score-sort-link:hover,
-.score-sort-link.active {
+.score-sort-button:hover {
+  transform: none;
+}
+
+.score-sort-button:hover,
+.score-sort-button.active {
   color: var(--accent);
 }
 

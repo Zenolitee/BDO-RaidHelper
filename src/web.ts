@@ -996,7 +996,7 @@ function renderStatsDashboard(
     </section>
     <section class="stats-analysis-panel">
       <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, guild.id, sortKey)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
+      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, sortKey)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
     <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
@@ -1069,32 +1069,74 @@ function renderMetricLeaderboard(
   </div>`;
 }
 
-function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, guildId: string, sortKey: ScoreSortKey): string {
-  return `<div class="score-table-wrap"><table class="score-table">
-    <thead><tr><th>Player</th><th>${renderScoreSortLink("Wars", "wars", guildId, sortKey)}</th><th>${renderScoreSortLink("K", "kills", guildId, sortKey)}</th><th>D</th><th>A</th><th>K/D</th><th>${renderScoreSortLink("Damage", "damage", guildId, sortKey)}</th><th>Taken</th><th>CC</th><th>Healed</th><th>Structure</th></tr></thead>
+function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey): string {
+  return `<div class="score-table-wrap"><table class="score-table" data-score-table data-score-sort="${sortKey}">
+    <thead><tr><th>${renderScoreSortButton("Player", "player", sortKey)}</th><th>${renderScoreSortButton("Wars", "wars", sortKey)}</th><th>${renderScoreSortButton("K", "kills", sortKey)}</th><th>${renderScoreSortButton("D", "deaths", sortKey)}</th><th>${renderScoreSortButton("A", "assists", sortKey)}</th><th>${renderScoreSortButton("K/D", "kd", sortKey)}</th><th>${renderScoreSortButton("Damage", "damage", sortKey)}</th><th>${renderScoreSortButton("Taken", "taken", sortKey)}</th><th>${renderScoreSortButton("CC", "cc", sortKey)}</th><th>${renderScoreSortButton("Healed", "healed", sortKey)}</th><th>${renderScoreSortButton("Structure", "structure", sortKey)}</th></tr></thead>
     <tbody>${players
       .map(
-        (player) => `<tr>
+        (player) => {
+          const healed = player.hpHealed + player.allySupport;
+          const kd = player.deaths ? player.kills / player.deaths : player.kills;
+          return `<tr data-player="${escapeHtml(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-assists="${player.assists}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${healed}" data-structure="${player.structureDamage}">
           <td><strong>${escapeHtml(player.familyName)}</strong><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
           <td>${player.participations}</td>
           <td>${formatStatNumber(player.kills)}</td>
           <td>${formatStatNumber(player.deaths)}</td>
           <td>${formatStatNumber(player.assists)}</td>
-          <td>${player.deaths ? (player.kills / player.deaths).toFixed(2) : formatStatNumber(player.kills)}</td>
+          <td>${player.deaths ? kd.toFixed(2) : formatStatNumber(player.kills)}</td>
           <td>${formatStatNumber(player.damageDealt)}</td>
           <td>${formatStatNumber(player.damageTaken)}</td>
           <td>${formatStatNumber(player.crowdControls)}</td>
-          <td>${formatStatNumber(player.hpHealed + player.allySupport)}</td>
+          <td>${formatStatNumber(healed)}</td>
           <td>${formatStatNumber(player.structureDamage)}</td>
-        </tr>`
+        </tr>`;
+        }
       )
       .join("")}</tbody>
-  </table></div>`;
+  </table></div>${renderScoreSortScript()}`;
 }
 
-function renderScoreSortLink(label: string, key: ScoreSortKey, guildId: string, sortKey: ScoreSortKey): string {
+function renderScoreSortButton(label: string, key: string, sortKey: ScoreSortKey): string {
   const active = key === sortKey ? " active" : "";
-  return `<a class="score-sort-link${active}" href="/stats?guild=${encodeURIComponent(guildId)}&sort=${key}">${escapeHtml(label)}</a>`;
+  return `<button class="score-sort-button${active}" type="button" data-score-sort-key="${escapeHtml(key)}" aria-label="Sort by ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+}
+
+function renderScoreSortScript(): string {
+  return `<script>
+(() => {
+  const table = document.querySelector("[data-score-table]");
+  if (!table) return;
+  const tbody = table.tBodies[0];
+  const buttons = [...table.querySelectorAll("[data-score-sort-key]")];
+  let activeKey = table.dataset.scoreSort || "wars";
+  let direction = activeKey === "player" ? "asc" : "desc";
+  const readValue = (row, key) => key === "player" ? row.dataset.player || "" : Number(row.dataset[key] || 0);
+  const applySort = (key, nextDirection) => {
+    const rows = [...tbody.rows];
+    rows.sort((left, right) => {
+      const leftValue = readValue(left, key);
+      const rightValue = readValue(right, key);
+      const compared = typeof leftValue === "string" ? leftValue.localeCompare(String(rightValue)) : leftValue - Number(rightValue);
+      return nextDirection === "asc" ? compared : -compared;
+    });
+    rows.forEach((row) => tbody.appendChild(row));
+    activeKey = key;
+    direction = nextDirection;
+    buttons.forEach((button) => {
+      const active = button.dataset.scoreSortKey === activeKey;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-sort", active ? direction : "none");
+    });
+  };
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.scoreSortKey || "wars";
+      const nextDirection = key === activeKey && direction === "desc" ? "asc" : key === "player" ? "asc" : "desc";
+      applySort(key, nextDirection);
+    });
+  });
+})();
+</script>`;
 }
 
 function renderReportCard(report: ScoreReport, csrfToken: string): string {
