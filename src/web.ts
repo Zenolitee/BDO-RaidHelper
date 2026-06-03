@@ -1,10 +1,14 @@
 import express from "express";
+import multer from "multer";
 import { randomBytes } from "node:crypto";
 import type { Request } from "express";
 import { nanoid } from "nanoid";
 import { config } from "./config.js";
 import { getGroupEmoji, getGroupEmojiUrl, getGroupLabel } from "./emojis.js";
 import { buildNodeWarTitle, getNodeWarCapacity, labelTier, labelWarDay, NODE_WAR_PRESETS } from "./nodewar-presets.js";
+import { extractScoreScreenshot } from "./score-ocr.js";
+import type { ScoreStore } from "./score-store.js";
+import type { ScoreReport, ScoreReportResult, ScoreRow } from "./score-types.js";
 import { activeRosterCapacity, activeRosterSignupCount, isRosterGroup, type EventStore } from "./store.js";
 import { formatClockTime } from "./time-format.js";
 import { WEEKDAYS, type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
@@ -51,8 +55,24 @@ interface UpcomingAnnouncement {
   totalCapacity: number;
 }
 
+interface PlayerScoreAggregate {
+  familyName: string;
+  participations: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  damageDealt: number;
+  damageTaken: number;
+  crowdControls: number;
+  hpHealed: number;
+  allySupport: number;
+  structureDamage: number;
+  resurrections: number;
+}
+
 interface WebAppOptions {
   onEventUpdated?: (event: WarEvent) => Promise<void>;
+  scoreStore?: ScoreStore;
 }
 
 interface WebSession {
@@ -63,6 +83,10 @@ interface WebSession {
 }
 
 const WEB_WAR_DAYS: WarDay[] = [...WEEKDAYS];
+const scoreUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }
+});
 
 /**
  * Creates the Express dashboard with Discord OAuth, public roster pages,
@@ -91,6 +115,62 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     const events = guild ? (await store.listEvents()).filter((event) => event.guildId === guild.id) : [];
     response.type("html").send(renderPage("NW Helper", renderEventList(events, session, guildId)));
+  });
+
+  app.get("/stats", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild) {
+      response.status(403).type("html").send(renderPage("Stats", renderLoginRequired()));
+      return;
+    }
+
+    try {
+      const reports = options.scoreStore ? await options.scoreStore.listReports(guild.id) : [];
+      const uploaded = request.query.uploaded === "1";
+      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, uploaded)));
+    } catch (error) {
+      response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
+    }
+  });
+
+  app.post("/stats/upload", scoreUpload.single("screenshot"), async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const file = request.file;
+      if (!file || !isAllowedScoreImage(file.mimetype, file.originalname)) {
+        throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
+      }
+
+      const extraction = await extractScoreScreenshot(file.buffer);
+      const warDate = parseScoreDate(request.body.warDate);
+      const result = parseScoreResult(request.body.result);
+      await options.scoreStore.createReport({
+        guildId: guild.id,
+        warDate,
+        result,
+        title: parseOptionalText(request.body.title, 120),
+        imageMimeType: file.mimetype,
+        imageOriginalName: file.originalname,
+        imageBuffer: file.buffer,
+        rawOcrText: extraction.rawText,
+        ocrConfidence: extraction.confidence,
+        uploadedBy: session.user.id,
+        rows: extraction.rows.map((row) => ({ ...row, guildId: guild.id }))
+      });
+
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats upload failed", renderWebError(error)));
+    }
   });
 
   app.get("/auth/discord", (_request, response) => {
@@ -620,7 +700,7 @@ function renderCardToggle(event: WarEvent, csrfToken: string, action: "status" |
 }
 
 function renderNav(session?: WebSession, guildId?: string): string {
-  return `<aside class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}"><i>R</i><span>Raids</span></a><a href="/create?guild=${encodeURIComponent(guildId)}"><i>+</i><span>Create raid</span></a>` : `<a href="/"><i>H</i><span>Home</span></a>`}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></aside>`;
+  return `<aside class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}"><i>R</i><span>Raids</span></a><a href="/create?guild=${encodeURIComponent(guildId)}"><i>+</i><span>Create raid</span></a><a href="/stats?guild=${encodeURIComponent(guildId)}"><i>S</i><span>Stats</span></a>` : `<a href="/"><i>H</i><span>Home</span></a>`}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></aside>`;
 }
 
 function renderGuildAvatar(guild: DiscordGuild): string {
@@ -632,6 +712,131 @@ function renderGuildAvatar(guild: DiscordGuild): string {
 
 function renderStat(label: string, value: string): string {
   return `<article class="stat-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
+}
+
+function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports: ScoreReport[], uploaded: boolean): string {
+  const rows = reports.flatMap((report) => report.rows);
+  const players = aggregateScoreRows(rows);
+  const latest = reports[0];
+  const topDamage = Math.max(1, ...players.map((player) => player.damageDealt));
+  const totalKills = rows.reduce((sum, row) => sum + row.kills, 0);
+  const totalDeaths = rows.reduce((sum, row) => sum + row.deaths, 0);
+
+  return `${renderNav(session, guild.id)}<main class="shell stats-shell">
+    <section class="dashboard-head">
+      <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">War stats</p><h1>${escapeHtml(guild.name)}</h1><p>Uploaded scoreboards, player participation, and performance trends.</p></div></div>
+      <a class="button button-secondary" href="/?guild=${encodeURIComponent(guild.id)}">Raids</a>
+    </section>
+    ${uploaded ? `<section class="notice">Scoreboard uploaded and parsed. Review the extracted rows before using them for final calls.</section>` : ""}
+    <section class="stats-row">
+      ${renderStat("Scoreboards", String(reports.length))}
+      ${renderStat("Players tracked", String(players.length))}
+      ${renderStat("Total kills", formatStatNumber(totalKills))}
+      ${renderStat("Team K/D", totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills))}
+      ${renderStat("Latest war", latest ? formatDateLabel(latest.warDate) : "No uploads")}
+    </section>
+    <section class="stats-workspace">
+      <form class="stats-upload-panel" method="post" action="/stats/upload" enctype="multipart/form-data">
+        <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
+        <input type="hidden" name="guildId" value="${escapeHtml(guild.id)}">
+        <header><p class="eyebrow">Screenshot OCR</p><h2>Upload Scoreboard</h2></header>
+        <label>War date<input type="date" name="warDate" value="${new Date().toISOString().slice(0, 10)}" required></label>
+        <label>Result<select name="result"><option value="unknown">Unknown</option><option value="win">Win</option><option value="loss">Loss</option></select></label>
+        <label>Title<input name="title" maxlength="120" placeholder="Optional war label"></label>
+        <label>Screenshot<input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp" required></label>
+        <button type="submit">Upload and scan</button>
+      </form>
+      <section class="stats-analysis-panel">
+        <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
+        ${players.length ? renderScoreTable(players, topDamage) : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
+      </section>
+    </section>
+    <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
+    <section class="report-grid">${reports.slice(0, 8).map(renderReportCard).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
+  </main>`;
+}
+
+function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number): string {
+  return `<div class="score-table-wrap"><table class="score-table">
+    <thead><tr><th>Player</th><th>Wars</th><th>K</th><th>D</th><th>A</th><th>K/D</th><th>Damage</th><th>Taken</th><th>CC</th><th>Healed</th><th>Structure</th></tr></thead>
+    <tbody>${players
+      .map(
+        (player) => `<tr>
+          <td><strong>${escapeHtml(player.familyName)}</strong><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
+          <td>${player.participations}</td>
+          <td>${formatStatNumber(player.kills)}</td>
+          <td>${formatStatNumber(player.deaths)}</td>
+          <td>${formatStatNumber(player.assists)}</td>
+          <td>${player.deaths ? (player.kills / player.deaths).toFixed(2) : formatStatNumber(player.kills)}</td>
+          <td>${formatStatNumber(player.damageDealt)}</td>
+          <td>${formatStatNumber(player.damageTaken)}</td>
+          <td>${formatStatNumber(player.crowdControls)}</td>
+          <td>${formatStatNumber(player.hpHealed + player.allySupport)}</td>
+          <td>${formatStatNumber(player.structureDamage)}</td>
+        </tr>`
+      )
+      .join("")}</tbody>
+  </table></div>`;
+}
+
+function renderReportCard(report: ScoreReport): string {
+  const rows = report.rows;
+  const kills = rows.reduce((sum, row) => sum + row.kills, 0);
+  const deaths = rows.reduce((sum, row) => sum + row.deaths, 0);
+  const damage = rows.reduce((sum, row) => sum + row.damageDealt, 0);
+  const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
+  return `<article class="report-card">
+    <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | OCR ${escapeHtml(confidence)}</small></div>
+    <dl>
+      <div><dt>Players</dt><dd>${rows.length}</dd></div>
+      <div><dt>Kills</dt><dd>${formatStatNumber(kills)}</dd></div>
+      <div><dt>Deaths</dt><dd>${formatStatNumber(deaths)}</dd></div>
+      <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
+    </dl>
+  </article>`;
+}
+
+function aggregateScoreRows(rows: ScoreRow[]): PlayerScoreAggregate[] {
+  const byPlayer = new Map<string, PlayerScoreAggregate>();
+  for (const row of rows) {
+    const key = row.familyName.toLowerCase();
+    const player =
+      byPlayer.get(key) ??
+      {
+        familyName: row.familyName,
+        participations: 0,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        damageDealt: 0,
+        damageTaken: 0,
+        crowdControls: 0,
+        hpHealed: 0,
+        allySupport: 0,
+        structureDamage: 0,
+        resurrections: 0
+      };
+    player.participations += 1;
+    player.kills += row.kills;
+    player.deaths += row.deaths;
+    player.assists += row.assists;
+    player.damageDealt += row.damageDealt;
+    player.damageTaken += row.damageTaken;
+    player.crowdControls += row.crowdControls;
+    player.hpHealed += row.hpHealed;
+    player.allySupport += row.allySupport;
+    player.structureDamage += row.structureDamage;
+    player.resurrections += row.resurrections;
+    byPlayer.set(key, player);
+  }
+
+  return [...byPlayer.values()].sort(
+    (left, right) =>
+      right.participations - left.participations ||
+      right.damageDealt - left.damageDealt ||
+      right.kills - left.kills ||
+      left.familyName.localeCompare(right.familyName)
+  );
 }
 
 function renderInviteButton(label = "Invite to Server"): string {
@@ -1182,6 +1387,36 @@ function parseAnnouncementRoleIds(value: unknown, roles: DiscordGuildRole[]): st
     throw new Error("One or more selected Discord ping roles are invalid.");
   }
   return roleIds;
+}
+
+function parseScoreDate(value: unknown): string {
+  const date = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T12:00:00Z`).getTime())) {
+    throw new Error("Select a valid war date.");
+  }
+  return date;
+}
+
+function parseScoreResult(value: unknown): ScoreReportResult {
+  return value === "win" || value === "loss" ? value : "unknown";
+}
+
+function parseOptionalText(value: unknown, maxLength: number): string | undefined {
+  const text = String(value ?? "").trim();
+  return text ? text.slice(0, maxLength) : undefined;
+}
+
+function isAllowedScoreImage(mimeType: string, originalName: string): boolean {
+  const extension = originalName.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ["image/png", "image/jpeg", "image/webp"].includes(mimeType) && Boolean(extension && [".png", ".jpg", ".jpeg", ".webp"].includes(extension));
+}
+
+function formatStatNumber(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(absolute >= 10_000_000 ? 0 : 1)}M`;
+  if (absolute >= 1_000) return `${(value / 1_000).toFixed(absolute >= 10_000 ? 0 : 1)}K`;
+  return String(Math.round(value));
 }
 
 function parseRepeatDays(value: unknown, fallback?: WarDay): WarDay[] {

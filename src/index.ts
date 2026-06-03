@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { createDiscordClient, refreshEventMessage } from "./bot.js";
 import { EventStore } from "./store.js";
+import { createScoreStore } from "./score-store.js";
 import { createSupabaseEventStore } from "./supabase-store.js";
 import { createWebApp } from "./web.js";
 
@@ -15,8 +16,14 @@ console.log(
     : `Using JSON event storage at ${config.dataFile}.`
 );
 const client = config.discordToken ? createDiscordClient(store) : undefined;
+const scoreStore = createScoreStore({
+  supabaseUrl: config.supabaseUrl,
+  supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+  dataFile: config.dataFile
+});
 const app = createWebApp(store, {
-  onEventUpdated: client ? (event) => refreshEventMessage(client, event) : undefined
+  onEventUpdated: client ? (event) => refreshEventMessage(client, event) : undefined,
+  scoreStore
 });
 
 app.listen(config.port, () => {
