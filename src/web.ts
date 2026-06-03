@@ -70,6 +70,8 @@ interface PlayerScoreAggregate {
   resurrections: number;
 }
 
+type ScoreSortKey = "wars" | "kills" | "damage";
+
 interface WebAppOptions {
   onEventUpdated?: (event: WarEvent) => Promise<void>;
   scoreStore?: ScoreStore;
@@ -200,6 +202,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
     try {
       const reports = options.scoreStore ? await options.scoreStore.listReports(guild.id) : [];
+      const sortKey = parseScoreSortKey(request.query.sort);
       const notice =
         request.query.uploaded === "1"
           ? "uploaded"
@@ -210,7 +213,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
               : request.query.deleted === "1"
                 ? "deleted"
                 : undefined;
-      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice)));
+      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey)));
     } catch (error) {
       response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
     }
@@ -952,9 +955,15 @@ function renderStatsServerPicker(session: WebSession): string {
   </main>`;
 }
 
-function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports: ScoreReport[], notice?: "uploaded" | "rescanned" | "saved" | "deleted"): string {
+function renderStatsDashboard(
+  guild: DiscordGuild,
+  session: WebSession,
+  reports: ScoreReport[],
+  notice?: "uploaded" | "rescanned" | "saved" | "deleted",
+  sortKey: ScoreSortKey = "wars"
+): string {
   const rows = reports.flatMap((report) => report.rows);
-  const players = aggregateScoreRows(rows);
+  const players = sortScoreAggregates(aggregateScoreRows(rows), sortKey);
   const latest = reports[0];
   const topDamage = Math.max(1, ...players.map((player) => player.damageDealt));
   const totalKills = rows.reduce((sum, row) => sum + row.kills, 0);
@@ -987,7 +996,7 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
     </section>
     <section class="stats-analysis-panel">
       <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
+      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, guild.id, sortKey)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
     <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
@@ -1060,9 +1069,9 @@ function renderMetricLeaderboard(
   </div>`;
 }
 
-function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number): string {
+function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, guildId: string, sortKey: ScoreSortKey): string {
   return `<div class="score-table-wrap"><table class="score-table">
-    <thead><tr><th>Player</th><th>Wars</th><th>K</th><th>D</th><th>A</th><th>K/D</th><th>Damage</th><th>Taken</th><th>CC</th><th>Healed</th><th>Structure</th></tr></thead>
+    <thead><tr><th>Player</th><th>${renderScoreSortLink("Wars", "wars", guildId, sortKey)}</th><th>${renderScoreSortLink("K", "kills", guildId, sortKey)}</th><th>D</th><th>A</th><th>K/D</th><th>${renderScoreSortLink("Damage", "damage", guildId, sortKey)}</th><th>Taken</th><th>CC</th><th>Healed</th><th>Structure</th></tr></thead>
     <tbody>${players
       .map(
         (player) => `<tr>
@@ -1083,12 +1092,18 @@ function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number): s
   </table></div>`;
 }
 
+function renderScoreSortLink(label: string, key: ScoreSortKey, guildId: string, sortKey: ScoreSortKey): string {
+  const active = key === sortKey ? " active" : "";
+  return `<a class="score-sort-link${active}" href="/stats?guild=${encodeURIComponent(guildId)}&sort=${key}">${escapeHtml(label)}</a>`;
+}
+
 function renderReportCard(report: ScoreReport, csrfToken: string): string {
   const rows = report.rows;
   const kills = rows.reduce((sum, row) => sum + row.kills, 0);
   const deaths = rows.reduce((sum, row) => sum + row.deaths, 0);
   const damage = rows.reduce((sum, row) => sum + row.damageDealt, 0);
-  const killDeathRatio = deaths ? (kills / deaths).toFixed(2) : formatStatNumber(kills);
+  const killDeathPercent = deaths ? Math.round((kills / deaths) * 100) : kills ? 100 : 0;
+  const kdTone = killDeathPercent >= 200 ? "good" : killDeathPercent >= 100 ? "ok" : "low";
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
   return `<article class="report-card">
     <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | ${escapeHtml(report.ocrEngine)} | OCR ${escapeHtml(confidence)}</small><small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small></div>
@@ -1096,7 +1111,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
       <div><dt>Players</dt><dd>${rows.length}</dd></div>
       <div><dt>Kills</dt><dd>${formatStatNumber(kills)}</dd></div>
       <div><dt>Deaths</dt><dd>${formatStatNumber(deaths)}</dd></div>
-      <div><dt>K/D</dt><dd>${escapeHtml(killDeathRatio)}</dd></div>
+      <div><dt>K/D %</dt><dd><span class="kd-pill kd-${kdTone}">${killDeathPercent}%</span></dd></div>
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
     <div class="report-actions">
@@ -1220,6 +1235,18 @@ function aggregateScoreRows(rows: ScoreRow[]): PlayerScoreAggregate[] {
       right.kills - left.kills ||
       left.familyName.localeCompare(right.familyName)
   );
+}
+
+function sortScoreAggregates(players: PlayerScoreAggregate[], sortKey: ScoreSortKey): PlayerScoreAggregate[] {
+  return [...players].sort((left, right) => {
+    if (sortKey === "kills") return right.kills - left.kills || right.damageDealt - left.damageDealt || left.familyName.localeCompare(right.familyName);
+    if (sortKey === "damage") return right.damageDealt - left.damageDealt || right.kills - left.kills || left.familyName.localeCompare(right.familyName);
+    return right.participations - left.participations || right.damageDealt - left.damageDealt || right.kills - left.kills || left.familyName.localeCompare(right.familyName);
+  });
+}
+
+function parseScoreSortKey(value: unknown): ScoreSortKey {
+  return value === "kills" || value === "damage" ? value : "wars";
 }
 
 function renderInviteButton(label = "Invite to Server"): string {

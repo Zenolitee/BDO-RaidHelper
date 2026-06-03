@@ -1634,6 +1634,16 @@ h1 {
   text-transform: uppercase;
 }
 
+.score-sort-link {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.score-sort-link:hover,
+.score-sort-link.active {
+  color: var(--accent);
+}
+
 .score-edit-form {
   display: grid;
   gap: 14px;
@@ -1790,6 +1800,31 @@ h1 {
   font-weight: 800;
 }
 
+.kd-pill {
+  display: inline-grid;
+  min-height: 24px;
+  place-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.kd-good {
+  border-color: rgba(100, 196, 130, 0.45);
+  color: var(--green);
+}
+
+.kd-ok {
+  border-color: rgba(242, 184, 75, 0.45);
+  color: var(--accent);
+}
+
+.kd-low {
+  border-color: rgba(242, 139, 130, 0.55);
+  color: #f28b82;
+}
+
 .report-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1809,9 +1844,11 @@ h1 {
 
 .report-actions .button,
 .report-actions button {
+  height: 42px;
   min-height: 38px;
   padding: 0 10px;
   font-size: 0.78rem;
+  line-height: 1;
 }
 
 .danger-button {
