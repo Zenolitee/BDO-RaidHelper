@@ -615,6 +615,32 @@ button:hover {
   font-size: 0.82rem;
 }
 
+.draggable-signup .name {
+  cursor: grab;
+}
+
+.draggable-signup .name:active {
+  cursor: grabbing;
+}
+
+.draggable-signup.is-dragging {
+  opacity: 0.55;
+}
+
+.roster-dropzone {
+  transition: border-color 0.16s, background 0.16s, box-shadow 0.16s;
+}
+
+.roster-dropzone.is-drag-over {
+  border-color: var(--accent);
+  background: #f2b84b14;
+  box-shadow: inset 0 0 0 1px #f2b84b80, 0 10px 22px #00000021;
+}
+
+.roster-dropzone.is-saving {
+  cursor: wait;
+}
+
 .class-badge {
   display: inline-grid;
   min-width: 2.25rem;

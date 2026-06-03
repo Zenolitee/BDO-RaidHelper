@@ -331,6 +331,25 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     response.redirect(`/?guild=${encodeURIComponent(event.guildId ?? "")}`);
   });
 
+  app.post("/events/:id/signups/move", async (request, response) => {
+    const event = await store.getEvent(request.params.id);
+    const session = await getSession(request, sessions);
+    if (!event || !session || !canManageEvent(event, session) || !validCsrf(request, session)) {
+      response.status(403).json({ error: "Not authorized." });
+      return;
+    }
+
+    try {
+      const userId = typeof request.body.userId === "string" ? request.body.userId : "";
+      const group = typeof request.body.group === "string" ? request.body.group : "";
+      const updatedEvent = await store.moveSignup(event.id, userId, group);
+      await refreshPostedEvent(options, updatedEvent);
+      response.json({ ok: true });
+    } catch (error) {
+      response.status(400).json({ error: error instanceof Error ? error.message : "Could not move signup." });
+    }
+  });
+
   app.get("/api/events", async (_request, response) => {
     response.status(403).json({ error: "Server-scoped event listing requires Discord login." });
   });
@@ -660,8 +679,8 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
     ${renderUpcomingAnnouncements(event)}
     ${renderDayRail(event)}
     <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatClockTime(event.time)}</span></section>
-    <section class="roster-grid">${renderRosterColumns(event)}</section>
-  </main>`;
+    <section class="roster-grid">${renderRosterColumns(event, canManage)}</section>
+  </main>${canManage && session ? renderRosterMoveScript(event.id, session.csrfToken) : ""}`;
 }
 
 function renderCurrentRosterSummary(event: WarEvent): string {
@@ -728,20 +747,85 @@ function renderDayRail(event: WarEvent): string {
     .join("") || "<p>No raid days selected.</p>"}</div></section>`;
 }
 
-function renderRosterColumns(event: WarEvent): string {
+function renderRosterColumns(event: WarEvent, canManage = false): string {
   return orderedGroups(event)
     .map((group) => {
       const signups = event.signups.filter((signup) => signup.group === group.key);
-      return `<section class="roster-column">
+      return `<section class="roster-column${canManage ? " roster-dropzone" : ""}" data-group="${escapeHtml(group.key)}">
         <header><h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2><b>${isRosterGroup(group.key) ? `${signups.length}/${group.capacity}` : signups.length}</b></header>
         <div class="signup-list">${signups
           .map(
-            (signup, index) => `<div class="signup-row"><span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span><span class="slot">${index + 1}</span><span class="name">${escapeHtml(signup.displayName)}</span></div>`
+            (signup, index) => `<div class="signup-row${canManage ? " draggable-signup" : ""}" data-user-id="${escapeHtml(signup.userId)}" data-group="${escapeHtml(group.key)}"><span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span><span class="slot">${index + 1}</span><span class="name"${canManage ? " draggable=\"true\" title=\"Drag to move role\"" : ""}>${escapeHtml(signup.displayName)}</span></div>`
           )
           .join("") || "<p class=\"empty\">No signups yet</p>"}</div>
       </section>`;
     })
     .join("");
+}
+
+function renderRosterMoveScript(eventId: string, csrfToken: string): string {
+  return `<script>
+    (() => {
+      const eventId = ${JSON.stringify(eventId)};
+      const csrfToken = ${JSON.stringify(csrfToken)};
+      let draggedRow;
+
+      document.querySelectorAll(".draggable-signup .name").forEach((handle) => {
+        handle.addEventListener("dragstart", (event) => {
+          draggedRow = handle.closest(".draggable-signup");
+          if (!draggedRow || !event.dataTransfer) return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedRow.dataset.userId || "");
+          draggedRow.classList.add("is-dragging");
+        });
+
+        handle.addEventListener("dragend", () => {
+          draggedRow?.classList.remove("is-dragging");
+          document.querySelectorAll(".roster-dropzone.is-drag-over").forEach((zone) => zone.classList.remove("is-drag-over"));
+          draggedRow = undefined;
+        });
+      });
+
+      document.querySelectorAll(".roster-dropzone").forEach((zone) => {
+        zone.addEventListener("dragover", (event) => {
+          if (!draggedRow || draggedRow.dataset.group === zone.dataset.group) return;
+          event.preventDefault();
+          zone.classList.add("is-drag-over");
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        });
+
+        zone.addEventListener("dragleave", (event) => {
+          if (!zone.contains(event.relatedTarget)) {
+            zone.classList.remove("is-drag-over");
+          }
+        });
+
+        zone.addEventListener("drop", async (event) => {
+          event.preventDefault();
+          zone.classList.remove("is-drag-over");
+          const userId = event.dataTransfer?.getData("text/plain") || draggedRow?.dataset.userId;
+          const group = zone.dataset.group;
+          if (!userId || !group || draggedRow?.dataset.group === group) return;
+
+          zone.classList.add("is-saving");
+          try {
+            const response = await fetch(\`/events/\${eventId}/signups/move\`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ csrfToken, userId, group })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || "Could not move signup.");
+            window.location.reload();
+          } catch (error) {
+            alert(error instanceof Error ? error.message : "Could not move signup.");
+          } finally {
+            zone.classList.remove("is-saving");
+          }
+        });
+      });
+    })();
+  </script>`;
 }
 
 function labelRecurrence(recurrence: WarEvent["recurrence"]): string {

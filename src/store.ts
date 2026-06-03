@@ -161,6 +161,40 @@ export class EventStore {
     return requireUpdated(updatedEvent);
   }
 
+  /** Moves an existing signup between roster response groups. */
+  async moveSignup(eventId: string, userId: string, targetGroup: GroupKey): Promise<WarEvent> {
+    let updatedEvent: WarEvent | undefined;
+    const now = new Date().toISOString();
+
+    await this.updateEvent(eventId, (event) => {
+      event.groups = ensureResponseGroups(event.groups);
+      const group = event.groups.find((candidate) => candidate.key === targetGroup);
+      if (!group) {
+        throw new Error("Unknown signup group.");
+      }
+
+      const signup = event.signups.find((candidate) => candidate.userId === userId);
+      if (!signup) {
+        throw new Error("Signup not found.");
+      }
+
+      const groupCount = event.signups.filter(
+        (candidate) => candidate.group === targetGroup && candidate.userId !== userId
+      ).length;
+      if (isRosterGroup(targetGroup) && groupCount >= group.capacity) {
+        throw new Error(`${formatGroupName(targetGroup)} is full.`);
+      }
+
+      const previousGroup = signup.requestedGroup ?? signup.group;
+      signup.group = targetGroup;
+      signup.requestedGroup = targetGroup === "bench" ? previousGroup : undefined;
+      signup.updatedAt = now;
+      updatedEvent = event;
+    });
+
+    return requireUpdated(updatedEvent);
+  }
+
   /** Removes a member from an event roster. */
   async removeSignup(eventId: string, userId: string): Promise<WarEvent> {
     let updatedEvent: WarEvent | undefined;
