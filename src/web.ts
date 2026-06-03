@@ -1038,7 +1038,7 @@ function renderStatsNotice(notice: "uploaded" | "rescanned" | "saved" | "deleted
 function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreReport[]): string {
   const totalDamage = players.reduce((sum, player) => sum + player.damageDealt, 0);
   const totalTaken = players.reduce((sum, player) => sum + player.damageTaken, 0);
-  const totalSupport = players.reduce((sum, player) => sum + player.hpHealed + player.allySupport, 0);
+  const totalSupport = players.reduce((sum, player) => sum + player.allySupport, 0);
   const totalStructure = players.reduce((sum, player) => sum + player.structureDamage, 0);
   const totalKills = players.reduce((sum, player) => sum + player.kills, 0);
   const totalDeaths = players.reduce((sum, player) => sum + player.deaths, 0);
@@ -1051,13 +1051,13 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
       <div class="score-ring" style="--damage:${Math.round((totalDamage / impactTotal) * 100)}%; --support:${Math.round((totalSupport / impactTotal) * 100)}%;"><span>${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills)}</span><small>Team K/D</small></div>
       <div class="mix-bars">
         ${renderMixBar("Damage", totalDamage, impactTotal, "damage")}
-        ${renderMixBar("Healing Support", totalSupport, impactTotal, "support")}
+        ${renderMixBar("Ally Support", totalSupport, impactTotal, "support")}
         ${renderMixBar("Taken", totalTaken, impactTotal, "taken")}
         ${renderMixBar("Fort Damage", totalStructure, Math.max(1, totalStructure), "cc")}
       </div>
     </div>
     ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
-    ${renderMetricLeaderboard("Support leaders", "Healing allies", players, (player) => player.hpHealed + player.allySupport)}
+    ${renderMetricLeaderboard("Support leaders", "Allies healed", players, (player) => player.allySupport)}
     <div class="score-trend-card">
       <header><p class="eyebrow">Recent wars</p><h3>Damage trend</h3></header>
       <div class="trend-bars">${recentReports
