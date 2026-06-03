@@ -899,7 +899,32 @@ function renderCardToggle(event: WarEvent, csrfToken: string, action: "status" |
 }
 
 function renderNav(session?: WebSession, guildId?: string): string {
-  return `<aside class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}"><i>R</i><span>Raids</span></a><a href="/create?guild=${encodeURIComponent(guildId)}"><i>+</i><span>Create raid</span></a><a href="/stats"><i>S</i><span>Stats</span></a>` : `<a href="/"><i>H</i><span>Home</span></a>${session ? `<a href="/stats"><i>S</i><span>Stats</span></a>` : ""}`}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></aside>`;
+  const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
+  const raidsHref = guildId ? `/?guild=${encodeURIComponent(guildId)}` : "/";
+  const createHref = guildId ? `/create?guild=${encodeURIComponent(guildId)}` : "/create";
+  const statsHref = guildId ? `/stats?guild=${encodeURIComponent(guildId)}` : "/stats";
+  return `<aside class="app-nav">
+    <div class="nav-brand-row"><a class="brand" href="${raidsHref}"><span>NW</span><strong>NW Helper</strong></a><button class="nav-collapse-button" type="button" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-collapsed')"><span></span><span></span><span></span></button></div>
+    <nav>
+      <details class="nav-group" open><summary><i>R</i><span>Raids</span></summary><div>
+        <a href="${raidsHref}"><i>R</i><span>Raid board</span></a>
+        ${guildId ? `<a href="${createHref}"><i>+</i><span>Create raid</span></a>` : ""}
+      </div></details>
+      <a href="${statsHref}"><i>S</i><span>Stats</span></a>
+      ${session ? renderServerNav(session, selectedGuild) : `<a href="/"><i>H</i><span>Home</span></a>`}
+    </nav>
+    <div class="nav-actions">${renderAccountControls(session, guildId)}</div>
+  </aside>`;
+}
+
+function renderServerNav(session: WebSession, selectedGuild?: DiscordGuild): string {
+  const label = selectedGuild?.name ?? "Servers";
+  const servers = session.guilds
+    .map(
+      (guild) => `<a href="/?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><b>${escapeHtml(guild.name)}</b><small>Raids</small></span></a><a href="/stats?guild=${encodeURIComponent(guild.id)}"><i>S</i><span><b>${escapeHtml(guild.name)}</b><small>Stats</small></span></a>`
+    )
+    .join("");
+  return `<details class="nav-group server-nav" ${selectedGuild ? "open" : ""}><summary><i>V</i><span>${escapeHtml(label)}</span></summary><div>${servers || "<span class=\"nav-empty\">No servers found</span>"}</div></details>`;
 }
 
 function renderGuildAvatar(guild: DiscordGuild): string {
@@ -961,7 +986,7 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
       </form>
       <section class="stats-analysis-panel">
         <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-        ${players.length ? renderScoreTable(players, topDamage) : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
+        ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
       </section>
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
@@ -974,6 +999,65 @@ function renderStatsNotice(notice: "uploaded" | "rescanned" | "saved" | "deleted
   if (notice === "rescanned") return "Scoreboard rescanned from the stored image. Review the extracted rows before using them for final calls.";
   if (notice === "saved") return "Scoreboard edits saved.";
   return "Scoreboard deleted.";
+}
+
+function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreReport[]): string {
+  const totalDamage = players.reduce((sum, player) => sum + player.damageDealt, 0);
+  const totalTaken = players.reduce((sum, player) => sum + player.damageTaken, 0);
+  const totalSupport = players.reduce((sum, player) => sum + player.hpHealed + player.allySupport, 0);
+  const totalCc = players.reduce((sum, player) => sum + player.crowdControls, 0);
+  const totalKills = players.reduce((sum, player) => sum + player.kills, 0);
+  const totalDeaths = players.reduce((sum, player) => sum + player.deaths, 0);
+  const impactTotal = Math.max(1, totalDamage + totalSupport + totalTaken);
+  const recentReports = reports.slice(0, 6).reverse();
+
+  return `<section class="score-graphics">
+    <div class="score-mix-card">
+      <header><p class="eyebrow">Team profile</p><h3>War output mix</h3></header>
+      <div class="score-ring" style="--damage:${Math.round((totalDamage / impactTotal) * 100)}%; --support:${Math.round((totalSupport / impactTotal) * 100)}%;"><span>${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills)}</span><small>Team K/D</small></div>
+      <div class="mix-bars">
+        ${renderMixBar("Damage", totalDamage, impactTotal, "damage")}
+        ${renderMixBar("Support", totalSupport, impactTotal, "support")}
+        ${renderMixBar("Taken", totalTaken, impactTotal, "taken")}
+        ${renderMixBar("CCs", totalCc, Math.max(1, totalCc), "cc")}
+      </div>
+    </div>
+    ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
+    ${renderMetricLeaderboard("Support leaders", "Recovery", players, (player) => player.hpHealed + player.allySupport)}
+    <div class="score-trend-card">
+      <header><p class="eyebrow">Recent wars</p><h3>Damage trend</h3></header>
+      <div class="trend-bars">${recentReports
+        .map((report) => {
+          const damage = report.rows.reduce((sum, row) => sum + row.damageDealt, 0);
+          const maxDamage = Math.max(1, ...recentReports.map((candidate) => candidate.rows.reduce((sum, row) => sum + row.damageDealt, 0)));
+          return `<span title="${escapeHtml(report.title || formatDateLabel(report.warDate))}"><i style="height:${Math.max(8, Math.round((damage / maxDamage) * 100))}%"></i><small>${escapeHtml(formatDateLabel(report.warDate).split(",")[0])}</small></span>`;
+        })
+        .join("")}</div>
+    </div>
+  </section>`;
+}
+
+function renderMixBar(label: string, value: number, total: number, tone: string): string {
+  return `<div class="mix-bar mix-${tone}"><span><b>${escapeHtml(label)}</b><small>${formatStatNumber(value)}</small></span><i style="width:${Math.max(3, Math.round((value / total) * 100))}%"></i></div>`;
+}
+
+function renderMetricLeaderboard(
+  title: string,
+  eyebrow: string,
+  players: PlayerScoreAggregate[],
+  metric: (player: PlayerScoreAggregate) => number
+): string {
+  const leaders = [...players].sort((left, right) => metric(right) - metric(left)).slice(0, 4);
+  const maxValue = Math.max(1, ...leaders.map(metric));
+  return `<div class="score-leader-card">
+    <header><p class="eyebrow">${escapeHtml(eyebrow)}</p><h3>${escapeHtml(title)}</h3></header>
+    <div class="leader-bars">${leaders
+      .map((player) => {
+        const value = metric(player);
+        return `<div><span><b>${escapeHtml(player.familyName)}</b><small>${formatStatNumber(value)}</small></span><i style="width:${Math.max(5, Math.round((value / maxValue) * 100))}%"></i></div>`;
+      })
+      .join("")}</div>
+  </div>`;
 }
 
 function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number): string {
@@ -1045,10 +1129,7 @@ function renderScoreReportEditor(guild: DiscordGuild, session: WebSession, repor
         <label>Title<input name="title" maxlength="120" value="${escapeHtml(report.title ?? "")}"></label>
         <button type="submit">Save edits</button>
       </section>
-      <div class="score-table-wrap"><table class="score-table score-edit-table">
-        <thead><tr><th>Player</th><th>K</th><th>D</th><th>A</th><th>Damage</th><th>Taken</th><th>CC</th><th>Healed</th><th>Allies</th><th>Structure</th><th>Lynch</th><th>Siege</th><th>Revive</th><th>Siege D</th><th>Special</th><th>Alive</th><th>Total</th></tr></thead>
-        <tbody>${rows.map((row) => renderScoreEditRow(row)).join("")}</tbody>
-      </table></div>
+      <section class="score-edit-grid">${rows.map((row, index) => renderScoreEditCard(row, index)).join("")}</section>
       <div class="detail-actions"><a class="button button-secondary" href="/stats?guild=${encodeURIComponent(guild.id)}">Cancel</a><button type="submit">Save edits</button></div>
     </form>
   </main>`;
@@ -1060,30 +1141,40 @@ function renderScoreResultOptions(selected: ScoreReportResult): string {
     .join("");
 }
 
-function renderScoreEditRow(row?: ScoreRow): string {
-  return `<tr>
-    ${renderScoreEditCell("familyName", row?.familyName ?? "", "text", "Player")}
-    ${renderScoreEditCell("kills", row?.kills ?? 0)}
-    ${renderScoreEditCell("deaths", row?.deaths ?? 0)}
-    ${renderScoreEditCell("assists", row?.assists ?? 0)}
-    ${renderScoreEditCell("damageDealt", row?.damageDealt ?? 0)}
-    ${renderScoreEditCell("damageTaken", row?.damageTaken ?? 0)}
-    ${renderScoreEditCell("crowdControls", row?.crowdControls ?? 0)}
-    ${renderScoreEditCell("hpHealed", row?.hpHealed ?? 0)}
-    ${renderScoreEditCell("allySupport", row?.allySupport ?? 0)}
-    ${renderScoreEditCell("structureDamage", row?.structureDamage ?? 0)}
-    ${renderScoreEditCell("lynchCannonKills", row?.lynchCannonKills ?? 0)}
-    ${renderScoreEditCell("siegeAssists", row?.siegeAssists ?? 0)}
-    ${renderScoreEditCell("resurrections", row?.resurrections ?? 0)}
-    ${renderScoreEditCell("siegeDeaths", row?.siegeDeaths ?? 0)}
-    ${renderScoreEditCell("specialKills", row?.specialKills ?? 0)}
-    ${renderScoreEditCell("timeAlive", row?.timeAlive ?? "", "text", "00:00")}
-    ${renderScoreEditCell("totalWarTime", row?.totalWarTime ?? "", "text", "00:00")}
-  </tr>`;
+function renderScoreEditCard(row: ScoreRow | undefined, index: number): string {
+  const title = row?.familyName || `New row ${index + 1}`;
+  return `<article class="score-edit-card">
+    <header><span>${escapeHtml(String(index + 1).padStart(2, "0"))}</span>${renderScoreEditField("Player", "familyName", row?.familyName ?? "", "text", "Family name")}</header>
+    <div class="score-edit-group score-edit-core">
+      ${renderScoreEditField("K", "kills", row?.kills ?? 0)}
+      ${renderScoreEditField("D", "deaths", row?.deaths ?? 0)}
+      ${renderScoreEditField("A", "assists", row?.assists ?? 0)}
+    </div>
+    <div class="score-edit-group">
+      ${renderScoreEditField("Damage", "damageDealt", row?.damageDealt ?? 0)}
+      ${renderScoreEditField("Taken", "damageTaken", row?.damageTaken ?? 0)}
+      ${renderScoreEditField("Structure", "structureDamage", row?.structureDamage ?? 0)}
+    </div>
+    <div class="score-edit-group">
+      ${renderScoreEditField("CC", "crowdControls", row?.crowdControls ?? 0)}
+      ${renderScoreEditField("Healed", "hpHealed", row?.hpHealed ?? 0)}
+      ${renderScoreEditField("Allies", "allySupport", row?.allySupport ?? 0)}
+      ${renderScoreEditField("Revives", "resurrections", row?.resurrections ?? 0)}
+    </div>
+    <div class="score-edit-group">
+      ${renderScoreEditField("Lynch", "lynchCannonKills", row?.lynchCannonKills ?? 0)}
+      ${renderScoreEditField("Siege", "siegeAssists", row?.siegeAssists ?? 0)}
+      ${renderScoreEditField("Siege D", "siegeDeaths", row?.siegeDeaths ?? 0)}
+      ${renderScoreEditField("Special", "specialKills", row?.specialKills ?? 0)}
+      ${renderScoreEditField("Alive", "timeAlive", row?.timeAlive ?? "", "text", "00:00")}
+      ${renderScoreEditField("Total", "totalWarTime", row?.totalWarTime ?? "", "text", "00:00")}
+    </div>
+    <small>${escapeHtml(title)}</small>
+  </article>`;
 }
 
-function renderScoreEditCell(name: string, value: string | number, type = "number", placeholder = "0"): string {
-  return `<td><input name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(String(value))}" placeholder="${escapeHtml(placeholder)}"${type === "number" ? " min=\"0\" step=\"1\"" : ""}></td>`;
+function renderScoreEditField(label: string, name: string, value: string | number, type = "number", placeholder = "0"): string {
+  return `<label>${escapeHtml(label)}<input name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(String(value))}" placeholder="${escapeHtml(placeholder)}"${type === "number" ? " min=\"0\" step=\"1\"" : ""}></label>`;
 }
 
 function aggregateScoreRows(rows: ScoreRow[]): PlayerScoreAggregate[] {
