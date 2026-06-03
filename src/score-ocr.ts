@@ -8,20 +8,93 @@ const NUMBER_PATTERN = /^[\d,.]+[kKmM]?$/;
 const TESSERACT_CACHE_PATH = path.join(os.tmpdir(), "nw-helper-tessdata");
 
 export interface ScoreExtraction {
+  engine: string;
   rawText: string;
   confidence?: number;
   rows: Omit<ScoreRow, "guildId">[];
 }
 
-export async function extractScoreScreenshot(image: Buffer): Promise<ScoreExtraction> {
+export interface ScoreExtractionOptions {
+  mimeType?: string;
+  geminiApiKey?: string;
+  geminiModel?: string;
+  preferGemini?: boolean;
+}
+
+export async function extractScoreScreenshot(image: Buffer, options: ScoreExtractionOptions = {}): Promise<ScoreExtraction> {
+  if (options.preferGemini && options.geminiApiKey) {
+    try {
+      const geminiExtraction = await extractScoreScreenshotWithGemini(image, options.geminiApiKey, options.geminiModel ?? "gemini-2.5-flash-lite", options.mimeType ?? "image/png");
+      if (geminiExtraction.rows.length) return geminiExtraction;
+      console.warn("Gemini score extraction returned no rows; falling back to Tesseract.");
+    } catch (error) {
+      console.warn(`Gemini score extraction failed; falling back to Tesseract. ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return extractScoreScreenshotWithTesseract(image);
+}
+
+async function extractScoreScreenshotWithTesseract(image: Buffer): Promise<ScoreExtraction> {
   const results = await Promise.all([recognizeWithPsm(image, Tesseract.PSM.SINGLE_BLOCK), recognizeWithPsm(image, Tesseract.PSM.SPARSE_TEXT)]);
   const rawText = results.map((result) => result.data.text).join("\n\n--- sparse pass ---\n\n");
-  const rows = mergeScoreRows([...parseScoreRows(results[0].data.text), ...parseScoreRows(results[1].data.text)]);
+  const coordinateRows = parseCoordinateRows(results[0]);
+  const rows = mergeScoreRows([...coordinateRows, ...parseScoreRows(results[0].data.text), ...parseScoreRows(results[1].data.text)]);
   const confidence = Math.max(...results.map((result) => result.data.confidence).filter(Number.isFinite));
 
   return {
+    engine: "tesseract.js",
     rawText,
     confidence: Number.isFinite(confidence) ? confidence : undefined,
+    rows
+  };
+}
+
+async function extractScoreScreenshotWithGemini(image: Buffer, apiKey: string, model: string, mimeType: string): Promise<ScoreExtraction> {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: buildGeminiScorePrompt() },
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: image.toString("base64")
+              }
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: "application/json"
+      }
+    })
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Gemini API returned ${response.status}: ${responseText.slice(0, 300)}`);
+  }
+
+  const parsed = JSON.parse(responseText) as GeminiGenerateContentResponse;
+  const parts = parsed.candidates?.flatMap((candidate) => candidate.content?.parts ?? []) ?? [];
+  const text = parts
+    .map((part) => part.text ?? "")
+    .join("\n")
+    .trim();
+  const rows = parseGeminiRows(text);
+  return {
+    engine: `gemini:${model}`,
+    rawText: text || responseText,
+    confidence: rows.length ? 100 : undefined,
     rows
   };
 }
@@ -31,6 +104,116 @@ export function parseScoreRows(rawText: string): Omit<ScoreRow, "guildId">[] {
     .split(/\r?\n/)
     .map((line) => parseScoreLine(line))
     .filter((row): row is Omit<ScoreRow, "guildId"> => Boolean(row));
+}
+
+interface GeminiGenerateContentResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+}
+
+interface GeminiScoreRow {
+  familyName?: unknown;
+  family_name?: unknown;
+  name?: unknown;
+  kills?: unknown;
+  deaths?: unknown;
+  assists?: unknown;
+  damageDealt?: unknown;
+  damage_dealt?: unknown;
+  damageTaken?: unknown;
+  damage_taken?: unknown;
+  crowdControls?: unknown;
+  crowd_controls?: unknown;
+  cc?: unknown;
+  hpHealed?: unknown;
+  hp_healed?: unknown;
+  healing?: unknown;
+  allySupport?: unknown;
+  ally_support?: unknown;
+  alliesHealed?: unknown;
+  allies_healed?: unknown;
+  structureDamage?: unknown;
+  structure_damage?: unknown;
+  fortDamage?: unknown;
+  fort_damage?: unknown;
+  lynchCannonKills?: unknown;
+  lynch_cannon_kills?: unknown;
+  siegeAssists?: unknown;
+  siege_assists?: unknown;
+  resurrections?: unknown;
+  revives?: unknown;
+  siegeDeaths?: unknown;
+  siege_deaths?: unknown;
+  specialKills?: unknown;
+  special_kills?: unknown;
+  timeAlive?: unknown;
+  time_alive?: unknown;
+  totalWarTime?: unknown;
+  total_war_time?: unknown;
+}
+
+function buildGeminiScorePrompt(): string {
+  return [
+    "Extract the BDO Node War scoreboard table from this screenshot.",
+    "Return only JSON. Do not include markdown.",
+    "Use this exact shape: {\"rows\":[{\"familyName\":\"\",\"kills\":0,\"deaths\":0,\"assists\":0,\"damageDealt\":0,\"damageTaken\":0,\"crowdControls\":0,\"hpHealed\":0,\"allySupport\":0,\"structureDamage\":0,\"lynchCannonKills\":0,\"siegeAssists\":0,\"resurrections\":0,\"siegeDeaths\":0,\"specialKills\":0,\"timeAlive\":\"\",\"totalWarTime\":\"\"}]}",
+    "Read player names from the left Family Name column.",
+    "Return all visible player rows, top to bottom.",
+    "Convert K/M values to full integers. Example: 614.1K is 614100 and 5.4M is 5400000.",
+    "If a cell is blank, unreadable, or not visible, use 0 for numeric fields and an empty string for time fields.",
+    "Do not invent players or stats."
+  ].join("\n");
+}
+
+function parseGeminiRows(rawText: string): Omit<ScoreRow, "guildId">[] {
+  const parsed = parseJsonFromText(rawText);
+  const rows = Array.isArray(parsed) ? parsed : Array.isArray((parsed as { rows?: unknown })?.rows) ? (parsed as { rows: unknown[] }).rows : [];
+  return mergeScoreRows(rows.map((row) => parseGeminiRow(row)).filter((row): row is Omit<ScoreRow, "guildId"> => Boolean(row)));
+}
+
+function parseJsonFromText(rawText: string): unknown {
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    const match = rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (!match) throw new Error("Gemini response did not contain JSON.");
+    return JSON.parse(match[1]);
+  }
+}
+
+function parseGeminiRow(value: unknown): Omit<ScoreRow, "guildId"> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as GeminiScoreRow;
+  const familyName = normalizeFamilyName(String(row.familyName ?? row.family_name ?? row.name ?? ""));
+  if (familyName.length < 2) return undefined;
+
+  return {
+    familyName,
+    kills: parseCountNumber(readGeminiValue(row.kills)),
+    deaths: parseCountNumber(readGeminiValue(row.deaths)),
+    assists: parseCountNumber(readGeminiValue(row.assists)),
+    damageDealt: parseStatNumber(readGeminiValue(row.damageDealt ?? row.damage_dealt)),
+    damageTaken: parseStatNumber(readGeminiValue(row.damageTaken ?? row.damage_taken)),
+    crowdControls: parseCountNumber(readGeminiValue(row.crowdControls ?? row.crowd_controls ?? row.cc)),
+    hpHealed: parseStatNumber(readGeminiValue(row.hpHealed ?? row.hp_healed ?? row.healing)),
+    allySupport: parseStatNumber(readGeminiValue(row.allySupport ?? row.ally_support ?? row.alliesHealed ?? row.allies_healed)),
+    structureDamage: parseStatNumber(readGeminiValue(row.structureDamage ?? row.structure_damage ?? row.fortDamage ?? row.fort_damage)),
+    lynchCannonKills: parseCountNumber(readGeminiValue(row.lynchCannonKills ?? row.lynch_cannon_kills)),
+    siegeAssists: parseCountNumber(readGeminiValue(row.siegeAssists ?? row.siege_assists)),
+    resurrections: parseCountNumber(readGeminiValue(row.resurrections ?? row.revives)),
+    siegeDeaths: parseCountNumber(readGeminiValue(row.siegeDeaths ?? row.siege_deaths)),
+    specialKills: parseCountNumber(readGeminiValue(row.specialKills ?? row.special_kills)),
+    timeAlive: normalizeTime(readGeminiValue(row.timeAlive ?? row.time_alive)),
+    totalWarTime: normalizeTime(readGeminiValue(row.totalWarTime ?? row.total_war_time))
+  };
+}
+
+function readGeminiValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return String(value);
 }
 
 function parseScoreLine(line: string): Omit<ScoreRow, "guildId"> | undefined {
@@ -131,7 +314,7 @@ async function recognizeWithPsm(image: Buffer, psm: Tesseract.PSM): Promise<Tess
   });
   await worker.setParameters({ tessedit_pageseg_mode: psm });
   try {
-    return await worker.recognize(image);
+    return await worker.recognize(image, {}, { blocks: true, text: true });
   } finally {
     await worker.terminate();
   }
@@ -141,14 +324,165 @@ function mergeScoreRows(rows: Omit<ScoreRow, "guildId">[]): Omit<ScoreRow, "guil
   const merged: Omit<ScoreRow, "guildId">[] = [];
   for (const row of rows) {
     const normalizedName = normalizePlayerName(row.familyName);
-    if (!normalizedName || merged.some((candidate) => normalizePlayerName(candidate.familyName) === normalizedName)) continue;
+    if (!normalizedName || merged.some((candidate) => normalizePlayerName(candidate.familyName) === normalizedName || hasSameScoreSignature(candidate, row))) continue;
     merged.push(row);
   }
   return merged;
 }
 
+function hasSameScoreSignature(left: Omit<ScoreRow, "guildId">, right: Omit<ScoreRow, "guildId">): boolean {
+  const leftValues = getScoreSignatureValues(left);
+  const rightValues = getScoreSignatureValues(right);
+  const meaningfulValues = leftValues.filter((value) => value !== 0).length;
+  if (meaningfulValues < 4) return false;
+  return leftValues.every((value, index) => value === rightValues[index]);
+}
+
+function getScoreSignatureValues(row: Omit<ScoreRow, "guildId">): Array<number | string> {
+  return [
+    row.kills,
+    row.deaths,
+    row.assists,
+    row.damageDealt,
+    row.damageTaken,
+    row.crowdControls,
+    row.hpHealed,
+    row.allySupport,
+    row.structureDamage,
+    row.timeAlive,
+    row.totalWarTime
+  ];
+}
+
 function normalizePlayerName(name: string): string {
   return name.toLowerCase().replace(/^[^a-z0-9]+/, "").replace(/[^a-z0-9]/g, "");
+}
+
+interface OcrWord {
+  text: string;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+function parseCoordinateRows(result: Tesseract.RecognizeResult): Omit<ScoreRow, "guildId">[] {
+  const words = extractWords(result);
+  if (!words.length) return [];
+
+  const maxX = Math.max(...words.map((word) => word.x1));
+  const maxY = Math.max(...words.map((word) => word.y1));
+  const rowTolerance = Math.max(8, maxY * 0.014);
+  const columnTolerance = Math.max(14, maxX * 0.02);
+  const statWords = words.filter((word) => getWordCenter(word).x > maxX * 0.14 && isCoordinateCellToken(word.text));
+  const rowBuckets = clusterByPosition(statWords, (word) => getWordCenter(word).y, rowTolerance).filter((bucket) => bucket.items.length >= 4);
+  if (rowBuckets.length < 3) return [];
+
+  const columnBuckets = clusterByPosition(statWords, (word) => getWordCenter(word).x, columnTolerance)
+    .filter((bucket) => bucket.items.length >= Math.max(2, Math.floor(rowBuckets.length * 0.12)))
+    .sort((left, right) => left.center - right.center);
+  if (columnBuckets.length < 8) return [];
+
+  const columnCenters = columnBuckets.map((bucket) => bucket.center);
+  const timeCenters = columnCenters.length >= 11 ? columnCenters.slice(-2) : [];
+  const statCenters = columnCenters.slice(0, timeCenters.length ? -2 : undefined).slice(0, 14);
+  const firstStatCenter = statCenters[0] ?? maxX * 0.18;
+
+  return rowBuckets
+    .sort((left, right) => left.center - right.center)
+    .map((bucket) => parseCoordinateRow(words, bucket.center, rowTolerance, columnTolerance, firstStatCenter, statCenters, timeCenters))
+    .filter((row): row is Omit<ScoreRow, "guildId"> => Boolean(row));
+}
+
+function parseCoordinateRow(
+  words: OcrWord[],
+  rowCenter: number,
+  rowTolerance: number,
+  columnTolerance: number,
+  firstStatCenter: number,
+  statCenters: number[],
+  timeCenters: number[]
+): Omit<ScoreRow, "guildId"> | undefined {
+  const rowWords = words.filter((word) => Math.abs(getWordCenter(word).y - rowCenter) <= rowTolerance).sort((left, right) => left.x0 - right.x0);
+  const familyName = normalizeFamilyName(rowWords.filter((word) => getWordCenter(word).x < firstStatCenter - columnTolerance).map((word) => word.text).join(" "));
+  if (familyName.length < 2 || /^(family|name|guild|result|node|war)$/i.test(familyName)) return undefined;
+
+  const stats = statCenters.map((center) => readCoordinateCell(rowWords, center, columnTolerance)).filter((value): value is string => value !== undefined);
+  const times = timeCenters.map((center) => readCoordinateCell(rowWords, center, columnTolerance)).filter((value): value is string => value !== undefined).map(normalizeTime);
+  if (stats.length < 5) return undefined;
+
+  return {
+    familyName,
+    kills: parseCountNumber(stats[0]),
+    deaths: parseCountNumber(stats[1]),
+    assists: parseCountNumber(stats[2]),
+    damageDealt: parseStatNumber(stats[3]),
+    damageTaken: parseStatNumber(stats[4]),
+    crowdControls: parseStatNumber(stats[5]),
+    hpHealed: parseStatNumber(stats[6]),
+    allySupport: parseStatNumber(stats[7]),
+    structureDamage: parseStatNumber(stats[8]),
+    lynchCannonKills: parseStatNumber(stats[9]),
+    siegeAssists: parseStatNumber(stats[10]),
+    resurrections: parseStatNumber(stats[11]),
+    siegeDeaths: parseStatNumber(stats[12]),
+    specialKills: parseStatNumber(stats[13]),
+    timeAlive: times[0] ?? "",
+    totalWarTime: times[1] ?? ""
+  };
+}
+
+function readCoordinateCell(rowWords: OcrWord[], center: number, columnTolerance: number): string | undefined {
+  const cellWords = rowWords
+    .map((word) => ({ word, distance: Math.abs(getWordCenter(word).x - center) }))
+    .filter((entry) => entry.distance <= columnTolerance)
+    .sort((left, right) => left.distance - right.distance);
+  for (const { word } of cellWords) {
+    const value = normalizeScoreCellToken(word.text) ?? (looksLikeTime(word.text) ? word.text : undefined);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function extractWords(result: Tesseract.RecognizeResult): OcrWord[] {
+  const words: OcrWord[] = [];
+  for (const block of result.data.blocks ?? []) {
+    for (const paragraph of block.paragraphs) {
+      for (const line of paragraph.lines) {
+        for (const word of line.words) {
+          words.push({ text: word.text, x0: word.bbox.x0, x1: word.bbox.x1, y0: word.bbox.y0, y1: word.bbox.y1 });
+        }
+      }
+    }
+  }
+  return words;
+}
+
+function clusterByPosition<T>(items: T[], getPosition: (item: T) => number, tolerance: number): Array<{ center: number; items: T[] }> {
+  const buckets: Array<{ center: number; items: T[] }> = [];
+  for (const item of items.sort((left, right) => getPosition(left) - getPosition(right))) {
+    const position = getPosition(item);
+    const bucket = buckets.find((candidate) => Math.abs(candidate.center - position) <= tolerance);
+    if (!bucket) {
+      buckets.push({ center: position, items: [item] });
+      continue;
+    }
+    bucket.items.push(item);
+    bucket.center = bucket.items.reduce((sum, bucketItem) => sum + getPosition(bucketItem), 0) / bucket.items.length;
+  }
+  return buckets;
+}
+
+function getWordCenter(word: OcrWord): { x: number; y: number } {
+  return { x: (word.x0 + word.x1) / 2, y: (word.y0 + word.y1) / 2 };
+}
+
+function normalizeFamilyName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9 _.-]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function isCoordinateCellToken(token: string): boolean {
+  return isScoreCellToken(token) || looksLikeTime(token);
 }
 
 function looksLikeTime(value: string): boolean {

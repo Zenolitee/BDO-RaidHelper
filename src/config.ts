@@ -28,6 +28,10 @@ export const config = {
   nodeWarChannelId: process.env.NODEWAR_CHANNEL_ID,
   nodeWarRoleId: process.env.NODEWAR_ROLE_ID,
   officerRoleId: process.env.OFFICER_ROLE_ID,
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash-lite",
+  geminiUserMinuteLimit: Number(process.env.GEMINI_USER_MINUTE_LIMIT ?? 3),
+  geminiGuildDayLimit: Number(process.env.GEMINI_GUILD_DAY_LIMIT ?? 50),
   timezone: process.env.TIMEZONE ?? "Asia/Singapore",
   nodeWarPostTime: process.env.NODEWAR_POST_TIME ?? "22:15",
   nodeWarStartTime: process.env.NODEWAR_START_TIME ?? "21:00"

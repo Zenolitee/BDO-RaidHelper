@@ -48,6 +48,7 @@ export interface ScoreReportInput {
   imageMimeType: string;
   imageOriginalName: string;
   imageBuffer: Buffer;
+  ocrEngine?: string;
   rawOcrText: string;
   ocrConfidence?: number;
   uploadedBy?: string;

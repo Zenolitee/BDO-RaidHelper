@@ -28,6 +28,17 @@ NW Helper reads environment variables from `.env` through `dotenv`. Copy `.env.e
 | `NODEWAR_POST_TIME` | Optional | `22:15` | Default announcement time in 24-hour `HH:mm`. |
 | `NODEWAR_START_TIME` | Optional | `21:00` | Default war start time in 24-hour `HH:mm`. |
 
+## Gemini Stats OCR
+
+Gemini is optional. When `GEMINI_API_KEY` is set, score screenshot uploads and rescans try Gemini first, then fall back to local Tesseract OCR if Gemini fails or the app-side quota is exhausted.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | Optional | None | Server-only Google AI Studio API key for Gemini vision extraction. Never expose it to browser code. |
+| `GEMINI_MODEL` | Optional | `gemini-2.5-flash-lite` | Gemini model used for scoreboard extraction. |
+| `GEMINI_USER_MINUTE_LIMIT` | Optional | `3` | Maximum Gemini OCR attempts per Discord user per minute before falling back to Tesseract. |
+| `GEMINI_GUILD_DAY_LIMIT` | Optional | `50` | Maximum Gemini OCR attempts per Discord server per day before falling back to Tesseract. The app resets this counter by Pacific date to roughly match Gemini RPD resets. |
+
 ## Supabase
 
 | Variable | Required | Default | Description |

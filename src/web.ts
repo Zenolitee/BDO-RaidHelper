@@ -87,6 +87,73 @@ const scoreUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 }
 });
+const scoreGeminiQuota = createScoreGeminiQuota();
+
+interface ScoreGeminiQuotaResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+interface ScoreGeminiQuota {
+  userMinute: Map<string, { windowStart: number; count: number }>;
+  guildDay: Map<string, { day: string; count: number }>;
+}
+
+function createScoreGeminiQuota(): ScoreGeminiQuota {
+  return {
+    userMinute: new Map(),
+    guildDay: new Map()
+  };
+}
+
+function consumeScoreGeminiQuota(userId: string, guildId: string): ScoreGeminiQuotaResult {
+  if (!config.geminiApiKey) return { allowed: false, reason: "Gemini API key not configured; used Tesseract fallback." };
+
+  const userLimit = Math.max(0, config.geminiUserMinuteLimit);
+  const guildLimit = Math.max(0, config.geminiGuildDayLimit);
+  if (userLimit === 0 || guildLimit === 0) return { allowed: false, reason: "Gemini quota disabled; used Tesseract fallback." };
+
+  const now = Date.now();
+  const userBucket = scoreGeminiQuota.userMinute.get(userId);
+  if (userBucket && now - userBucket.windowStart < 60_000 && userBucket.count >= userLimit) {
+    return { allowed: false, reason: `Gemini user minute limit reached (${userLimit}/minute); used Tesseract fallback.` };
+  }
+
+  const today = getPacificDateKey(new Date(now));
+  const guildBucket = scoreGeminiQuota.guildDay.get(guildId);
+  if (guildBucket?.day === today && guildBucket.count >= guildLimit) {
+    return { allowed: false, reason: `Gemini server daily limit reached (${guildLimit}/day); used Tesseract fallback.` };
+  }
+
+  if (!userBucket || now - userBucket.windowStart >= 60_000) {
+    scoreGeminiQuota.userMinute.set(userId, { windowStart: now, count: 1 });
+  } else {
+    userBucket.count += 1;
+  }
+
+  if (!guildBucket || guildBucket.day !== today) {
+    scoreGeminiQuota.guildDay.set(guildId, { day: today, count: 1 });
+  } else {
+    guildBucket.count += 1;
+  }
+
+  return { allowed: true };
+}
+
+function getPacificDateKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((accumulator, part) => {
+      accumulator[part.type] = part.value;
+      return accumulator;
+    }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 /**
  * Creates the Express dashboard with Discord OAuth, public roster pages,
@@ -155,7 +222,13 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
       }
 
-      const extraction = await extractScoreScreenshot(file.buffer);
+      const geminiQuota = consumeScoreGeminiQuota(session.user.id, guild.id);
+      const extraction = await extractScoreScreenshot(file.buffer, {
+        mimeType: file.mimetype,
+        geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
+        geminiModel: config.geminiModel,
+        preferGemini: geminiQuota.allowed
+      });
       const warDate = parseScoreDate(request.body.warDate);
       const result = parseScoreResult(request.body.result);
       const uploadedBy = formatUploader(session);
@@ -167,12 +240,15 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         imageMimeType: file.mimetype,
         imageOriginalName: file.originalname,
         imageBuffer: file.buffer,
+        ocrEngine: extraction.engine,
         rawOcrText: extraction.rawText,
         ocrConfidence: extraction.confidence,
         uploadedBy,
         rows: extraction.rows.map((row) => ({ ...row, guildId: guild.id }))
       });
-      console.info(`Score screenshot uploaded by ${uploadedBy} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows.`);
+      console.info(
+        `Score screenshot uploaded by ${uploadedBy} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows with ${extraction.engine}. ${geminiQuota.reason ?? ""}`.trim()
+      );
 
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
     } catch (error) {
@@ -196,13 +272,22 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         return;
       }
 
-      const extraction = await extractScoreScreenshot(reportImage.imageBuffer);
+      const geminiQuota = consumeScoreGeminiQuota(session.user.id, guild.id);
+      const extraction = await extractScoreScreenshot(reportImage.imageBuffer, {
+        mimeType: reportImage.report.imageMimeType,
+        geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
+        geminiModel: config.geminiModel,
+        preferGemini: geminiQuota.allowed
+      });
       await options.scoreStore.replaceReportExtraction(guild.id, reportImage.report.id, {
+        ocrEngine: extraction.engine,
         rawOcrText: extraction.rawText,
         ocrConfidence: extraction.confidence,
         rows: extraction.rows.map((row) => ({ ...row, guildId: guild.id }))
       });
-      console.info(`Score report ${reportImage.report.id} rescanned by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows.`);
+      console.info(
+        `Score report ${reportImage.report.id} rescanned by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows with ${extraction.engine}. ${geminiQuota.reason ?? ""}`.trim()
+      );
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&rescanned=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Stats rescan failed", renderWebError(error)));
@@ -841,7 +926,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
   const damage = rows.reduce((sum, row) => sum + row.damageDealt, 0);
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
   return `<article class="report-card">
-    <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | OCR ${escapeHtml(confidence)}</small><small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small></div>
+    <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | ${escapeHtml(report.ocrEngine)} | OCR ${escapeHtml(confidence)}</small><small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small></div>
     <dl>
       <div><dt>Players</dt><dd>${rows.length}</dd></div>
       <div><dt>Kills</dt><dd>${formatStatNumber(kills)}</dd></div>

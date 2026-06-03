@@ -56,7 +56,7 @@ export interface ScoreStore {
   replaceReportExtraction(
     guildId: string,
     reportId: string,
-    extraction: Pick<ScoreReportInput, "rawOcrText" | "ocrConfidence" | "rows">
+    extraction: Pick<ScoreReportInput, "ocrEngine" | "rawOcrText" | "ocrConfidence" | "rows">
   ): Promise<ScoreReport>;
 }
 
@@ -89,7 +89,7 @@ export class JsonScoreStore implements ScoreStore {
       imageBucket: "local",
       imagePath,
       imageMimeType: input.imageMimeType,
-      ocrEngine: "tesseract.js",
+      ocrEngine: input.ocrEngine ?? "tesseract.js",
       ocrConfidence: input.ocrConfidence,
       rawOcrText: input.rawOcrText,
       uploadedBy: input.uploadedBy,
@@ -114,11 +114,12 @@ export class JsonScoreStore implements ScoreStore {
   async replaceReportExtraction(
     guildId: string,
     reportId: string,
-    extraction: Pick<ScoreReportInput, "rawOcrText" | "ocrConfidence" | "rows">
+    extraction: Pick<ScoreReportInput, "ocrEngine" | "rawOcrText" | "ocrConfidence" | "rows">
   ): Promise<ScoreReport> {
     const data = await this.read();
     const report = data.reports.find((candidate) => candidate.guildId === guildId && candidate.id === reportId);
     if (!report) throw new Error("Score report not found.");
+    report.ocrEngine = extraction.ocrEngine ?? report.ocrEngine;
     report.rawOcrText = extraction.rawOcrText;
     report.ocrConfidence = extraction.ocrConfidence;
     report.rows = extraction.rows.map((row) => ({ ...row, id: randomUUID(), reportId, guildId }));
@@ -207,7 +208,7 @@ export class SupabaseScoreStore implements ScoreStore {
       image_bucket: SCORE_BUCKET,
       image_path: imagePath,
       image_mime_type: input.imageMimeType,
-      ocr_engine: "tesseract.js",
+      ocr_engine: input.ocrEngine ?? "tesseract.js",
       ocr_confidence: input.ocrConfidence ?? null,
       raw_ocr_text: input.rawOcrText,
       uploaded_by: input.uploadedBy ?? null
@@ -253,11 +254,12 @@ export class SupabaseScoreStore implements ScoreStore {
   async replaceReportExtraction(
     guildId: string,
     reportId: string,
-    extraction: Pick<ScoreReportInput, "rawOcrText" | "ocrConfidence" | "rows">
+    extraction: Pick<ScoreReportInput, "ocrEngine" | "rawOcrText" | "ocrConfidence" | "rows">
   ): Promise<ScoreReport> {
     const { data: report, error: reportError } = await this.supabase
       .from("score_reports")
       .update({
+        ocr_engine: extraction.ocrEngine ?? "tesseract.js",
         raw_ocr_text: extraction.rawOcrText,
         ocr_confidence: extraction.ocrConfidence ?? null
       })
