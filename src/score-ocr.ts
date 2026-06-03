@@ -16,16 +16,7 @@ export interface ScoreExtraction {
 export async function extractScoreScreenshot(image: Buffer): Promise<ScoreExtraction> {
   const results = await Promise.all([recognizeWithPsm(image, Tesseract.PSM.SINGLE_BLOCK), recognizeWithPsm(image, Tesseract.PSM.SPARSE_TEXT)]);
   const rawText = results.map((result) => result.data.text).join("\n\n--- sparse pass ---\n\n");
-  const rowPassRows = parseScoreRows(results[0].data.text);
-  const sparseNames = parseSparsePlayerNames(results[1].data.text);
-  if (sparseNames.length < 10 && rowPassRows[0] && !sparseNames.some((name) => normalizePlayerName(name) === normalizePlayerName(rowPassRows[0].familyName))) {
-    sparseNames.unshift(rowPassRows[0].familyName);
-  }
-  const sparseRows =
-    sparseNames.length >= rowPassRows.length
-      ? sparseNames.map((familyName, index) => ({ ...emptyScoreRow(familyName), ...rowPassRows[index], familyName }))
-      : [];
-  const rows = mergeScoreRows([...(sparseRows.length ? sparseRows : rowPassRows), ...parseScoreRows(results[1].data.text)]);
+  const rows = mergeScoreRows([...parseScoreRows(results[0].data.text), ...parseScoreRows(results[1].data.text)]);
   const confidence = Math.max(...results.map((result) => result.data.confidence).filter(Number.isFinite));
 
   return {
@@ -49,35 +40,43 @@ function parseScoreLine(line: string): Omit<ScoreRow, "guildId"> | undefined {
   const tokens = normalized.split(" ");
   const nameStartIndex = tokens.findIndex(isLikelyNameToken);
   if (nameStartIndex < 0) return undefined;
-  const firstStatIndex = tokens.findIndex((token, index) => index > nameStartIndex && isStatToken(token));
+  const firstStatIndex = tokens.findIndex((token, index) => index > nameStartIndex && isScoreCellToken(token));
   if (firstStatIndex <= nameStartIndex) return undefined;
 
   const familyName = tokens.slice(nameStartIndex, firstStatIndex).join(" ").replace(/[^a-zA-Z0-9 _.-]/g, "").trim();
   if (familyName.length < 2 || /^(family|name|guild|result|node|war)$/i.test(familyName)) return undefined;
 
-  const stats = tokens.slice(firstStatIndex).filter(isStatToken);
-  if (stats.length < 5) return undefined;
+  const stats: string[] = [];
+  const times: string[] = [];
+  for (const token of tokens.slice(firstStatIndex)) {
+    if (looksLikeTime(token) && stats.length >= 8) {
+      times.push(normalizeTime(token));
+      continue;
+    }
 
-  const numeric = stats.filter((token) => !TIME_PATTERN.test(token));
-  const times = stats.filter((token) => TIME_PATTERN.test(token));
-  if (numeric.length < 5) return undefined;
+    const scoreCell = normalizeScoreCellToken(token);
+    if (scoreCell !== undefined && stats.length < 14) {
+      stats.push(scoreCell);
+    }
+  }
+  if (stats.length < 5) return undefined;
 
   return {
     familyName,
-    kills: parseStatNumber(numeric[0]),
-    deaths: parseStatNumber(numeric[1]),
-    assists: parseStatNumber(numeric[2]),
-    damageDealt: parseStatNumber(numeric[3]),
-    damageTaken: parseStatNumber(numeric[4]),
-    crowdControls: parseStatNumber(numeric[5]),
-    hpHealed: parseStatNumber(numeric[6]),
-    allySupport: parseStatNumber(numeric[7]),
-    structureDamage: parseStatNumber(numeric[8]),
-    lynchCannonKills: parseStatNumber(numeric[9]),
-    siegeAssists: parseStatNumber(numeric[10]),
-    resurrections: parseStatNumber(numeric[11]),
-    siegeDeaths: parseStatNumber(numeric[12]),
-    specialKills: parseStatNumber(numeric[13]),
+    kills: parseCountNumber(stats[0]),
+    deaths: parseCountNumber(stats[1]),
+    assists: parseCountNumber(stats[2]),
+    damageDealt: parseStatNumber(stats[3]),
+    damageTaken: parseStatNumber(stats[4]),
+    crowdControls: parseStatNumber(stats[5]),
+    hpHealed: parseStatNumber(stats[6]),
+    allySupport: parseStatNumber(stats[7]),
+    structureDamage: parseStatNumber(stats[8]),
+    lynchCannonKills: parseStatNumber(stats[9]),
+    siegeAssists: parseStatNumber(stats[10]),
+    resurrections: parseStatNumber(stats[11]),
+    siegeDeaths: parseStatNumber(stats[12]),
+    specialKills: parseStatNumber(stats[13]),
     timeAlive: times[0] ?? "",
     totalWarTime: times[1] ?? ""
   };
@@ -85,6 +84,22 @@ function parseScoreLine(line: string): Omit<ScoreRow, "guildId"> | undefined {
 
 function isStatToken(token: string): boolean {
   return NUMBER_PATTERN.test(cleanNumberToken(token)) || TIME_PATTERN.test(token);
+}
+
+function isScoreCellToken(token: string): boolean {
+  return isStatToken(token) || normalizeScoreCellToken(token) !== undefined;
+}
+
+function normalizeScoreCellToken(token: string): string | undefined {
+  if (isOcrZero(token)) return "0";
+  if (NUMBER_PATTERN.test(cleanNumberToken(token))) return token;
+  if (isStatPlaceholderToken(token)) return "0";
+  return undefined;
+}
+
+function isStatPlaceholderToken(token: string): boolean {
+  const clean = token.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  return /^(?:el|i|l|j|o|q|tow|sea|ams|as|ses|mask|im|ek|ema|os|sm|nm|am)$/.test(clean);
 }
 
 function isLikelyNameToken(token: string): boolean {
@@ -97,6 +112,12 @@ function parseStatNumber(value: string | undefined): number {
   const multiplier = clean.toLowerCase().endsWith("m") ? 1_000_000 : clean.toLowerCase().endsWith("k") ? 1_000 : 1;
   const numeric = Number(clean.replace(/[kKmM]/g, "").replace(/,/g, ""));
   return Number.isFinite(numeric) ? Math.round(numeric * multiplier) : 0;
+}
+
+function parseCountNumber(value: string | undefined): number {
+  if (!value) return 0;
+  const numeric = Number(cleanNumberToken(value).replace(/[^\d.]/g, ""));
+  return Number.isFinite(numeric) ? Math.round(numeric) : 0;
 }
 
 function cleanNumberToken(token: string): string {
@@ -130,40 +151,16 @@ function normalizePlayerName(name: string): string {
   return name.toLowerCase().replace(/^[^a-z0-9]+/, "").replace(/[^a-z0-9]/g, "");
 }
 
-function parseSparsePlayerNames(rawText: string): string[] {
-  const ignored = new Set(["family", "name", "result", "node", "war", "guild", "estimating", "resolution", "xww"]);
-  const names: string[] = [];
-  let passedHeader = false;
-  for (const line of rawText.split(/\r?\n/)) {
-    const clean = line.replace(/[^a-zA-Z0-9_.-]/g, "").trim();
-    if (/^familyname$/i.test(clean) || /^family$/i.test(clean)) {
-      passedHeader = true;
-      continue;
-    }
-    if (!passedHeader || clean.length < 3 || ignored.has(clean.toLowerCase()) || /^\d/.test(clean) || isStatToken(clean)) continue;
-    if (/^[a-zA-Z][a-zA-Z0-9_.-]{2,24}$/.test(clean)) names.push(clean);
-  }
-  return names;
+function looksLikeTime(value: string): boolean {
+  return /^\d{1,2}:?\d{2}(?::\d{2})?\.?$/.test(value);
 }
 
-function emptyScoreRow(familyName: string): Omit<ScoreRow, "guildId"> {
-  return {
-    familyName,
-    kills: 0,
-    deaths: 0,
-    assists: 0,
-    damageDealt: 0,
-    damageTaken: 0,
-    crowdControls: 0,
-    hpHealed: 0,
-    allySupport: 0,
-    structureDamage: 0,
-    lynchCannonKills: 0,
-    siegeAssists: 0,
-    resurrections: 0,
-    siegeDeaths: 0,
-    specialKills: 0,
-    timeAlive: "",
-    totalWarTime: ""
-  };
+function normalizeTime(value: string | undefined): string {
+  if (!value) return "";
+  const clean = value.replace(/\.$/, "");
+  return clean.includes(":") ? clean : clean.length === 4 ? `${clean.slice(0, 2)}:${clean.slice(2)}` : clean;
+}
+
+function isOcrZero(value: string): boolean {
+  return /^[oO\[\]J]+$/.test(value);
 }
