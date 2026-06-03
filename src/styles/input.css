@@ -1378,7 +1378,13 @@ h1 {
 }
 
 .stats-shell {
-  width: min(1480px, calc(100% - 32px));
+  width: min(1760px, calc(100vw - 252px));
+  margin-left: calc(212px + 20px);
+}
+
+.nav-collapsed .stats-shell {
+  width: min(1760px, calc(100vw - 116px));
+  margin-left: calc(76px + 20px);
 }
 
 .notice {
@@ -1474,6 +1480,7 @@ h1 {
 }
 
 .score-mix-card {
+  grid-column: span 2;
   grid-template-columns: 132px minmax(0, 1fr);
   align-items: center;
 }
@@ -2373,6 +2380,7 @@ h1 {
   }
 
   .score-mix-card {
+    grid-column: auto;
     grid-template-columns: 1fr;
   }
 
