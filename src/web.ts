@@ -200,7 +200,16 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
     try {
       const reports = options.scoreStore ? await options.scoreStore.listReports(guild.id) : [];
-      const notice = request.query.uploaded === "1" ? "uploaded" : request.query.rescanned === "1" ? "rescanned" : undefined;
+      const notice =
+        request.query.uploaded === "1"
+          ? "uploaded"
+          : request.query.rescanned === "1"
+            ? "rescanned"
+            : request.query.saved === "1"
+              ? "saved"
+              : request.query.deleted === "1"
+                ? "deleted"
+                : undefined;
       response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice)));
     } catch (error) {
       response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
@@ -253,6 +262,70 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Stats upload failed", renderWebError(error)));
+    }
+  });
+
+  app.get("/stats/reports/:id/edit", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : "";
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const report = await options.scoreStore.getReport(guild.id, request.params.id);
+      if (!report) {
+        response.status(404).send("Score report not found.");
+        return;
+      }
+      response.type("html").send(renderPage("Edit scoreboard", renderScoreReportEditor(guild, session, report)));
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error)));
+    }
+  });
+
+  app.post("/stats/reports/:id/edit", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const rows = parseScoreRowsFromForm(request.body);
+      if (!rows.length) throw new Error("Keep at least one score row.");
+      await options.scoreStore.updateReport(guild.id, request.params.id, {
+        warDate: parseScoreDate(request.body.warDate),
+        result: parseScoreResult(request.body.result),
+        title: parseOptionalText(request.body.title, 120),
+        rows: rows.map((row) => ({ ...row, guildId: guild.id }))
+      });
+      console.info(`Score report ${request.params.id} manually edited by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); saved ${rows.length} rows.`);
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&saved=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error)));
+    }
+  });
+
+  app.post("/stats/reports/:id/delete", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      await options.scoreStore.deleteReport(guild.id, request.params.id);
+      console.info(`Score report ${request.params.id} deleted by ${formatUploader(session)} for guild ${guild.name} (${guild.id}).`);
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&deleted=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats delete failed", renderWebError(error)));
     }
   });
 
@@ -854,7 +927,7 @@ function renderStatsServerPicker(session: WebSession): string {
   </main>`;
 }
 
-function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports: ScoreReport[], notice?: "uploaded" | "rescanned"): string {
+function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports: ScoreReport[], notice?: "uploaded" | "rescanned" | "saved" | "deleted"): string {
   const rows = reports.flatMap((report) => report.rows);
   const players = aggregateScoreRows(rows);
   const latest = reports[0];
@@ -867,7 +940,7 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
       <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">War stats</p><h1>${escapeHtml(guild.name)}</h1><p>Uploaded scoreboards, player participation, and performance trends.</p></div></div>
       <a class="button button-secondary" href="/?guild=${encodeURIComponent(guild.id)}">Raids</a>
     </section>
-    ${notice ? `<section class="notice">${notice === "uploaded" ? "Scoreboard uploaded and parsed." : "Scoreboard rescanned from the stored image."} Review the extracted rows before using them for final calls.</section>` : ""}
+    ${notice ? `<section class="notice">${renderStatsNotice(notice)}</section>` : ""}
     <section class="stats-row">
       ${renderStat("Scoreboards", String(reports.length))}
       ${renderStat("Players tracked", String(players.length))}
@@ -894,6 +967,13 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
     <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
   </main>`;
+}
+
+function renderStatsNotice(notice: "uploaded" | "rescanned" | "saved" | "deleted"): string {
+  if (notice === "uploaded") return "Scoreboard uploaded and parsed. Review the extracted rows before using them for final calls.";
+  if (notice === "rescanned") return "Scoreboard rescanned from the stored image. Review the extracted rows before using them for final calls.";
+  if (notice === "saved") return "Scoreboard edits saved.";
+  return "Scoreboard deleted.";
 }
 
 function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number): string {
@@ -933,12 +1013,77 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
       <div><dt>Deaths</dt><dd>${formatStatNumber(deaths)}</dd></div>
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
-    <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/rescan">
-      <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
-      <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
-      <button class="button button-secondary" type="submit">Rescan</button>
-    </form>
+    <div class="report-actions">
+      <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}">Edit</a>
+      <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/rescan">
+        <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
+        <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
+        <button class="button button-secondary" type="submit">Rescan</button>
+      </form>
+      <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/delete" onsubmit="return confirm('Delete this scoreboard and uploaded image?')">
+        <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
+        <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
+        <button class="button button-secondary danger-button" type="submit">Delete</button>
+      </form>
+    </div>
   </article>`;
+}
+
+function renderScoreReportEditor(guild: DiscordGuild, session: WebSession, report: ScoreReport): string {
+  const rows = [...report.rows, ...Array.from({ length: 3 }, () => undefined)];
+  return `${renderNav(session, guild.id)}<main class="shell stats-shell">
+    <section class="dashboard-head">
+      <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">Edit scoreboard</p><h1>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h1><p>Correct OCR rows and save the scoreboard totals.</p></div></div>
+      <a class="button button-secondary" href="/stats?guild=${encodeURIComponent(guild.id)}">Stats</a>
+    </section>
+    <form class="score-edit-form" method="post" action="/stats/reports/${encodeURIComponent(report.id)}/edit">
+      <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
+      <input type="hidden" name="guildId" value="${escapeHtml(guild.id)}">
+      <section class="stats-upload-panel score-edit-meta">
+        <label>War date<input type="date" name="warDate" value="${escapeHtml(report.warDate)}" required></label>
+        <label>Result<select name="result">${renderScoreResultOptions(report.result)}</select></label>
+        <label>Title<input name="title" maxlength="120" value="${escapeHtml(report.title ?? "")}"></label>
+        <button type="submit">Save edits</button>
+      </section>
+      <div class="score-table-wrap"><table class="score-table score-edit-table">
+        <thead><tr><th>Player</th><th>K</th><th>D</th><th>A</th><th>Damage</th><th>Taken</th><th>CC</th><th>Healed</th><th>Allies</th><th>Structure</th><th>Lynch</th><th>Siege</th><th>Revive</th><th>Siege D</th><th>Special</th><th>Alive</th><th>Total</th></tr></thead>
+        <tbody>${rows.map((row) => renderScoreEditRow(row)).join("")}</tbody>
+      </table></div>
+      <div class="detail-actions"><a class="button button-secondary" href="/stats?guild=${encodeURIComponent(guild.id)}">Cancel</a><button type="submit">Save edits</button></div>
+    </form>
+  </main>`;
+}
+
+function renderScoreResultOptions(selected: ScoreReportResult): string {
+  return (["unknown", "win", "loss"] as ScoreReportResult[])
+    .map((result) => `<option value="${result}"${selected === result ? " selected" : ""}>${result[0].toUpperCase()}${result.slice(1)}</option>`)
+    .join("");
+}
+
+function renderScoreEditRow(row?: ScoreRow): string {
+  return `<tr>
+    ${renderScoreEditCell("familyName", row?.familyName ?? "", "text", "Player")}
+    ${renderScoreEditCell("kills", row?.kills ?? 0)}
+    ${renderScoreEditCell("deaths", row?.deaths ?? 0)}
+    ${renderScoreEditCell("assists", row?.assists ?? 0)}
+    ${renderScoreEditCell("damageDealt", row?.damageDealt ?? 0)}
+    ${renderScoreEditCell("damageTaken", row?.damageTaken ?? 0)}
+    ${renderScoreEditCell("crowdControls", row?.crowdControls ?? 0)}
+    ${renderScoreEditCell("hpHealed", row?.hpHealed ?? 0)}
+    ${renderScoreEditCell("allySupport", row?.allySupport ?? 0)}
+    ${renderScoreEditCell("structureDamage", row?.structureDamage ?? 0)}
+    ${renderScoreEditCell("lynchCannonKills", row?.lynchCannonKills ?? 0)}
+    ${renderScoreEditCell("siegeAssists", row?.siegeAssists ?? 0)}
+    ${renderScoreEditCell("resurrections", row?.resurrections ?? 0)}
+    ${renderScoreEditCell("siegeDeaths", row?.siegeDeaths ?? 0)}
+    ${renderScoreEditCell("specialKills", row?.specialKills ?? 0)}
+    ${renderScoreEditCell("timeAlive", row?.timeAlive ?? "", "text", "00:00")}
+    ${renderScoreEditCell("totalWarTime", row?.totalWarTime ?? "", "text", "00:00")}
+  </tr>`;
+}
+
+function renderScoreEditCell(name: string, value: string | number, type = "number", placeholder = "0"): string {
+  return `<td><input name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(String(value))}" placeholder="${escapeHtml(placeholder)}"${type === "number" ? " min=\"0\" step=\"1\"" : ""}></td>`;
 }
 
 function aggregateScoreRows(rows: ScoreRow[]): PlayerScoreAggregate[] {
@@ -1544,6 +1689,55 @@ function parseScoreDate(value: unknown): string {
 
 function parseScoreResult(value: unknown): ScoreReportResult {
   return value === "win" || value === "loss" ? value : "unknown";
+}
+
+function parseScoreRowsFromForm(body: Record<string, unknown>): Omit<ScoreRow, "guildId">[] {
+  const familyNames = readFormArray(body.familyName);
+  return familyNames
+    .map((familyName, index) => {
+      const cleanName = familyName.trim().slice(0, 80);
+      if (!cleanName) return undefined;
+      return {
+        familyName: cleanName,
+        kills: parseScoreInteger(body.kills, index),
+        deaths: parseScoreInteger(body.deaths, index),
+        assists: parseScoreInteger(body.assists, index),
+        damageDealt: parseScoreInteger(body.damageDealt, index),
+        damageTaken: parseScoreInteger(body.damageTaken, index),
+        crowdControls: parseScoreInteger(body.crowdControls, index),
+        hpHealed: parseScoreInteger(body.hpHealed, index),
+        allySupport: parseScoreInteger(body.allySupport, index),
+        structureDamage: parseScoreInteger(body.structureDamage, index),
+        lynchCannonKills: parseScoreInteger(body.lynchCannonKills, index),
+        siegeAssists: parseScoreInteger(body.siegeAssists, index),
+        resurrections: parseScoreInteger(body.resurrections, index),
+        siegeDeaths: parseScoreInteger(body.siegeDeaths, index),
+        specialKills: parseScoreInteger(body.specialKills, index),
+        timeAlive: parseScoreTime(body.timeAlive, index),
+        totalWarTime: parseScoreTime(body.totalWarTime, index)
+      };
+    })
+    .filter((row): row is Omit<ScoreRow, "guildId"> => Boolean(row));
+}
+
+function readFormArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? ""));
+  return value === undefined ? [] : [String(value)];
+}
+
+function parseScoreInteger(value: unknown, index: number): number {
+  const raw = readFormArray(value)[index]?.replace(/,/g, "").trim() ?? "";
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error("Score fields must be zero or positive numbers.");
+  return Math.round(parsed);
+}
+
+function parseScoreTime(value: unknown, index: number): string {
+  const raw = readFormArray(value)[index]?.trim() ?? "";
+  if (!raw) return "";
+  if (!/^\d{1,2}:?\d{2}(?::\d{2})?$/.test(raw)) throw new Error("Time fields must use MM:SS or HH:MM:SS format.");
+  return raw.includes(":") ? raw : raw.length === 4 ? `${raw.slice(0, 2)}:${raw.slice(2)}` : raw;
 }
 
 function parseOptionalText(value: unknown, maxLength: number): string | undefined {

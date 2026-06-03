@@ -51,13 +51,20 @@ interface ScoreMetricRow {
 
 export interface ScoreStore {
   listReports(guildId: string): Promise<ScoreReport[]>;
+  getReport(guildId: string, reportId: string): Promise<ScoreReport | undefined>;
   createReport(input: ScoreReportInput): Promise<ScoreReport>;
   readReportImage(guildId: string, reportId: string): Promise<{ report: ScoreReport; imageBuffer: Buffer } | undefined>;
+  updateReport(
+    guildId: string,
+    reportId: string,
+    updates: Pick<ScoreReportInput, "warDate" | "result" | "title" | "rows">
+  ): Promise<ScoreReport>;
   replaceReportExtraction(
     guildId: string,
     reportId: string,
     extraction: Pick<ScoreReportInput, "ocrEngine" | "rawOcrText" | "ocrConfidence" | "rows">
   ): Promise<ScoreReport>;
+  deleteReport(guildId: string, reportId: string): Promise<void>;
 }
 
 export class JsonScoreStore implements ScoreStore {
@@ -103,12 +110,34 @@ export class JsonScoreStore implements ScoreStore {
     return report;
   }
 
+  async getReport(guildId: string, reportId: string): Promise<ScoreReport | undefined> {
+    const data = await this.read();
+    return data.reports.find((candidate) => candidate.guildId === guildId && candidate.id === reportId);
+  }
+
   async readReportImage(guildId: string, reportId: string): Promise<{ report: ScoreReport; imageBuffer: Buffer } | undefined> {
     const data = await this.read();
     const report = data.reports.find((candidate) => candidate.guildId === guildId && candidate.id === reportId);
     if (!report) return undefined;
     const imageBuffer = await fs.readFile(path.join(this.imageDirectory, report.imagePath));
     return { report, imageBuffer };
+  }
+
+  async updateReport(
+    guildId: string,
+    reportId: string,
+    updates: Pick<ScoreReportInput, "warDate" | "result" | "title" | "rows">
+  ): Promise<ScoreReport> {
+    const data = await this.read();
+    const report = data.reports.find((candidate) => candidate.guildId === guildId && candidate.id === reportId);
+    if (!report) throw new Error("Score report not found.");
+    report.warDate = updates.warDate;
+    report.result = updates.result;
+    report.title = updates.title;
+    report.ocrEngine = report.ocrEngine.includes("+manual") ? report.ocrEngine : `${report.ocrEngine}+manual`;
+    report.rows = updates.rows.map((row) => ({ ...row, id: randomUUID(), reportId, guildId }));
+    await this.write(data);
+    return report;
   }
 
   async replaceReportExtraction(
@@ -125,6 +154,21 @@ export class JsonScoreStore implements ScoreStore {
     report.rows = extraction.rows.map((row) => ({ ...row, id: randomUUID(), reportId, guildId }));
     await this.write(data);
     return report;
+  }
+
+  async deleteReport(guildId: string, reportId: string): Promise<void> {
+    const data = await this.read();
+    const reportIndex = data.reports.findIndex((candidate) => candidate.guildId === guildId && candidate.id === reportId);
+    if (reportIndex < 0) throw new Error("Score report not found.");
+    const [report] = data.reports.splice(reportIndex, 1);
+    await this.write(data);
+
+    const absoluteImagePath = path.resolve(this.imageDirectory, report.imagePath);
+    const imageRoot = path.resolve(this.imageDirectory);
+    if (absoluteImagePath.startsWith(`${imageRoot}${path.sep}`)) {
+      await fs.rm(absoluteImagePath, { force: true });
+      await fs.rm(path.dirname(absoluteImagePath), { force: true, recursive: true });
+    }
   }
 
   private async read(): Promise<ScoreStoreData> {
@@ -231,6 +275,28 @@ export class SupabaseScoreStore implements ScoreStore {
     return fromScoreReportRow(insertedReport, metricRows.map((row) => fromScoreMetricRow({ ...row, id: randomUUID() })));
   }
 
+  async getReport(guildId: string, reportId: string): Promise<ScoreReport | undefined> {
+    const { data: report, error: reportError } = await this.supabase
+      .from("score_reports")
+      .select("*")
+      .eq("guild_id", guildId)
+      .eq("id", reportId)
+      .maybeSingle<ScoreReportRow>();
+
+    if (reportError) throw new Error(`Score report read failed: ${reportError.message}`);
+    if (!report) return undefined;
+
+    const { data: rows, error: rowError } = await this.supabase
+      .from("score_rows")
+      .select("*")
+      .eq("guild_id", guildId)
+      .eq("report_id", reportId)
+      .returns<ScoreMetricRow[]>();
+
+    if (rowError) throw new Error(`Score row read failed: ${rowError.message}`);
+    return fromScoreReportRow(report, rows.map(fromScoreMetricRow));
+  }
+
   async readReportImage(guildId: string, reportId: string): Promise<{ report: ScoreReport; imageBuffer: Buffer } | undefined> {
     const { data: report, error: reportError } = await this.supabase
       .from("score_reports")
@@ -249,6 +315,42 @@ export class SupabaseScoreStore implements ScoreStore {
       report: fromScoreReportRow(report, []),
       imageBuffer: Buffer.from(await image.arrayBuffer())
     };
+  }
+
+  async updateReport(
+    guildId: string,
+    reportId: string,
+    updates: Pick<ScoreReportInput, "warDate" | "result" | "title" | "rows">
+  ): Promise<ScoreReport> {
+    const existing = await this.getReport(guildId, reportId);
+    if (!existing) throw new Error("Score report not found.");
+    const ocrEngine = existing.ocrEngine.includes("+manual") ? existing.ocrEngine : `${existing.ocrEngine}+manual`;
+
+    const { data: report, error: reportError } = await this.supabase
+      .from("score_reports")
+      .update({
+        war_date: updates.warDate,
+        result: updates.result,
+        title: updates.title ?? null,
+        ocr_engine: ocrEngine
+      })
+      .eq("guild_id", guildId)
+      .eq("id", reportId)
+      .select("*")
+      .single<ScoreReportRow>();
+
+    if (reportError) throw new Error(`Score report update failed: ${reportError.message}`);
+
+    const { error: deleteError } = await this.supabase.from("score_rows").delete().eq("guild_id", guildId).eq("report_id", reportId);
+    if (deleteError) throw new Error(`Score row cleanup failed: ${deleteError.message}`);
+
+    const metricRows = updates.rows.map((row) => toScoreMetricInsert(row, reportId, guildId));
+    if (metricRows.length) {
+      const { error: rowError } = await this.supabase.from("score_rows").insert(metricRows);
+      if (rowError) throw new Error(`Score row insert failed: ${rowError.message}`);
+    }
+
+    return fromScoreReportRow(report, metricRows.map((row) => fromScoreMetricRow({ ...row, id: randomUUID() })));
   }
 
   async replaceReportExtraction(
@@ -280,6 +382,20 @@ export class SupabaseScoreStore implements ScoreStore {
     }
 
     return fromScoreReportRow(report, metricRows.map((row) => fromScoreMetricRow({ ...row, id: randomUUID() })));
+  }
+
+  async deleteReport(guildId: string, reportId: string): Promise<void> {
+    const existing = await this.getReport(guildId, reportId);
+    if (!existing) throw new Error("Score report not found.");
+
+    const { error: rowError } = await this.supabase.from("score_rows").delete().eq("guild_id", guildId).eq("report_id", reportId);
+    if (rowError) throw new Error(`Score row delete failed: ${rowError.message}`);
+
+    const { error: reportError } = await this.supabase.from("score_reports").delete().eq("guild_id", guildId).eq("id", reportId);
+    if (reportError) throw new Error(`Score report delete failed: ${reportError.message}`);
+
+    const { error: imageError } = await this.supabase.storage.from(existing.imageBucket).remove([existing.imagePath]);
+    if (imageError) throw new Error(`Score screenshot delete failed: ${imageError.message}`);
   }
 }
 
