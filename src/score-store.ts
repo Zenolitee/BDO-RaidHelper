@@ -52,6 +52,12 @@ interface ScoreMetricRow {
 export interface ScoreStore {
   listReports(guildId: string): Promise<ScoreReport[]>;
   createReport(input: ScoreReportInput): Promise<ScoreReport>;
+  readReportImage(guildId: string, reportId: string): Promise<{ report: ScoreReport; imageBuffer: Buffer } | undefined>;
+  replaceReportExtraction(
+    guildId: string,
+    reportId: string,
+    extraction: Pick<ScoreReportInput, "rawOcrText" | "ocrConfidence" | "rows">
+  ): Promise<ScoreReport>;
 }
 
 export class JsonScoreStore implements ScoreStore {
@@ -93,6 +99,29 @@ export class JsonScoreStore implements ScoreStore {
 
     const data = await this.read();
     data.reports.push(report);
+    await this.write(data);
+    return report;
+  }
+
+  async readReportImage(guildId: string, reportId: string): Promise<{ report: ScoreReport; imageBuffer: Buffer } | undefined> {
+    const data = await this.read();
+    const report = data.reports.find((candidate) => candidate.guildId === guildId && candidate.id === reportId);
+    if (!report) return undefined;
+    const imageBuffer = await fs.readFile(path.join(this.imageDirectory, report.imagePath));
+    return { report, imageBuffer };
+  }
+
+  async replaceReportExtraction(
+    guildId: string,
+    reportId: string,
+    extraction: Pick<ScoreReportInput, "rawOcrText" | "ocrConfidence" | "rows">
+  ): Promise<ScoreReport> {
+    const data = await this.read();
+    const report = data.reports.find((candidate) => candidate.guildId === guildId && candidate.id === reportId);
+    if (!report) throw new Error("Score report not found.");
+    report.rawOcrText = extraction.rawOcrText;
+    report.ocrConfidence = extraction.ocrConfidence;
+    report.rows = extraction.rows.map((row) => ({ ...row, id: randomUUID(), reportId, guildId }));
     await this.write(data);
     return report;
   }
@@ -199,6 +228,56 @@ export class SupabaseScoreStore implements ScoreStore {
     }
 
     return fromScoreReportRow(insertedReport, metricRows.map((row) => fromScoreMetricRow({ ...row, id: randomUUID() })));
+  }
+
+  async readReportImage(guildId: string, reportId: string): Promise<{ report: ScoreReport; imageBuffer: Buffer } | undefined> {
+    const { data: report, error: reportError } = await this.supabase
+      .from("score_reports")
+      .select("*")
+      .eq("guild_id", guildId)
+      .eq("id", reportId)
+      .maybeSingle<ScoreReportRow>();
+
+    if (reportError) throw new Error(`Score report read failed: ${reportError.message}`);
+    if (!report) return undefined;
+
+    const { data: image, error: imageError } = await this.supabase.storage.from(report.image_bucket).download(report.image_path);
+    if (imageError) throw new Error(`Score screenshot download failed: ${imageError.message}`);
+
+    return {
+      report: fromScoreReportRow(report, []),
+      imageBuffer: Buffer.from(await image.arrayBuffer())
+    };
+  }
+
+  async replaceReportExtraction(
+    guildId: string,
+    reportId: string,
+    extraction: Pick<ScoreReportInput, "rawOcrText" | "ocrConfidence" | "rows">
+  ): Promise<ScoreReport> {
+    const { data: report, error: reportError } = await this.supabase
+      .from("score_reports")
+      .update({
+        raw_ocr_text: extraction.rawOcrText,
+        ocr_confidence: extraction.ocrConfidence ?? null
+      })
+      .eq("guild_id", guildId)
+      .eq("id", reportId)
+      .select("*")
+      .single<ScoreReportRow>();
+
+    if (reportError) throw new Error(`Score report update failed: ${reportError.message}`);
+
+    const { error: deleteError } = await this.supabase.from("score_rows").delete().eq("guild_id", guildId).eq("report_id", reportId);
+    if (deleteError) throw new Error(`Score row cleanup failed: ${deleteError.message}`);
+
+    const metricRows = extraction.rows.map((row) => toScoreMetricInsert(row, reportId, guildId));
+    if (metricRows.length) {
+      const { error: rowError } = await this.supabase.from("score_rows").insert(metricRows);
+      if (rowError) throw new Error(`Score row insert failed: ${rowError.message}`);
+    }
+
+    return fromScoreReportRow(report, metricRows.map((row) => fromScoreMetricRow({ ...row, id: randomUUID() })));
   }
 }
 

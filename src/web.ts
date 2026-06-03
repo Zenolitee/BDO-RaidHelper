@@ -121,15 +121,20 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild) {
+    if (!session) {
       response.status(403).type("html").send(renderPage("Stats", renderLoginRequired()));
+      return;
+    }
+
+    if (!guild) {
+      response.type("html").send(renderPage("Stats", renderStatsServerPicker(session)));
       return;
     }
 
     try {
       const reports = options.scoreStore ? await options.scoreStore.listReports(guild.id) : [];
-      const uploaded = request.query.uploaded === "1";
-      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, uploaded)));
+      const notice = request.query.uploaded === "1" ? "uploaded" : request.query.rescanned === "1" ? "rescanned" : undefined;
+      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice)));
     } catch (error) {
       response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
     }
@@ -153,6 +158,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       const extraction = await extractScoreScreenshot(file.buffer);
       const warDate = parseScoreDate(request.body.warDate);
       const result = parseScoreResult(request.body.result);
+      const uploadedBy = formatUploader(session);
       await options.scoreStore.createReport({
         guildId: guild.id,
         warDate,
@@ -163,13 +169,43 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         imageBuffer: file.buffer,
         rawOcrText: extraction.rawText,
         ocrConfidence: extraction.confidence,
-        uploadedBy: session.user.id,
+        uploadedBy,
         rows: extraction.rows.map((row) => ({ ...row, guildId: guild.id }))
       });
+      console.info(`Score screenshot uploaded by ${uploadedBy} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows.`);
 
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
     } catch (error) {
       response.status(400).type("html").send(renderPage("Stats upload failed", renderWebError(error)));
+    }
+  });
+
+  app.post("/stats/reports/:id/rescan", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const reportImage = await options.scoreStore.readReportImage(guild.id, request.params.id);
+      if (!reportImage) {
+        response.status(404).send("Score report not found.");
+        return;
+      }
+
+      const extraction = await extractScoreScreenshot(reportImage.imageBuffer);
+      await options.scoreStore.replaceReportExtraction(guild.id, reportImage.report.id, {
+        rawOcrText: extraction.rawText,
+        ocrConfidence: extraction.confidence,
+        rows: extraction.rows.map((row) => ({ ...row, guildId: guild.id }))
+      });
+      console.info(`Score report ${reportImage.report.id} rescanned by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows.`);
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&rescanned=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats rescan failed", renderWebError(error)));
     }
   });
 
@@ -470,6 +506,11 @@ function renderAccountControls(session?: WebSession, selectedGuildId?: string): 
   </div>`;
 }
 
+function formatUploader(session: WebSession): string {
+  const name = session.user.global_name ?? session.user.username;
+  return `${name} (${session.user.id})`;
+}
+
 function renderLoginRequired(): string {
   return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to manage servers where you are an administrator and NW Helper is installed.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
 }
@@ -700,7 +741,7 @@ function renderCardToggle(event: WarEvent, csrfToken: string, action: "status" |
 }
 
 function renderNav(session?: WebSession, guildId?: string): string {
-  return `<aside class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}"><i>R</i><span>Raids</span></a><a href="/create?guild=${encodeURIComponent(guildId)}"><i>+</i><span>Create raid</span></a><a href="/stats?guild=${encodeURIComponent(guildId)}"><i>S</i><span>Stats</span></a>` : `<a href="/"><i>H</i><span>Home</span></a>`}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></aside>`;
+  return `<aside class="app-nav"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a><nav>${session && guildId ? `<a href="/?guild=${encodeURIComponent(guildId)}"><i>R</i><span>Raids</span></a><a href="/create?guild=${encodeURIComponent(guildId)}"><i>+</i><span>Create raid</span></a><a href="/stats"><i>S</i><span>Stats</span></a>` : `<a href="/"><i>H</i><span>Home</span></a>${session ? `<a href="/stats"><i>S</i><span>Stats</span></a>` : ""}`}</nav><div class="nav-actions">${renderAccountControls(session, guildId)}</div></aside>`;
 }
 
 function renderGuildAvatar(guild: DiscordGuild): string {
@@ -714,7 +755,21 @@ function renderStat(label: string, value: string): string {
   return `<article class="stat-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
 }
 
-function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports: ScoreReport[], uploaded: boolean): string {
+function renderStatsServerPicker(session: WebSession): string {
+  return `${renderNav(session)}<main class="shell">
+    <section class="server-picker">
+      <header><p class="eyebrow">War stats</p><h1>Select a server</h1><p>Open uploaded scoreboards and performance history for one Discord server.</p></header>
+      <div class="server-grid">${session.guilds
+        .map(
+          (guild) =>
+            `<a class="server-card group transition duration-200 ease-out" href="/stats?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><strong>${escapeHtml(guild.name)}</strong><small>Open stats dashboard</small></span><b>Stats</b></a>`
+        )
+        .join("") || "<p>No shared administrator servers found.</p>"}</div>
+    </section>
+  </main>`;
+}
+
+function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports: ScoreReport[], notice?: "uploaded" | "rescanned"): string {
   const rows = reports.flatMap((report) => report.rows);
   const players = aggregateScoreRows(rows);
   const latest = reports[0];
@@ -727,7 +782,7 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
       <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">War stats</p><h1>${escapeHtml(guild.name)}</h1><p>Uploaded scoreboards, player participation, and performance trends.</p></div></div>
       <a class="button button-secondary" href="/?guild=${encodeURIComponent(guild.id)}">Raids</a>
     </section>
-    ${uploaded ? `<section class="notice">Scoreboard uploaded and parsed. Review the extracted rows before using them for final calls.</section>` : ""}
+    ${notice ? `<section class="notice">${notice === "uploaded" ? "Scoreboard uploaded and parsed." : "Scoreboard rescanned from the stored image."} Review the extracted rows before using them for final calls.</section>` : ""}
     <section class="stats-row">
       ${renderStat("Scoreboards", String(reports.length))}
       ${renderStat("Players tracked", String(players.length))}
@@ -752,7 +807,7 @@ function renderStatsDashboard(guild: DiscordGuild, session: WebSession, reports:
       </section>
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
-    <section class="report-grid">${reports.slice(0, 8).map(renderReportCard).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
+    <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
   </main>`;
 }
 
@@ -779,20 +834,25 @@ function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number): s
   </table></div>`;
 }
 
-function renderReportCard(report: ScoreReport): string {
+function renderReportCard(report: ScoreReport, csrfToken: string): string {
   const rows = report.rows;
   const kills = rows.reduce((sum, row) => sum + row.kills, 0);
   const deaths = rows.reduce((sum, row) => sum + row.deaths, 0);
   const damage = rows.reduce((sum, row) => sum + row.damageDealt, 0);
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
   return `<article class="report-card">
-    <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | OCR ${escapeHtml(confidence)}</small></div>
+    <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | OCR ${escapeHtml(confidence)}</small><small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small></div>
     <dl>
       <div><dt>Players</dt><dd>${rows.length}</dd></div>
       <div><dt>Kills</dt><dd>${formatStatNumber(kills)}</dd></div>
       <div><dt>Deaths</dt><dd>${formatStatNumber(deaths)}</dd></div>
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
+    <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/rescan">
+      <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
+      <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
+      <button class="button button-secondary" type="submit">Rescan</button>
+    </form>
   </article>`;
 }
 
