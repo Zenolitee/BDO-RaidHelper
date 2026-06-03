@@ -1088,6 +1088,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
   const kills = rows.reduce((sum, row) => sum + row.kills, 0);
   const deaths = rows.reduce((sum, row) => sum + row.deaths, 0);
   const damage = rows.reduce((sum, row) => sum + row.damageDealt, 0);
+  const killDeathRatio = deaths ? (kills / deaths).toFixed(2) : formatStatNumber(kills);
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
   return `<article class="report-card">
     <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | ${escapeHtml(report.ocrEngine)} | OCR ${escapeHtml(confidence)}</small><small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small></div>
@@ -1095,6 +1096,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
       <div><dt>Players</dt><dd>${rows.length}</dd></div>
       <div><dt>Kills</dt><dd>${formatStatNumber(kills)}</dd></div>
       <div><dt>Deaths</dt><dd>${formatStatNumber(deaths)}</dd></div>
+      <div><dt>K/D</dt><dd>${escapeHtml(killDeathRatio)}</dd></div>
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
     <div class="report-actions">

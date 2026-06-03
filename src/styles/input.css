@@ -1744,14 +1744,16 @@ h1 {
 
 .report-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
 }
 
 .report-card {
   display: grid;
-  gap: 14px;
-  padding: 14px;
+  gap: 16px;
+  align-content: start;
+  min-height: 260px;
+  padding: 18px;
 }
 
 .report-card h3 {
@@ -1765,7 +1767,7 @@ h1 {
 
 .report-card dl {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
@@ -1791,13 +1793,25 @@ h1 {
 .report-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
+  align-self: end;
 }
 
 .report-actions form,
 .report-actions .button {
   margin: 0;
   width: 100%;
+}
+
+.report-actions form {
+  display: grid;
+}
+
+.report-actions .button,
+.report-actions button {
+  min-height: 38px;
+  padding: 0 10px;
+  font-size: 0.78rem;
 }
 
 .danger-button {
@@ -2264,6 +2278,14 @@ h1 {
   }
 
   .score-edit-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-card dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
