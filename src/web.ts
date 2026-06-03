@@ -755,7 +755,7 @@ function renderRosterColumns(event: WarEvent, canManage = false): string {
         <header><h2>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</h2><b>${isRosterGroup(group.key) ? `${signups.length}/${group.capacity}` : signups.length}</b></header>
         <div class="signup-list">${signups
           .map(
-            (signup, index) => `<div class="signup-row${canManage ? " draggable-signup" : ""}" data-user-id="${escapeHtml(signup.userId)}" data-group="${escapeHtml(group.key)}"><span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span><span class="slot">${index + 1}</span><span class="name"${canManage ? " draggable=\"true\" title=\"Drag to move role\"" : ""}>${escapeHtml(signup.displayName)}</span></div>`
+            (signup, index) => `<div class="signup-row${canManage ? " draggable-signup" : ""}" data-user-id="${escapeHtml(signup.userId)}" data-group="${escapeHtml(group.key)}"${canManage ? " draggable=\"true\" title=\"Drag to move role\"" : ""}><span class="class-badge">${renderSignupIcon(event, group.key, signup.requestedGroup)}</span><span class="slot">${index + 1}</span><span class="name">${escapeHtml(signup.displayName)}</span></div>`
           )
           .join("") || "<p class=\"empty\">No signups yet</p>"}</div>
       </section>`;
@@ -770,16 +770,16 @@ function renderRosterMoveScript(eventId: string, csrfToken: string): string {
       const csrfToken = ${JSON.stringify(csrfToken)};
       let draggedRow;
 
-      document.querySelectorAll(".draggable-signup .name").forEach((handle) => {
-        handle.addEventListener("dragstart", (event) => {
-          draggedRow = handle.closest(".draggable-signup");
+      document.querySelectorAll(".draggable-signup").forEach((row) => {
+        row.addEventListener("dragstart", (event) => {
+          draggedRow = row;
           if (!draggedRow || !event.dataTransfer) return;
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", draggedRow.dataset.userId || "");
           draggedRow.classList.add("is-dragging");
         });
 
-        handle.addEventListener("dragend", () => {
+        row.addEventListener("dragend", () => {
           draggedRow?.classList.remove("is-dragging");
           document.querySelectorAll(".roster-dropzone.is-drag-over").forEach((zone) => zone.classList.remove("is-drag-over"));
           draggedRow = undefined;
