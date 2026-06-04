@@ -1862,6 +1862,28 @@ h1 {
   margin-bottom: 2px;
 }
 
+.report-result {
+  width: max-content;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.report-result-win {
+  border-color: rgba(100, 196, 130, 0.45);
+  color: var(--green);
+}
+
+.report-result-loss {
+  border-color: rgba(242, 139, 130, 0.55);
+  color: #f28b82;
+}
+
+.report-result-unknown {
+  border-color: rgba(242, 184, 75, 0.45);
+  color: var(--accent);
+}
+
 .report-card-head small {
   display: block;
   overflow: hidden;

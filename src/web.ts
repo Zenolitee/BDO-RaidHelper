@@ -1111,6 +1111,7 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
       </div>
     </div>
     ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
+    ${renderMetricLeaderboard("Attendance leaders", "Wars joined", players, (player) => player.participations)}
     ${renderMetricLeaderboard("Support leaders", "+ Allies healed", players, (player) => player.allySupport)}
     ${renderMetricLeaderboard("Fort Damage leaders", "Structure", players, (player) => player.structureDamage)}
     ${renderMetricLeaderboard("CC leaders", "Crowd control", players, (player) => player.crowdControls)}
@@ -1240,9 +1241,10 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
   const killDeathPercent = deaths ? Math.round((kills / deaths) * 100) : kills ? 100 : 0;
   const kdTone = killDeathPercent >= 200 ? "good" : killDeathPercent >= 100 ? "ok" : "low";
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
+  const resultTone = report.result === "win" ? "win" : report.result === "loss" ? "loss" : "unknown";
   return `<article class="report-card">
     <div class="report-card-head">
-      <p class="eyebrow">${escapeHtml(report.result)}</p>
+      <p class="eyebrow report-result report-result-${resultTone}">${escapeHtml(report.result)}</p>
       <h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3>
       <small>${formatDateLabel(report.warDate)}</small>
       <small>${escapeHtml(report.ocrEngine)}</small>
