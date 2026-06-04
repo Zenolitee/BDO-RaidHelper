@@ -96,6 +96,9 @@ Persisted `announcedAt`, message IDs, lifecycle flags, and event records make sc
 | Route | Access | Purpose |
 | --- | --- | --- |
 | `GET /` | Public, with optional login | Logged-out product home, logged-in multi-server home, and legacy selected-server dashboard via `?guild=`. |
+| `GET /member` | Authenticated shared server member | Read-only member roster board across servers shared by the user and bot. |
+| `GET /raids` | Authenticated shared server member | Aggregated raid board across all shared servers; no random server default. |
+| `GET /servers` | Authenticated shared server member | Server chooser for opening a specific server dashboard. |
 | `GET /guilds/:guildId/raids` | Authenticated shared server | Canonical raid dashboard for one server. |
 | `GET /guilds/:guildId/stats` | Authenticated shared server | Canonical stats dashboard for one server. |
 | `GET /auth/discord` | Public | Start Discord OAuth. |

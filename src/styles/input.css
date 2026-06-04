@@ -3828,3 +3828,173 @@ body {
     display: grid;
   }
 }
+
+/* Member and chooser views */
+.member-shell {
+  width: min(1280px, calc(100% - 32px));
+  display: grid;
+  gap: 16px;
+}
+
+.member-hero,
+.member-focus,
+.member-section {
+  border: 1px solid rgba(42, 51, 69, 0.82);
+  background: rgba(16, 21, 31, 0.78);
+}
+
+.member-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.58fr);
+  gap: 18px;
+  align-items: center;
+  padding: clamp(18px, 3vw, 30px);
+  background:
+    linear-gradient(120deg, rgba(242, 184, 75, 0.12), transparent 36%),
+    linear-gradient(300deg, rgba(106, 166, 255, 0.1), transparent 40%),
+    rgba(16, 21, 31, 0.86);
+}
+
+.member-hero p {
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.member-login-hero {
+  min-height: 420px;
+  grid-template-columns: 1fr;
+  align-content: center;
+}
+
+.member-telemetry,
+.member-composition-grid {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.member-telemetry {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.member-telemetry div,
+.member-composition-grid div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(42, 51, 69, 0.76);
+  background: rgba(21, 27, 40, 0.72);
+}
+
+.member-telemetry dt,
+.member-telemetry dd,
+.member-composition-grid dt,
+.member-composition-grid dd {
+  margin: 0;
+}
+
+.member-telemetry dt,
+.member-composition-grid dt {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.member-telemetry dd,
+.member-composition-grid dd {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
+  gap: 14px;
+  padding: 16px;
+}
+
+.member-focus-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.member-composition {
+  min-width: 0;
+}
+
+.member-composition-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.member-composition-grid dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.member-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.member-raid-grid,
+.member-server-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.member-raid-grid {
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+}
+
+.member-server-grid {
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+}
+
+.member-raid-card,
+.member-server-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(42, 51, 69, 0.82);
+  background: linear-gradient(180deg, rgba(27, 35, 50, 0.78), rgba(16, 21, 31, 0.72));
+}
+
+.member-raid-card h3,
+.member-server-card h3 {
+  margin: 0;
+}
+
+.member-raid-card p,
+.member-server-card small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.member-empty-focus {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 860px) {
+  .member-hero,
+  .member-focus {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .member-telemetry,
+  .member-composition-grid {
+    grid-template-columns: 1fr;
+  }
+}

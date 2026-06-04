@@ -233,8 +233,41 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     response.type("html").send(renderPage(`${guild.name} raids`, renderEventList(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events, settings))));
   });
 
+  app.get("/raids", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) {
+      response.status(403).type("html").send(renderPage("Raids", renderLoginRequired()));
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    response.type("html").send(renderPage("All Raids", renderAllRaidsDashboard(session, summaries)));
+  });
+
   app.get("/guilds/:guildId/stats", async (request, response) => {
     await sendStatsDashboard(request, response, request.params.guildId);
+  });
+
+  app.get("/servers", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) {
+      response.status(403).type("html").send(renderPage("Servers", renderLoginRequired()));
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    response.type("html").send(renderPage("Servers", renderServersPicker(session, buildGuildDashboardSummaries(session.guilds, events, settings))));
+  });
+
+  app.get("/member", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) {
+      response.type("html").send(renderPage("Member View", renderMemberLogin()));
+      return;
+    }
+
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    response.type("html").send(renderPage("Member View", renderMemberDashboard(session, summaries)));
   });
 
   app.get("/stats", async (request, response) => {
@@ -538,7 +571,16 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.get("/create", async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
-    if (!session || !guildId || !canManageGuild(session, guildId)) {
+    if (!session) {
+      response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
+      return;
+    }
+    if (!guildId) {
+      const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+      response.type("html").send(renderPage("Create Raid", renderCreateServerPicker(session, buildGuildDashboardSummaries(session.guilds, events, settings))));
+      return;
+    }
+    if (!canManageGuild(session, guildId)) {
       response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
       return;
     }
@@ -981,7 +1023,7 @@ function renderHome(events: WarEvent[], session?: WebSession, settings: BotSetti
   return `${renderNav(session, undefined, summaries)}<main class="shell home-shell">
     ${summaries.length ? `${renderGlobalStatsStrip(summaries)}
     <section class="war-room-layout" aria-label="NW Helper war room">
-      ${renderCommandRail(summaries)}
+      ${renderCommandRail()}
       ${renderPrimaryWarFocus(summaries, session)}
       ${renderReadinessPanel(summaries[0])}
     </section>
@@ -1032,6 +1074,170 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
     </section>` : ""}
     ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : ""}
   </main>`;
+}
+
+function renderMemberLogin(): string {
+  return `${renderNav()}<main class="shell member-shell">
+    <section class="member-hero member-login-hero">
+      <div><p class="eyebrow">Member roster view</p><h1>Check your guild's Node War roster without admin controls.</h1><p>Log in with Discord to see only servers you share with NW Helper and the current raid rosters available to your account.</p><div class="button-row"><a class="button" href="/auth/discord">Log in with Discord</a>${renderInviteButton("Invite Bot")}</div></div>
+    </section>
+  </main>`;
+}
+
+function renderAllRaidsDashboard(session: WebSession, summaries: GuildDashboardSummary[]): string {
+  const raids = summaries
+    .flatMap((summary) => summary.events.map((event) => ({ summary, event, sortTime: eventSortTimestamp(event) })))
+    .sort((left, right) => left.sortTime - right.sortTime);
+  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+    <section class="member-hero">
+      <div><p class="eyebrow">All raids</p><h1>Raid board across your shared servers</h1><p>Aggregated read-only raid schedule for every server you share with NW Helper.</p></div>
+      <dl class="member-telemetry">
+        <div><dt>Servers</dt><dd>${summaries.length}</dd></div>
+        <div><dt>Total raids</dt><dd>${raids.length}</dd></div>
+        <div><dt>Active</dt><dd>${raids.filter(({ event }) => isEventActive(event)).length}</dd></div>
+        <div><dt>Signups</dt><dd>${summaries.reduce((sum, summary) => sum + summary.totalSignups, 0)}</dd></div>
+      </dl>
+    </section>
+    <section class="member-section">
+      <div class="section-title"><div><p class="eyebrow">Raid operations</p><h2>All visible schedules</h2></div><span>${raids.length} raids</span></div>
+      <div class="member-raid-grid">${raids.map(({ summary, event }) => renderMemberRaidCard(summary, event)).join("") || `<div class="empty-state compact-empty"><h2>No raids found</h2><p>No raid schedules are available for your shared servers yet.</p></div>`}</div>
+    </section>
+  </main>${renderCountdownScript()}`;
+}
+
+function renderServersPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
+  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+    <section class="member-hero">
+      <div><p class="eyebrow">Servers</p><h1>Choose a server to manage</h1><p>Only Discord servers you share with NW Helper are listed here.</p></div>
+      <dl class="member-telemetry">
+        <div><dt>Visible</dt><dd>${summaries.length}</dd></div>
+        <div><dt>Ready</dt><dd>${summaries.filter((summary) => !summary.setupWarnings.length).length}</dd></div>
+        <div><dt>Active raids</dt><dd>${summaries.reduce((sum, summary) => sum + summary.activeRaids, 0)}</dd></div>
+        <div><dt>Signups</dt><dd>${summaries.reduce((sum, summary) => sum + summary.totalSignups, 0)}</dd></div>
+      </dl>
+    </section>
+    <section class="member-section">
+      <div class="section-title"><div><p class="eyebrow">Server picker</p><h2>Open a dashboard</h2></div><span>${summaries.length} servers</span></div>
+      <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("") || `<div class="empty-state compact-empty"><h2>No shared servers</h2><p>Invite NW Helper to a Discord server and log in again.</p></div>`}</div>
+    </section>
+  </main>`;
+}
+
+function renderCreateServerPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
+  const manageable = summaries.filter((summary) => canManageGuild(session, summary.guild.id));
+  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+    <section class="member-hero">
+      <div><p class="eyebrow">Create raid</p><h1>Choose a server first</h1><p>Create permissions depend on Discord permissions. Pick the server where you want to schedule the roster.</p></div>
+      <dl class="member-telemetry">
+        <div><dt>Available</dt><dd>${manageable.length}</dd></div>
+        <div><dt>Shared</dt><dd>${summaries.length}</dd></div>
+        <div><dt>Active raids</dt><dd>${manageable.reduce((sum, summary) => sum + summary.activeRaids, 0)}</dd></div>
+        <div><dt>Permission</dt><dd>Required</dd></div>
+      </dl>
+    </section>
+    <section class="member-section">
+      <div class="section-title"><div><p class="eyebrow">Server picker</p><h2>Where should this raid live?</h2></div><span>${manageable.length} manageable</span></div>
+      <div class="member-server-grid">${manageable
+        .map(
+          (summary) => `<article class="member-server-card">
+            <div class="fleet-head">${renderGuildAvatar(summary.guild)}<div><h3>${escapeHtml(summary.guild.name)}</h3><small>${summary.activeRaids} active raids | ${escapeHtml(summary.nextAnnouncement)}</small></div></div>
+            <span class="setup-pill ${summary.setupWarnings.length ? "setup-pill-warning" : "setup-pill-ready"}">${summary.setupWarnings.length ? "Setup warnings" : "Ready"}</span>
+            <div class="fleet-links"><a href="/create?guild=${encodeURIComponent(summary.guild.id)}">Create Raid</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Raids</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Dashboard</a></div>
+          </article>`
+        )
+        .join("") || `<div class="empty-state compact-empty"><h2>No manageable servers</h2><p>Your Discord account needs Administrator, Manage Server, Manage Channels, Manage Roles, or Manage Messages on a shared server to create raids.</p></div>`}</div>
+    </section>
+  </main>`;
+}
+
+function renderMemberDashboard(session: WebSession, summaries: GuildDashboardSummary[]): string {
+  const events = summaries
+    .flatMap((summary) => summary.events.filter(isEventActive).map((event) => ({ summary, event, sortTime: eventSortTimestamp(event) })))
+    .sort((left, right) => left.sortTime - right.sortTime);
+  const next = events[0];
+  const totalSignups = summaries.reduce((sum, summary) => sum + summary.totalSignups, 0);
+  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+    ${summaries.length ? `<section class="member-hero">
+      <div><p class="eyebrow">Member view</p><h1>Roster board for your shared servers</h1><p>Read-only raid schedule, signup counts, and roster composition. Admin configuration controls stay hidden here.</p></div>
+      <dl class="member-telemetry">
+        <div><dt>Servers</dt><dd>${summaries.length}</dd></div>
+        <div><dt>Active raids</dt><dd>${events.length}</dd></div>
+        <div><dt>Total signups</dt><dd>${totalSignups}</dd></div>
+        <div><dt>Next</dt><dd>${next ? formatDateLabel(next.event.date) : "None"}</dd></div>
+      </dl>
+    </section>
+    ${next ? renderMemberFeaturedRaid(next.summary, next.event) : renderMemberEmptyRaids(summaries[0].guild)}
+    <section class="member-section">
+      <div class="section-title"><div><p class="eyebrow">Available rosters</p><h2>Current raids</h2></div><span>${events.length} active</span></div>
+      <div class="member-raid-grid">${events.map(({ summary, event }) => renderMemberRaidCard(summary, event)).join("") || `<div class="empty-state compact-empty"><h2>No active raids</h2><p>No current roster is available for your shared servers.</p></div>`}</div>
+    </section>
+    <section class="member-section">
+      <div class="section-title"><div><p class="eyebrow">Server list</p><h2>Your NW Helper servers</h2></div><span>${summaries.length} visible</span></div>
+      <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("")}</div>
+    </section>` : renderMemberNoServers()}
+  </main>${renderCountdownScript()}`;
+}
+
+function renderMemberFeaturedRaid(summary: GuildDashboardSummary, event: WarEvent): string {
+  const signed = activeRosterSignupCount(event);
+  const capacity = activeRosterCapacity(event);
+  const percent = capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0;
+  const announcement = getUpcomingAnnouncements(event, 1)[0];
+  return `<section class="member-focus">
+    <div class="member-focus-main">
+      <p class="eyebrow">Next roster</p>
+      <div class="war-focus-title">${renderGuildAvatar(summary.guild)}<div><p>${escapeHtml(summary.guild.name)}</p><h1>${escapeHtml(scheduleTitle(event))}</h1></div></div>
+      <dl class="war-focus-grid">
+        <div><dt>Date</dt><dd>${formatDateLabel(event.date)}</dd></div>
+        <div><dt>War start</dt><dd>${formatClockTime(event.time)}</dd></div>
+        <div><dt>Announcement</dt><dd>${formatAnnouncementLabel(event)}</dd></div>
+        <div><dt>Countdown</dt><dd data-countdown="${announcement ? announcementTimestamp(announcement) : warStartTimestamp(event)}">${announcement ? formatAnnouncementDateTime(announcement) : formatClockTime(event.time)}</dd></div>
+      </dl>
+      <div class="war-progress"><div><span>Roster signed</span><b>${signed}/${capacity}</b></div><span class="card-meter"><i style="width:${percent}%"></i></span></div>
+      <div class="button-row"><a class="button" href="/events/${encodeURIComponent(event.id)}">Open Roster</a><a class="button button-secondary" href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Server Raids</a></div>
+    </div>
+    <aside class="member-composition">${renderMemberComposition(event)}</aside>
+  </section>`;
+}
+
+function renderMemberEmptyRaids(guild: DiscordGuild): string {
+  return `<section class="member-focus member-empty-focus"><div><p class="eyebrow">Next roster</p><h1>No active raids scheduled</h1><p>${escapeHtml(guild.name)} does not have a current member-visible roster yet.</p><a class="button button-secondary" href="/guilds/${encodeURIComponent(guild.id)}/raids">View Server Raids</a></div></section>`;
+}
+
+function renderMemberRaidCard(summary: GuildDashboardSummary, event: WarEvent): string {
+  const signed = activeRosterSignupCount(event);
+  const capacity = activeRosterCapacity(event);
+  const percent = capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0;
+  return `<article class="member-raid-card">
+    <div class="card-top"><span>${escapeHtml(summary.guild.name)}</span><span class="status-pill ${isEventActive(event) ? "status-active" : "status-inactive"}">${isEventActive(event) ? "Active" : "Inactive"}</span></div>
+    <h3>${escapeHtml(scheduleTitle(event))}</h3>
+    <p>${formatDateLabel(event.date)} | ${formatClockTime(event.time)} | Announces ${formatAnnouncementLabel(event)}</p>
+    <span class="card-meter"><i style="width:${percent}%"></i></span>
+    <div class="featured-raid-footer"><b>${signed}/${capacity} signed</b><a href="/events/${encodeURIComponent(event.id)}">Open</a></div>
+    ${renderMemberComposition(event)}
+  </article>`;
+}
+
+function renderMemberComposition(event: WarEvent): string {
+  return `<dl class="member-composition-grid">${orderedGroups(event)
+    .map((group) => {
+      const count = event.signups.filter((signup) => signup.group === group.key).length;
+      const value = isRosterGroup(group.key) ? `${count}/${group.capacity}` : String(count);
+      return `<div><dt>${renderGroupIcon(group.key, group.emoji)}${escapeHtml(group.label)}</dt><dd>${value}</dd></div>`;
+    })
+    .join("")}</dl>`;
+}
+
+function renderMemberServerCard(summary: GuildDashboardSummary): string {
+  return `<article class="member-server-card">
+    <div class="fleet-head">${renderGuildAvatar(summary.guild)}<div><h3>${escapeHtml(summary.guild.name)}</h3><small>${summary.activeRaids} active raids | ${summary.totalSignups} signups</small></div></div>
+    <span class="setup-pill ${summary.activeRaids ? "setup-pill-ready" : "setup-pill-warning"}">${summary.activeRaids ? "Roster live" : "No active raid"}</span>
+    <div class="fleet-links"><a href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Raids</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">Stats</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Dashboard</a></div>
+  </article>`;
+}
+
+function renderMemberNoServers(): string {
+  return `<section class="member-hero member-login-hero"><div><p class="eyebrow">No shared servers</p><h1>No member rosters are available yet</h1><p>NW Helper only lists Discord servers where your account has access and the bot is installed.</p><div class="button-row">${renderInviteButton("Invite Bot")}<a class="button button-secondary" href="/auth/discord">Refresh Login</a></div></div></section>`;
 }
 
 function renderCardToggle(event: WarEvent, csrfToken: string, action: "status" | "auto-repost", label: string, enabled: boolean, disabled = false): string {
@@ -1119,14 +1325,13 @@ function renderHomeStat(label: string, value: string, eyebrow: string): string {
   return `<article class="telemetry-module"><span>${escapeHtml(eyebrow)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(label)}</small></article>`;
 }
 
-function renderCommandRail(summaries: GuildDashboardSummary[]): string {
-  const firstGuild = summaries[0].guild;
+function renderCommandRail(): string {
   return `<aside class="command-rail" aria-label="Command actions">
     <p class="eyebrow">Command rail</p>
-    ${renderCommandRailAction("Create Raid", `/create?guild=${encodeURIComponent(firstGuild.id)}`, "Prime a new roster")}
-    ${renderCommandRailAction("View All Raids", `/guilds/${encodeURIComponent(firstGuild.id)}/raids`, "Open raid board")}
-    ${renderCommandRailAction("View Stats", `/guilds/${encodeURIComponent(firstGuild.id)}/stats`, "Scoreboards")}
-    ${renderCommandRailAction("Manage Servers", `/?guild=${encodeURIComponent(firstGuild.id)}`, "Server dashboard")}
+    ${renderCommandRailAction("Create Raid", "/create", "Choose server")}
+    ${renderCommandRailAction("View All Raids", "/raids", "All shared servers")}
+    ${renderCommandRailAction("View Stats", "/stats", "Choose server")}
+    ${renderCommandRailAction("Manage Servers", "/servers", "Choose server")}
     ${botInviteUrl() ? renderCommandRailAction("Invite Bot", botInviteUrl() as string, "Expand fleet", true) : ""}
   </aside>`;
 }
@@ -1194,9 +1399,8 @@ function renderUpcomingRaidsTimeline(summaries: GuildDashboardSummary[]): string
     .flatMap((summary) => summary.events.map((event) => ({ summary, event, sortTime: eventSortTimestamp(event) })))
     .sort((left, right) => left.sortTime - right.sortTime)
     .slice(0, 6);
-  const firstGuild = summaries[0].guild;
   return `<section class="timeline-section">
-    <div class="section-title"><div><p class="eyebrow">Mission timeline</p><h2>Upcoming raids</h2></div><a href="/guilds/${encodeURIComponent(firstGuild.id)}/raids">View all raids</a></div>
+    <div class="section-title"><div><p class="eyebrow">Mission timeline</p><h2>Upcoming raids</h2></div><a href="/raids">View all raids</a></div>
     <div class="raid-timeline">${raids
       .map(({ summary, event }) => {
         const signed = activeRosterSignupCount(event);
