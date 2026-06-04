@@ -11,7 +11,7 @@ import type { ScoreStore } from "./score-store.js";
 import type { ScoreReport, ScoreReportResult, ScoreRow } from "./score-types.js";
 import { activeRosterCapacity, activeRosterSignupCount, isRosterGroup, type EventStore } from "./store.js";
 import { formatClockTime } from "./time-format.js";
-import { WEEKDAYS, type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
+import { WEEKDAYS, type BotSettings, type GroupConfig, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from "./types.js";
 import { createWebSessionStore, type WebSessionStore } from "./web-session-store.js";
 
 interface UserProfile {
@@ -91,6 +91,16 @@ interface GuildDashboardSummary {
   totalSignups: number;
   weeklyRaids: number;
   nextAnnouncement: string;
+  nextAnnouncementTime?: number;
+  nextWarStart: string;
+  nextWarStartTime?: number;
+  featuredRaid?: WarEvent;
+  botInstalled: boolean;
+  channelConfigured: boolean;
+  roleConfigured: boolean;
+  schedulerActive: boolean;
+  setupWarnings: string[];
+  events: WarEvent[];
 }
 
 const WEB_WAR_DAYS: WarDay[] = [...WEEKDAYS];
@@ -203,12 +213,12 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    const events = session || guild ? await store.listEvents() : [];
+    const [events, settings] = session ? await Promise.all([store.listEvents(), store.getSettings()]) : [[], {} as BotSettings];
     if (session && guild) {
-      response.type("html").send(renderPage("NW Helper", renderEventList(events.filter((event) => event.guildId === guild.id), session, guildId, buildGuildDashboardSummaries(session.guilds, events))));
+      response.type("html").send(renderPage("NW Helper", renderEventList(events.filter((event) => event.guildId === guild.id), session, guildId, buildGuildDashboardSummaries(session.guilds, events, settings))));
       return;
     }
-    response.type("html").send(renderPage("NW Helper", renderHome(events, session)));
+    response.type("html").send(renderPage("NW Helper", renderHome(events, session, settings)));
   });
 
   app.get("/guilds/:guildId/raids", async (request, response) => {
@@ -219,7 +229,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       return;
     }
     const events = await store.listEvents();
-    response.type("html").send(renderPage(`${guild.name} raids`, renderEventList(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events))));
+    const settings = await store.getSettings();
+    response.type("html").send(renderPage(`${guild.name} raids`, renderEventList(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events, settings))));
   });
 
   app.get("/guilds/:guildId/stats", async (request, response) => {
@@ -239,8 +250,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       return;
     }
 
-    const events = await store.listEvents();
-    const summaries = buildGuildDashboardSummaries(session.guilds, events);
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
     if (!guild) {
       response.type("html").send(renderPage("Stats", renderStatsServerPicker(session, summaries)));
       return;
@@ -951,10 +962,10 @@ function renderPage(title: string, body: string): string {
 </html>`;
 }
 
-function renderHome(events: WarEvent[], session?: WebSession): string {
+function renderHome(events: WarEvent[], session?: WebSession, settings: BotSettings = {}): string {
   if (!session) {
     return `${renderNav()}<main class="shell home-shell">
-      <section class="home-hero logged-out-hero">
+      <section class="home-hero logged-out-hero command-hero">
         <div>
           <p class="eyebrow">Discord Node War command center</p>
           <h1>NW Helper keeps raids, rosters, and war stats organized.</h1>
@@ -965,37 +976,20 @@ function renderHome(events: WarEvent[], session?: WebSession): string {
     </main>`;
   }
 
-  const summaries = buildGuildDashboardSummaries(session.guilds, events);
-  const cards = summaries
-    .map(
-      (summary, index) => `<article class="home-server-card${index === 0 ? " is-active" : ""}" data-home-server="${index}" aria-hidden="${index === 0 ? "false" : "true"}">
-        <div class="home-server-head">
-          ${renderGuildAvatar(summary.guild)}
-          <div><p class="eyebrow">Shared server</p><h1>${escapeHtml(summary.guild.name)}</h1><p>Bot installed and available to your Discord account.</p></div>
-        </div>
-        <dl class="home-metrics">
-          <div><dt>Active raids</dt><dd>${summary.activeRaids}</dd></div>
-          <div><dt>Upcoming raids</dt><dd>${summary.upcomingRaids}</dd></div>
-          <div><dt>Total signups</dt><dd>${summary.totalSignups}</dd></div>
-          <div><dt>Next announcement</dt><dd>${escapeHtml(summary.nextAnnouncement)}</dd></div>
-        </dl>
-        <div class="button-row">
-          <a class="button" href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">View Raids</a>
-          <a class="button button-secondary" href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">View Stats</a>
-          <a class="button button-secondary" href="/?guild=${encodeURIComponent(summary.guild.id)}">Manage</a>
-        </div>
-      </article>`
-    )
-    .join("");
+  const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+  const cards = summaries.map((summary, index) => renderHomeServerCard(summary, index)).join("");
 
   return `${renderNav(session, undefined, summaries)}<main class="shell home-shell">
-    <section class="home-hero">
-      <div class="home-title-row"><div><p class="eyebrow">Home</p><h1>Your shared NW Helper servers</h1><p>Rotate through every Discord server where you and the bot overlap.</p></div><span>${summaries.length} servers</span></div>
-      <div class="home-carousel" data-home-carousel>
-        ${cards || `<article class="home-server-card is-active"><h1>No shared servers found</h1><p>Invite NW Helper to a Discord server, then log in again to refresh access.</p><div class="button-row">${renderInviteButton("Invite Bot")}</div></article>`}
-      </div>
-      ${summaries.length > 1 ? `<div class="carousel-controls"><button type="button" data-home-prev aria-label="Previous server">Prev</button><button type="button" data-home-next aria-label="Next server">Next</button></div>` : ""}
+    ${summaries.length ? `${renderGlobalStatsStrip(summaries)}
+    <section class="home-hero command-hero" data-home-carousel>
+      <div class="home-title-row"><div><p class="eyebrow">Command center</p><h1>Node War operations across your Discord servers</h1><p>Live raid schedules, setup readiness, and server actions in one view.</p></div><span>${summaries.length} servers</span></div>
+      <div class="home-carousel">${cards}</div>
+      ${summaries.length > 1 ? `<div class="carousel-controls"><button type="button" data-home-prev aria-label="Previous server">Prev</button><div class="carousel-dots" aria-label="Server carousel position">${summaries.map((summary, index) => `<button type="button" class="${index === 0 ? "is-active" : ""}" data-home-dot="${index}" aria-label="Show ${escapeHtml(summary.guild.name)}"></button>`).join("")}</div><button type="button" data-home-next aria-label="Next server">Next</button></div>` : ""}
     </section>
+    ${renderUpcomingRaidsSection(summaries)}
+    ${renderSetupHealthSection(summaries)}
+    ${renderQuickActionsSection(summaries)}
+    ${renderRecentActivitySection()}` : renderNoSharedServersHome()}
   </main>${summaries.length > 1 ? renderHomeCarouselScript() : ""}`;
 }
 
@@ -1096,20 +1090,207 @@ function renderStat(label: string, value: string): string {
   return `<article class="stat-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
 }
 
-function buildGuildDashboardSummaries(guilds: DiscordGuild[], events: WarEvent[]): GuildDashboardSummary[] {
+function renderGlobalStatsStrip(summaries: GuildDashboardSummary[]): string {
+  const activeRaids = summaries.reduce((sum, summary) => sum + summary.activeRaids, 0);
+  const upcomingRaids = summaries.reduce((sum, summary) => sum + summary.upcomingRaids, 0);
+  const totalSignups = summaries.reduce((sum, summary) => sum + summary.totalSignups, 0);
+  const nextAnnouncement = summaries.filter((summary) => summary.nextAnnouncementTime).sort((left, right) => (left.nextAnnouncementTime ?? 0) - (right.nextAnnouncementTime ?? 0))[0];
+  const nextWar = summaries.filter((summary) => summary.nextWarStartTime).sort((left, right) => (left.nextWarStartTime ?? 0) - (right.nextWarStartTime ?? 0))[0];
+  return `<section class="global-stats-strip" aria-label="Global dashboard summary">
+    ${renderHomeStat("SV", "Shared servers", String(summaries.length))}
+    ${renderHomeStat("AR", "Active raids", String(activeRaids))}
+    ${renderHomeStat("UP", "Upcoming raids", String(upcomingRaids))}
+    ${renderHomeStat("SG", "Total signups", String(totalSignups))}
+    ${renderHomeStat("AN", "Next announcement", nextAnnouncement?.nextAnnouncement ?? "None queued")}
+    ${renderHomeStat("WR", "Next war start", nextWar?.nextWarStart ?? "No war queued")}
+  </section>`;
+}
+
+function renderHomeStat(icon: string, label: string, value: string): string {
+  return `<article class="home-stat-card"><i>${escapeHtml(icon)}</i><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
+}
+
+function renderHomeServerCard(summary: GuildDashboardSummary, index: number): string {
+  const setupStatus = summary.setupWarnings.length ? `${summary.setupWarnings.length} warnings` : "Ready";
+  return `<article class="home-server-card${index === 0 ? " is-active" : ""}" data-home-server="${index}" aria-hidden="${index === 0 ? "false" : "true"}">
+    <div class="home-server-grid">
+      <div class="home-server-main">
+        <div class="home-server-head">
+          ${renderGuildAvatar(summary.guild)}
+          <div><p class="eyebrow">Featured server</p><h2>${escapeHtml(summary.guild.name)}</h2><p>${summary.botInstalled ? "Bot installed and filtered through your Discord session." : "Bot access unavailable."}</p></div>
+        </div>
+        <dl class="home-metrics">
+          <div><dt>Active raids</dt><dd>${summary.activeRaids}</dd></div>
+          <div><dt>Upcoming raids</dt><dd>${summary.upcomingRaids}</dd></div>
+          <div><dt>Total signups</dt><dd>${summary.totalSignups}</dd></div>
+          <div><dt>Next announcement</dt><dd>${escapeHtml(summary.nextAnnouncement)}</dd></div>
+        </dl>
+        <div class="setup-pill ${summary.setupWarnings.length ? "setup-pill-warning" : "setup-pill-ready"}">${escapeHtml(setupStatus)}</div>
+        <div class="button-row">
+          <a class="button" href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">View Raids</a>
+          <a class="button button-secondary" href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">View Stats</a>
+          <a class="button button-secondary" href="/?guild=${encodeURIComponent(summary.guild.id)}">Manage</a>
+        </div>
+      </div>
+      ${renderFeaturedRaidPreview(summary)}
+    </div>
+  </article>`;
+}
+
+function renderFeaturedRaidPreview(summary: GuildDashboardSummary): string {
+  const raid = summary.featuredRaid;
+  if (!raid) {
+    return `<aside class="featured-raid-card empty-featured-raid">
+      <p class="eyebrow">Featured raid</p>
+      <h2>No raids scheduled yet</h2>
+      <p>Create a Node War schedule to start collecting signups.</p>
+      <a class="button" href="/create?guild=${encodeURIComponent(summary.guild.id)}">Create Raid</a>
+    </aside>`;
+  }
+  const signed = activeRosterSignupCount(raid);
+  const capacity = activeRosterCapacity(raid);
+  const percent = capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0;
+  const territory = raid.tier ? NODE_WAR_PRESETS[raid.tier].territoryGroup : raid.kind;
+  return `<aside class="featured-raid-card">
+    <div class="card-top"><span class="type-pill">${raid.tier ? labelTier(raid.tier) : raid.kind === "siege" ? "Siege" : "Node War"}</span><span class="status-pill ${isEventActive(raid) ? "status-active" : "status-inactive"}">${isEventActive(raid) ? "Active" : "Inactive"}</span></div>
+    <p class="eyebrow">Featured raid</p>
+    <h2>${escapeHtml(scheduleTitle(raid))}</h2>
+    <dl>
+      <div><dt>Territory</dt><dd>${escapeHtml(territory)}</dd></div>
+      <div><dt>Date</dt><dd>${formatDateLabel(raid.date)}</dd></div>
+      <div><dt>War time</dt><dd>${formatClockTime(raid.time)}</dd></div>
+      <div><dt>Announcement</dt><dd>${formatAnnouncementLabel(raid)}</dd></div>
+    </dl>
+    <span class="card-meter"><i style="width:${percent}%"></i></span>
+    <div class="featured-raid-footer"><b>${signed}/${capacity} signed</b><a href="/events/${encodeURIComponent(raid.id)}">View</a></div>
+  </aside>`;
+}
+
+function renderUpcomingRaidsSection(summaries: GuildDashboardSummary[]): string {
+  const raids = summaries
+    .flatMap((summary) => summary.events.map((event) => ({ summary, event, sortTime: eventSortTimestamp(event) })))
+    .sort((left, right) => left.sortTime - right.sortTime)
+    .slice(0, 8);
+  return `<section class="home-section">
+    <div class="section-title"><div><p class="eyebrow">Upcoming raids</p><h2>Next scheduled operations</h2></div><span>${raids.length} shown</span></div>
+    <div class="upcoming-raid-grid">${raids
+      .map(({ summary, event }) => {
+        const signed = activeRosterSignupCount(event);
+        const capacity = activeRosterCapacity(event);
+        const percent = capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0;
+        return `<article class="upcoming-raid-card">
+          <div class="card-top"><span>${escapeHtml(summary.guild.name)}</span><span class="status-pill ${isEventActive(event) ? "status-active" : "status-inactive"}">${isEventActive(event) ? "Active" : "Inactive"}</span></div>
+          <h3>${escapeHtml(scheduleTitle(event))}</h3>
+          <dl>
+            <div><dt>Date</dt><dd>${formatDateLabel(event.date)}</dd></div>
+            <div><dt>Announce</dt><dd>${formatAnnouncementLabel(event)}</dd></div>
+            <div><dt>War</dt><dd>${formatClockTime(event.time)}</dd></div>
+          </dl>
+          <span class="card-meter"><i style="width:${percent}%"></i></span>
+          <div class="featured-raid-footer"><b>${signed}/${capacity} signed</b><a href="/events/${encodeURIComponent(event.id)}">View</a></div>
+        </article>`;
+      })
+      .join("") || `<article class="empty-state compact-empty"><h2>No upcoming raids</h2><p>Create a raid from a server card to start building the schedule.</p></article>`}</div>
+  </section>`;
+}
+
+function renderSetupHealthSection(summaries: GuildDashboardSummary[]): string {
+  return `<section class="home-section">
+    <div class="section-title"><div><p class="eyebrow">Server health</p><h2>Setup readiness</h2></div><span>${summaries.filter((summary) => !summary.setupWarnings.length).length}/${summaries.length} ready</span></div>
+    <div class="setup-health-grid">${summaries
+      .map(
+        (summary) => `<article class="setup-card">
+          <div class="setup-card-head">${renderGuildAvatar(summary.guild)}<div><h3>${escapeHtml(summary.guild.name)}</h3><small>${summary.activeRaids} active raids</small></div></div>
+          <ul>
+            ${renderSetupLine(summary.botInstalled, "Bot installed", "Bot unavailable")}
+            ${renderSetupLine(summary.channelConfigured, "Announcement channel configured", "Channel not configured")}
+            ${renderSetupLine(summary.roleConfigured, "Ping role configured", "Role not configured")}
+            ${renderSetupLine(summary.schedulerActive, "Scheduler active", "No active schedule")}
+          </ul>
+        </article>`
+      )
+      .join("")}</div>
+  </section>`;
+}
+
+function renderSetupLine(ok: boolean, ready: string, warning: string): string {
+  return `<li class="${ok ? "is-ready" : "is-warning"}"><span>${ok ? "OK" : "!"}</span>${escapeHtml(ok ? ready : warning)}</li>`;
+}
+
+function renderQuickActionsSection(summaries: GuildDashboardSummary[]): string {
+  const firstGuild = summaries[0]?.guild;
+  return `<section class="home-section">
+    <div class="section-title"><div><p class="eyebrow">Quick actions</p><h2>Move directly to the next task</h2></div></div>
+    <div class="quick-action-grid">
+      ${renderQuickAction("Create Raid", "Schedule a Node War roster for a shared server.", firstGuild ? `/create?guild=${encodeURIComponent(firstGuild.id)}` : "/", "Create")}
+      ${renderQuickAction("View Raids", "Open the raid board for your first shared server.", firstGuild ? `/guilds/${encodeURIComponent(firstGuild.id)}/raids` : "/", "Open")}
+      ${renderQuickAction("View Stats", "Review uploaded scoreboards and player performance.", firstGuild ? `/guilds/${encodeURIComponent(firstGuild.id)}/stats` : "/stats", "Stats")}
+      ${renderQuickAction("Manage Servers", "Choose a Discord server and inspect its dashboard.", firstGuild ? `/?guild=${encodeURIComponent(firstGuild.id)}` : "/", "Manage")}
+      ${renderQuickAction("Invite Bot", "Add NW Helper to another Discord server.", botInviteUrl() ?? "/", "Invite", Boolean(botInviteUrl()))}
+    </div>
+  </section>`;
+}
+
+function renderQuickAction(title: string, text: string, href: string, label: string, external = false): string {
+  return `<article class="quick-action-card"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p><a class="button button-secondary" href="${escapeHtml(href)}"${external ? " target=\"_blank\" rel=\"noreferrer\"" : ""}>${escapeHtml(label)}</a></article>`;
+}
+
+function renderRecentActivitySection(): string {
+  return `<section class="home-section">
+    <div class="section-title"><div><p class="eyebrow">Recent activity</p><h2>Latest dashboard changes</h2></div></div>
+    <div class="empty-state compact-empty"><h2>No recent activity yet</h2><p>Signup and raid activity can be wired here once an activity feed is available.</p></div>
+  </section>`;
+}
+
+function renderNoSharedServersHome(): string {
+  return `<section class="home-hero logged-out-hero command-hero">
+    <div><p class="eyebrow">No shared servers</p><h1>No Discord servers are available yet</h1><p>NW Helper only lists servers where your Discord account has access and the bot is installed. Invite the bot, then log in again to refresh your session.</p><div class="button-row">${renderInviteButton("Invite Bot")}<a class="button button-secondary" href="/auth/discord">Refresh Login</a></div></div>
+  </section>`;
+}
+
+function buildGuildDashboardSummaries(guilds: DiscordGuild[], events: WarEvent[], settings: BotSettings = {}): GuildDashboardSummary[] {
   return guilds.map((guild) => {
     const visibleEvents = events.filter((event) => event.guildId === guild.id && (!event.closed || (event.recurrence === "once" && event.active === false)));
     const activeEvents = visibleEvents.filter(isEventActive);
     const announcements = activeEvents.flatMap((event) => getUpcomingAnnouncements(event, 1)).sort((left, right) => announcementTimestamp(left) - announcementTimestamp(right));
+    const featuredRaid = [...activeEvents].sort((left, right) => eventSortTimestamp(left) - eventSortTimestamp(right))[0];
+    const nextWar = featuredRaid ? warStartTimestamp(featuredRaid) : undefined;
+    const channelConfigured = Boolean(settings.nodeWarChannelIds?.[guild.id] || settings.nodeWarChannelId || activeEvents.some((event) => event.announcementChannelId || event.channelId));
+    const roleConfigured = activeEvents.some((event) => Boolean(event.announcementRoleIds?.length || event.announcementRoleId));
+    const schedulerActive = activeEvents.some((event) => event.autoRepost !== false || event.announcementDate || event.recurrence === "weekly");
+    const setupWarnings = [
+      ...(channelConfigured ? [] : ["Channel not configured"]),
+      ...(roleConfigured ? [] : ["Role not configured"]),
+      ...(schedulerActive ? [] : ["No active schedule"])
+    ];
     return {
       guild,
       activeRaids: activeEvents.length,
       upcomingRaids: announcements.length,
       totalSignups: activeEvents.reduce((sum, event) => sum + activeRosterSignupCount(event), 0),
       weeklyRaids: activeEvents.filter((event) => event.recurrence === "weekly").length,
-      nextAnnouncement: announcements[0] ? formatAnnouncementDateTime(announcements[0]) : "None queued"
+      nextAnnouncement: announcements[0] ? formatAnnouncementDateTime(announcements[0]) : "None queued",
+      nextAnnouncementTime: announcements[0] ? announcementTimestamp(announcements[0]) : undefined,
+      nextWarStart: featuredRaid ? `${formatDateLabel(featuredRaid.date)} ${formatClockTime(featuredRaid.time)}` : "No war queued",
+      nextWarStartTime: nextWar,
+      featuredRaid,
+      botInstalled: true,
+      channelConfigured,
+      roleConfigured,
+      schedulerActive,
+      setupWarnings,
+      events: visibleEvents
     };
   });
+}
+
+function eventSortTimestamp(event: WarEvent): number {
+  const announcement = getUpcomingAnnouncements(event, 1)[0];
+  return announcement ? announcementTimestamp(announcement) : warStartTimestamp(event);
+}
+
+function warStartTimestamp(event: WarEvent): number {
+  return new Date(`${event.date}T${event.time}:00+08:00`).getTime();
 }
 
 function renderHomeCarouselScript(): string {
@@ -1117,6 +1298,8 @@ function renderHomeCarouselScript(): string {
 (() => {
   const cards = [...document.querySelectorAll("[data-home-server]")];
   if (cards.length < 2) return;
+  const host = document.querySelector("[data-home-carousel]");
+  const dots = [...document.querySelectorAll("[data-home-dot]")];
   let index = 0;
   const show = (next) => {
     index = (next + cards.length) % cards.length;
@@ -1125,15 +1308,28 @@ function renderHomeCarouselScript(): string {
       card.classList.toggle("is-active", active);
       card.setAttribute("aria-hidden", active ? "false" : "true");
     });
+    dots.forEach((dot, dotIndex) => dot.classList.toggle("is-active", dotIndex === index));
   };
-  let timer = window.setInterval(() => show(index + 1), 5200);
+  let timer;
+  const start = () => {
+    window.clearInterval(timer);
+    timer = window.setInterval(() => show(index + 1), 5600);
+  };
   const move = (delta) => {
     window.clearInterval(timer);
     show(index + delta);
-    timer = window.setInterval(() => show(index + 1), 5200);
+    start();
   };
   document.querySelector("[data-home-prev]")?.addEventListener("click", () => move(-1));
   document.querySelector("[data-home-next]")?.addEventListener("click", () => move(1));
+  dots.forEach((dot) => dot.addEventListener("click", () => {
+    window.clearInterval(timer);
+    show(Number(dot.dataset.homeDot || 0));
+    start();
+  }));
+  host?.addEventListener("mouseenter", () => window.clearInterval(timer));
+  host?.addEventListener("mouseleave", start);
+  start();
 })();
 </script>`;
 }
