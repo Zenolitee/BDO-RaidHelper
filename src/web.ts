@@ -291,6 +291,32 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
   });
 
+  app.get("/stats/reports/:id/preview", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : "";
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const reportImage = await options.scoreStore.readReportImage(guild.id, request.params.id);
+      if (!reportImage) {
+        response.status(404).send("Score report not found.");
+        return;
+      }
+
+      response
+        .setHeader("Content-Type", reportImage.report.imageMimeType)
+        .setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(reportImage.report.id)}"`)
+        .setHeader("Cache-Control", "private, max-age=300")
+        .send(reportImage.imageBuffer);
+    } catch (error) {
+      response.status(400).type("html").send(renderPage("Stats preview failed", renderWebError(error)));
+    }
+  });
+
   app.post("/stats/reports/:id/edit", async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
@@ -1189,7 +1215,14 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
   const kdTone = killDeathPercent >= 200 ? "good" : killDeathPercent >= 100 ? "ok" : "low";
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
   return `<article class="report-card">
-    <div><p class="eyebrow">${escapeHtml(report.result)}</p><h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3><small>${formatDateLabel(report.warDate)} | ${escapeHtml(report.ocrEngine)} | OCR ${escapeHtml(confidence)}</small><small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small></div>
+    <div class="report-card-head">
+      <p class="eyebrow">${escapeHtml(report.result)}</p>
+      <h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3>
+      <small>${formatDateLabel(report.warDate)}</small>
+      <small>${escapeHtml(report.ocrEngine)}</small>
+      <small>OCR ${escapeHtml(confidence)}</small>
+      <small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small>
+    </div>
     <dl>
       <div><dt>Players</dt><dd>${rows.length}</dd></div>
       <div><dt>Kills</dt><dd>${formatStatNumber(kills)}</dd></div>
@@ -1198,6 +1231,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
     <div class="report-actions">
+      <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/preview?guild=${encodeURIComponent(report.guildId)}" target="_blank" rel="noopener">Preview</a>
       <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}">Edit</a>
       <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/rescan">
         <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
