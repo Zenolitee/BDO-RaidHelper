@@ -85,6 +85,18 @@ interface WebSession {
 }
 
 const WEB_WAR_DAYS: WarDay[] = [...WEEKDAYS];
+const DISCORD_PERMISSION_ADMINISTRATOR = 8n;
+const DISCORD_PERMISSION_MANAGE_CHANNELS = 16n;
+const DISCORD_PERMISSION_MANAGE_GUILD = 32n;
+const DISCORD_PERMISSION_MANAGE_ROLES = 268435456n;
+const DISCORD_PERMISSION_MANAGE_MESSAGES = 8192n;
+const WEB_MANAGE_PERMISSIONS = [
+  DISCORD_PERMISSION_ADMINISTRATOR,
+  DISCORD_PERMISSION_MANAGE_CHANNELS,
+  DISCORD_PERMISSION_MANAGE_GUILD,
+  DISCORD_PERMISSION_MANAGE_ROLES,
+  DISCORD_PERMISSION_MANAGE_MESSAGES
+];
 const scoreUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 }
@@ -215,7 +227,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
                 : request.query.renamed === "1"
                   ? "renamed"
                   : undefined;
-      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey)));
+      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id))));
     } catch (error) {
       response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
     }
@@ -225,7 +237,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -274,7 +286,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : "";
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !options.scoreStore) {
+    if (!session || !guild || !canManageGuild(session, guild.id) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -321,7 +333,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -346,7 +358,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -368,7 +380,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -386,7 +398,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !validCsrf(request, session) || !options.scoreStore) {
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -460,7 +472,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       const sessionId = randomBytes(32).toString("hex");
       await sessions.set(sessionId, {
         user,
-        guilds: guilds.filter((guild) => hasAdministratorPermission(guild.permissions) && botGuildIds.has(guild.id)),
+        guilds: guilds.filter((guild) => botGuildIds.has(guild.id)),
         csrfToken: randomBytes(24).toString("hex"),
         expiresAt: Date.now() + 24 * 60 * 60_000
       }, Date.now() + 24 * 60 * 60_000);
@@ -481,7 +493,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.get("/create", async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
-    if (!session || !guildId || !session.guilds.some((guild) => guild.id === guildId)) {
+    if (!session || !guildId || !canManageGuild(session, guildId)) {
       response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
       return;
     }
@@ -498,7 +510,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.post("/create", async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
-    if (!session || !session.guilds.some((guild) => guild.id === guildId) || !validCsrf(request, session)) {
+    if (!session || !canManageGuild(session, guildId) || !validCsrf(request, session)) {
       response.status(403).send("Not authorized.");
       return;
     }
@@ -556,7 +568,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       return;
     }
 
-    const canManage = Boolean(event.guildId && session?.guilds.some((guild) => guild.id === event.guildId));
+    const canManage = Boolean(event.guildId && session && canManageGuild(session, event.guildId));
     const deliveryOptions = event.guildId ? await fetchGuildDeliveryOptions(event.guildId).catch(() => undefined) : undefined;
     response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage, session, deliveryOptions)));
   });
@@ -723,7 +735,7 @@ function formatUploader(session: WebSession): string {
 }
 
 function renderLoginRequired(): string {
-  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to manage servers where you are an administrator and NW Helper is installed.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
+  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to view servers you share with NW Helper. Moderator permissions are required for edits.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
 }
 
 function renderLoginError(): string {
@@ -799,8 +811,19 @@ async function fetchDiscordBot<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function hasAdministratorPermission(permissions: string): boolean {
-  return (BigInt(permissions) & 8n) === 8n;
+function hasAnyDiscordPermission(permissions: string, flags: bigint[]): boolean {
+  let permissionBits: bigint;
+  try {
+    permissionBits = BigInt(permissions);
+  } catch {
+    return false;
+  }
+  return flags.some((flag) => (permissionBits & flag) === flag);
+}
+
+function canManageGuild(session: WebSession, guildId: string): boolean {
+  const guild = session.guilds.find((candidate) => candidate.id === guildId);
+  return Boolean(guild && hasAnyDiscordPermission(guild.permissions, WEB_MANAGE_PERMISSIONS));
 }
 
 async function getSession(request: Request, sessions: WebSessionStore<WebSession>): Promise<WebSession | undefined> {
@@ -824,7 +847,7 @@ function validCsrf(request: Request, session: WebSession): boolean {
 }
 
 function canManageEvent(event: WarEvent, session: WebSession): boolean {
-  return Boolean(event.guildId && session.guilds.some((guild) => guild.id === event.guildId));
+  return Boolean(event.guildId && canManageGuild(session, event.guildId));
 }
 
 function readCookie(request: Request, name: string): string | undefined {
@@ -896,6 +919,7 @@ function renderPage(title: string, body: string): string {
 
 function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string): string {
   const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
+  const selectedCanManage = Boolean(session && guildId && canManageGuild(session, guildId));
   const visibleEvents = events.filter((event) => !event.closed || (event.recurrence === "once" && event.active === false));
   const activeEvents = visibleEvents.filter(isEventActive);
   const totalSignups = activeEvents.reduce((sum, event) => sum + activeRosterSignupCount(event), 0);
@@ -909,6 +933,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       const capacity = activeRosterCapacity(event);
       const active = isEventActive(event);
       const autoRepost = event.autoRepost ?? event.recurrence === "weekly";
+      const canManage = Boolean(session && event.guildId && canManageGuild(session, event.guildId));
       return `<article class="event-card group relative overflow-hidden">
         <div class="card-top"><span class="type-pill">${event.tier ? labelTier(event.tier) : event.kind === "siege" ? "Siege" : "Node War"}</span><span class="status-pill ${active ? "status-active" : "status-inactive"}">${active ? "Active" : "Inactive"}</span></div>
         <a class="event-title" href="/events/${event.id}"><strong>${escapeHtml(scheduleTitle(event))}</strong></a>
@@ -918,8 +943,8 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
         <small>War starts ${formatClockTime(event.time)} ${escapeHtml(config.timezone)}</small>
         <small>Schedule ${labelRecurrence(event.recurrence)} | ${formatRaidDays(event)}</small>
         <span class="card-meter"><i style="width:${capacity ? Math.min(100, Math.round((signed / capacity) * 100)) : 0}%"></i></span>
-        <div class="card-switches">${session ? `${renderCardToggle(event, session.csrfToken, "status", "Status", active)}${renderCardToggle(event, session.csrfToken, "auto-repost", "Auto repost", autoRepost, event.recurrence !== "weekly")}` : ""}</div>
-        <div class="card-footer"><b>${signed}/${capacity} signed</b><span class="card-actions"><a href="/events/${event.id}">Open</a><a href="/events/${event.id}/edit">Manage</a>${session ? `<form method="post" action="/events/${event.id}/delete" onsubmit="return confirm('Delete this raid event?')"><input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}"><button class="link-button danger-link" type="submit">Delete</button></form>` : ""}</span></div>
+        <div class="card-switches">${canManage && session ? `${renderCardToggle(event, session.csrfToken, "status", "Status", active)}${renderCardToggle(event, session.csrfToken, "auto-repost", "Auto repost", autoRepost, event.recurrence !== "weekly")}` : ""}</div>
+        <div class="card-footer"><b>${signed}/${capacity} signed</b><span class="card-actions"><a href="/events/${event.id}">Open</a>${canManage && session ? `<a href="/events/${event.id}/edit">Manage</a><form method="post" action="/events/${event.id}/delete" onsubmit="return confirm('Delete this raid event?')"><input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}"><button class="link-button danger-link" type="submit">Delete</button></form>` : ""}</span></div>
       </article>`;
     })
     .join("");
@@ -930,11 +955,11 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
             (guild) =>
               `<a class="server-card group transition duration-200 ease-out" href="/?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span><b>Open</b></a>`
           )
-          .join("") || "<p>No shared administrator servers found.</p>"}</div><div class="invite-row"><span>Not seeing your server?</span>${renderInviteButton("Invite the bot")}</div></section>`
+          .join("") || "<p>No shared servers found.</p>"}</div><div class="invite-row"><span>Not seeing your server?</span>${renderInviteButton("Invite the bot")}</div></section>`
       : "";
 
   return `${renderNav(session, guildId)}<main class="shell">
-    ${selectedGuild ? `<section class="dashboard-head"><div class="guild-heading">${renderGuildAvatar(selectedGuild)}<div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div></div><a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">+ Create raid</a></section>
+    ${selectedGuild ? `<section class="dashboard-head"><div class="guild-heading">${renderGuildAvatar(selectedGuild)}<div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div></div>${selectedCanManage ? `<a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">+ Create raid</a>` : ""}</section>
     <section class="stats-row">
       ${renderStat("Active raids", String(activeEvents.length))}
       ${renderStat("Weekly posts", String(weeklyPosts))}
@@ -942,7 +967,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       ${renderStat("Next announcement", nextAnnouncement ? `${formatDateLabel(nextAnnouncement.announcementDate as string)} ${formatClockTime(nextAnnouncement.announcementTime as string)}` : "None queued")}
     </section>` : ""}
     ${serverPicker}
-    ${selectedGuild ? `<section class="event-grid">${cards || "<div class=\"empty-state\"><h2>No raids scheduled</h2><p>Create a roster or use the Discord wizard to get started.</p></div>"}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to manage shared servers, schedules, and compositions.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
+    ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to view shared servers, schedules, and stats.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
   </main>`;
 }
 
@@ -961,7 +986,7 @@ function renderNav(session?: WebSession, guildId?: string): string {
     <nav>
       <details class="nav-group" open><summary><i>R</i><span>Raids</span></summary><div>
         <a href="${raidsHref}"><i>R</i><span>Raid board</span></a>
-        ${guildId ? `<a href="${createHref}"><i>+</i><span>Create raid</span></a>` : ""}
+        ${guildId && session && canManageGuild(session, guildId) ? `<a href="${createHref}"><i>+</i><span>Create raid</span></a>` : ""}
       </div></details>
       <a href="${statsHref}"><i>S</i><span>Stats</span></a>
       ${session ? renderServerNav(session, selectedGuild) : `<a href="/"><i>H</i><span>Home</span></a>`}
@@ -1000,7 +1025,7 @@ function renderStatsServerPicker(session: WebSession): string {
           (guild) =>
             `<a class="server-card group transition duration-200 ease-out" href="/stats?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><strong>${escapeHtml(guild.name)}</strong><small>Open stats dashboard</small></span><b>Stats</b></a>`
         )
-        .join("") || "<p>No shared administrator servers found.</p>"}</div>
+        .join("") || "<p>No shared servers found.</p>"}</div>
     </section>
   </main>`;
 }
@@ -1010,7 +1035,8 @@ function renderStatsDashboard(
   session: WebSession,
   reports: ScoreReport[],
   notice?: "uploaded" | "rescanned" | "saved" | "deleted" | "renamed",
-  sortKey: ScoreSortKey = "wars"
+  sortKey: ScoreSortKey = "wars",
+  canManage = false
 ): string {
   const rows = reports.flatMap((report) => report.rows);
   const players = sortScoreAggregates(aggregateScoreRows(rows), sortKey);
@@ -1032,7 +1058,7 @@ function renderStatsDashboard(
       ${renderStat("Team K/D", totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills))}
       ${renderStat("Latest war", latest ? formatDateLabel(latest.warDate) : "No uploads")}
     </section>
-    <section class="stats-workspace">
+    ${canManage ? `<section class="stats-workspace">
       <form class="stats-upload-panel" method="post" action="/stats/upload" enctype="multipart/form-data">
         <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
         <input type="hidden" name="guildId" value="${escapeHtml(guild.id)}">
@@ -1043,13 +1069,13 @@ function renderStatsDashboard(
         <label>Screenshot<input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp" required></label>
         <button type="submit">Upload and scan</button>
       </form>
-    </section>
+    </section>` : ""}
     <section class="stats-analysis-panel">
       <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, sortKey, guild.id, session.csrfToken)}` : "<div class=\"empty-state compact-empty\"><h2>No score data yet</h2><p>Upload a scoreboard screenshot to start tracking player performance.</p></div>"}
+      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, sortKey, guild.id, session.csrfToken, canManage)}` : `<div class="empty-state compact-empty"><h2>No score data yet</h2><p>${canManage ? "Upload a scoreboard screenshot to start tracking player performance." : "No score data has been uploaded for this server yet."}</p></div>`}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
-    <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
+    <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken, canManage)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
   </main>`;
 }
 
@@ -1124,7 +1150,7 @@ function renderMetricLeaderboard(
   </div>`;
 }
 
-function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string): string {
+function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string, canManage: boolean): string {
   return `<div class="score-table-wrap"><table class="score-table" data-score-table data-score-sort="${sortKey}">
     <thead><tr><th>${renderScoreSortButton("Player", "player", sortKey)}</th><th>${renderScoreSortButton("Wars", "wars", sortKey)}</th><th>${renderScoreSortButton("K", "kills", sortKey)}</th><th>${renderScoreSortButton("D", "deaths", sortKey)}</th><th>${renderScoreSortButton("K/D", "kd", sortKey)}</th><th>${renderScoreSortButton("Damage", "damage", sortKey)}</th><th>${renderScoreSortButton("Taken", "taken", sortKey)}</th><th>${renderScoreSortButton("CC", "cc", sortKey)}</th><th>${renderScoreSortButton("Healed", "healed", sortKey)}</th><th>${renderScoreSortButton("Structure", "structure", sortKey)}</th></tr></thead>
     <tbody>${players
@@ -1133,7 +1159,7 @@ function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, so
           const healed = player.allySupport;
           const kd = player.deaths ? player.kills / player.deaths : player.kills;
           return `<tr data-player="${escapeHtml(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${healed}" data-structure="${player.structureDamage}">
-          <td><span class="player-cell"><strong>${escapeHtml(player.familyName)}</strong>${renderPlayerRenameControl(player.familyName, guildId, csrfToken)}</span><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
+          <td><span class="player-cell"><strong>${escapeHtml(player.familyName)}</strong>${canManage ? renderPlayerRenameControl(player.familyName, guildId, csrfToken) : ""}</span><span class="damage-bar"><i style="width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%"></i></span></td>
           <td>${player.participations}</td>
           <td>${formatStatNumber(player.kills)}</td>
           <td>${formatStatNumber(player.deaths)}</td>
@@ -1206,7 +1232,7 @@ function renderScoreSortScript(): string {
 </script>`;
 }
 
-function renderReportCard(report: ScoreReport, csrfToken: string): string {
+function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boolean): string {
   const rows = report.rows;
   const kills = rows.reduce((sum, row) => sum + row.kills, 0);
   const deaths = rows.reduce((sum, row) => sum + row.deaths, 0);
@@ -1230,9 +1256,9 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
       <div><dt>K/D %</dt><dd><span class="kd-pill kd-${kdTone}">${killDeathPercent}%</span></dd></div>
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
-    <div class="report-actions">
+    <div class="report-actions${canManage ? "" : " report-actions-view"}">
       <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/preview?guild=${encodeURIComponent(report.guildId)}" target="_blank" rel="noopener">Preview</a>
-      <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}">Edit</a>
+      ${canManage ? `<a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}">Edit</a>
       <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/rescan">
         <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
         <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
@@ -1242,7 +1268,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string): string {
         <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
         <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
         <button class="button button-secondary danger-button" type="submit">Delete</button>
-      </form>
+      </form>` : ""}
     </div>
   </article>`;
 }

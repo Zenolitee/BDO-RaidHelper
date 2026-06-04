@@ -1930,6 +1930,10 @@ h1 {
   align-self: end;
 }
 
+.report-actions-view {
+  grid-template-columns: 1fr;
+}
+
 .report-actions form,
 .report-actions .button {
   margin: 0;
