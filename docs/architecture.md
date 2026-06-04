@@ -95,10 +95,13 @@ Persisted `announcedAt`, message IDs, lifecycle flags, and event records make sc
 
 | Route | Access | Purpose |
 | --- | --- | --- |
-| `GET /` | Public, with optional login | Server picker and selected-server dashboard. |
+| `GET /` | Public, with optional login | Logged-out product home, logged-in multi-server home, and legacy selected-server dashboard via `?guild=`. |
+| `GET /guilds/:guildId/raids` | Authenticated shared server | Canonical raid dashboard for one server. |
+| `GET /guilds/:guildId/stats` | Authenticated shared server | Canonical stats dashboard for one server. |
 | `GET /auth/discord` | Public | Start Discord OAuth. |
 | `GET /auth/discord/callback` | Public callback | Complete login and create a dashboard session. |
 | `GET /logout` | Public | Delete the session and clear the cookie. |
+| `GET /stats` | Authenticated, optional `?guild=` | Legacy stats picker or selected-server stats dashboard. |
 | `GET /create` | Authenticated Administrator | Render raid creation. |
 | `POST /create` | Authenticated Administrator plus CSRF | Create a raid. |
 | `GET /events/:id` | Public for a known ID | Render roster detail. |

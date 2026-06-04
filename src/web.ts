@@ -84,6 +84,15 @@ interface WebSession {
   expiresAt: number;
 }
 
+interface GuildDashboardSummary {
+  guild: DiscordGuild;
+  activeRaids: number;
+  upcomingRaids: number;
+  totalSignups: number;
+  weeklyRaids: number;
+  nextAnnouncement: string;
+}
+
 const WEB_WAR_DAYS: WarDay[] = [...WEEKDAYS];
 const DISCORD_PERMISSION_ADMINISTRATOR = 8n;
 const DISCORD_PERMISSION_MANAGE_CHANNELS = 16n;
@@ -194,21 +203,46 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    const events = guild ? (await store.listEvents()).filter((event) => event.guildId === guild.id) : [];
-    response.type("html").send(renderPage("NW Helper", renderEventList(events, session, guildId)));
+    const events = session || guild ? await store.listEvents() : [];
+    if (session && guild) {
+      response.type("html").send(renderPage("NW Helper", renderEventList(events.filter((event) => event.guildId === guild.id), session, guildId, buildGuildDashboardSummaries(session.guilds, events))));
+      return;
+    }
+    response.type("html").send(renderPage("NW Helper", renderHome(events, session)));
+  });
+
+  app.get("/guilds/:guildId/raids", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
+    if (!session || !guild) {
+      response.status(404).type("html").send(renderPage("Not found", renderLoginRequired()));
+      return;
+    }
+    const events = await store.listEvents();
+    response.type("html").send(renderPage(`${guild.name} raids`, renderEventList(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events))));
+  });
+
+  app.get("/guilds/:guildId/stats", async (request, response) => {
+    await sendStatsDashboard(request, response, request.params.guildId);
   });
 
   app.get("/stats", async (request, response) => {
-    const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    await sendStatsDashboard(request, response, guildId);
+  });
+
+  async function sendStatsDashboard(request: Request, response: express.Response, guildId?: string): Promise<void> {
+    const session = await getSession(request, sessions);
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     if (!session) {
       response.status(403).type("html").send(renderPage("Stats", renderLoginRequired()));
       return;
     }
 
+    const events = await store.listEvents();
+    const summaries = buildGuildDashboardSummaries(session.guilds, events);
     if (!guild) {
-      response.type("html").send(renderPage("Stats", renderStatsServerPicker(session)));
+      response.type("html").send(renderPage("Stats", renderStatsServerPicker(session, summaries)));
       return;
     }
 
@@ -227,11 +261,11 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
                 : request.query.renamed === "1"
                   ? "renamed"
                   : undefined;
-      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id))));
+      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id), summaries)));
     } catch (error) {
       response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
     }
-  });
+  }
 
   app.post("/stats/upload", scoreUpload.single("screenshot"), async (request, response) => {
     const session = await getSession(request, sessions);
@@ -917,7 +951,55 @@ function renderPage(title: string, body: string): string {
 </html>`;
 }
 
-function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string): string {
+function renderHome(events: WarEvent[], session?: WebSession): string {
+  if (!session) {
+    return `${renderNav()}<main class="shell home-shell">
+      <section class="home-hero logged-out-hero">
+        <div>
+          <p class="eyebrow">Discord Node War command center</p>
+          <h1>NW Helper keeps raids, rosters, and war stats organized.</h1>
+          <p class="summary">Connect Discord to manage shared servers, schedule weekly Node War signup posts, track active rosters, and review uploaded scoreboard stats from one dark dashboard.</p>
+          <div class="button-row">${renderAccountControls()}${renderInviteButton("Invite Bot")}</div>
+        </div>
+      </section>
+    </main>`;
+  }
+
+  const summaries = buildGuildDashboardSummaries(session.guilds, events);
+  const cards = summaries
+    .map(
+      (summary, index) => `<article class="home-server-card${index === 0 ? " is-active" : ""}" data-home-server="${index}" aria-hidden="${index === 0 ? "false" : "true"}">
+        <div class="home-server-head">
+          ${renderGuildAvatar(summary.guild)}
+          <div><p class="eyebrow">Shared server</p><h1>${escapeHtml(summary.guild.name)}</h1><p>Bot installed and available to your Discord account.</p></div>
+        </div>
+        <dl class="home-metrics">
+          <div><dt>Active raids</dt><dd>${summary.activeRaids}</dd></div>
+          <div><dt>Upcoming raids</dt><dd>${summary.upcomingRaids}</dd></div>
+          <div><dt>Total signups</dt><dd>${summary.totalSignups}</dd></div>
+          <div><dt>Next announcement</dt><dd>${escapeHtml(summary.nextAnnouncement)}</dd></div>
+        </dl>
+        <div class="button-row">
+          <a class="button" href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">View Raids</a>
+          <a class="button button-secondary" href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">View Stats</a>
+          <a class="button button-secondary" href="/?guild=${encodeURIComponent(summary.guild.id)}">Manage</a>
+        </div>
+      </article>`
+    )
+    .join("");
+
+  return `${renderNav(session, undefined, summaries)}<main class="shell home-shell">
+    <section class="home-hero">
+      <div class="home-title-row"><div><p class="eyebrow">Home</p><h1>Your shared NW Helper servers</h1><p>Rotate through every Discord server where you and the bot overlap.</p></div><span>${summaries.length} servers</span></div>
+      <div class="home-carousel" data-home-carousel>
+        ${cards || `<article class="home-server-card is-active"><h1>No shared servers found</h1><p>Invite NW Helper to a Discord server, then log in again to refresh access.</p><div class="button-row">${renderInviteButton("Invite Bot")}</div></article>`}
+      </div>
+      ${summaries.length > 1 ? `<div class="carousel-controls"><button type="button" data-home-prev aria-label="Previous server">Prev</button><button type="button" data-home-next aria-label="Next server">Next</button></div>` : ""}
+    </section>
+  </main>${summaries.length > 1 ? renderHomeCarouselScript() : ""}`;
+}
+
+function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string, summaries?: GuildDashboardSummary[]): string {
   const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
   const selectedCanManage = Boolean(session && guildId && canManageGuild(session, guildId));
   const visibleEvents = events.filter((event) => !event.closed || (event.recurrence === "once" && event.active === false));
@@ -948,17 +1030,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       </article>`;
     })
     .join("");
-  const serverPicker =
-    session && !selectedGuild
-      ? `<section class="server-picker"><header><p class="eyebrow">Your servers</p><h1>Select a server</h1><p>Only servers shared with NW Helper are listed.</p></header><div class="server-grid">${session.guilds
-          .map(
-            (guild) =>
-              `<a class="server-card group transition duration-200 ease-out" href="/?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><strong>${escapeHtml(guild.name)}</strong><small>Open raid dashboard</small></span><b>Open</b></a>`
-          )
-          .join("") || "<p>No shared servers found.</p>"}</div><div class="invite-row"><span>Not seeing your server?</span>${renderInviteButton("Invite the bot")}</div></section>`
-      : "";
-
-  return `${renderNav(session, guildId)}<main class="shell">
+  return `${renderNav(session, guildId, summaries)}<main class="shell">
     ${selectedGuild ? `<section class="dashboard-head"><div class="guild-heading">${renderGuildAvatar(selectedGuild)}<div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div></div>${selectedCanManage ? `<a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">+ Create raid</a>` : ""}</section>
     <section class="stats-row">
       ${renderStat("Active raids", String(activeEvents.length))}
@@ -966,8 +1038,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       ${renderStat("Total signups", String(totalSignups))}
       ${renderStat("Next announcement", nextAnnouncement ? `${formatDateLabel(nextAnnouncement.announcementDate as string)} ${formatClockTime(nextAnnouncement.announcementTime as string)}` : "None queued")}
     </section>` : ""}
-    ${serverPicker}
-    ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : !session ? `<section class="empty-state welcome-state"><p class="eyebrow">Self-hosted raid planning</p><h1>Node War rosters without the clutter.</h1><p>Log in with Discord to view shared servers, schedules, and stats.</p><div class="button-row">${renderAccountControls()}${renderInviteButton()}</div></section>` : ""}
+    ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : ""}
   </main>`;
 }
 
@@ -976,33 +1047,42 @@ function renderCardToggle(event: WarEvent, csrfToken: string, action: "status" |
   return `<form method="post" action="/events/${event.id}/${action}"><input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}"><input type="hidden" name="${field}" value="${enabled ? "false" : "true"}"><button class="switch-button${enabled ? " switch-on" : ""}" type="submit"${disabled ? " disabled" : ""}><span>${escapeHtml(label)}</span><i></i><b>${enabled ? "On" : "Off"}</b></button></form>`;
 }
 
-function renderNav(session?: WebSession, guildId?: string): string {
-  const selectedGuild = session?.guilds.find((guild) => guild.id === guildId);
-  const raidsHref = guildId ? `/?guild=${encodeURIComponent(guildId)}` : "/";
-  const createHref = guildId ? `/create?guild=${encodeURIComponent(guildId)}` : "/create";
-  const statsHref = guildId ? `/stats?guild=${encodeURIComponent(guildId)}` : "/stats";
-  return `<aside class="app-nav">
-    <div class="nav-brand-row"><a class="brand" href="${raidsHref}"><span>NW</span><strong>NW Helper</strong></a><button class="nav-collapse-button" type="button" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-collapsed')"><span></span><span></span><span></span></button></div>
+function renderNav(session?: WebSession, guildId?: string, summaries?: GuildDashboardSummary[]): string {
+  const summaryList = summaries ?? (session ? buildGuildDashboardSummaries(session.guilds, []) : []);
+  return `<header class="app-nav">
+    <div class="nav-brand-row"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a></div>
     <nav>
-      <details class="nav-group" open><summary><i>R</i><span>Raids</span></summary><div>
-        <a href="${raidsHref}"><i>R</i><span>Raid board</span></a>
-        ${guildId && session && canManageGuild(session, guildId) ? `<a href="${createHref}"><i>+</i><span>Create raid</span></a>` : ""}
-      </div></details>
-      <a href="${statsHref}"><i>S</i><span>Stats</span></a>
-      ${session ? renderServerNav(session, selectedGuild) : `<a href="/"><i>H</i><span>Home</span></a>`}
+      <a class="top-nav-link" href="/"><i>H</i><span>Home</span></a>
+      ${session ? renderNavDropdown("Stats", "S", summaryList, "stats") : `<a class="top-nav-link" href="/stats"><i>S</i><span>Stats</span></a>`}
+      ${session ? renderNavDropdown("Raids", "R", summaryList, "raids") : `<a class="top-nav-link" href="/"><i>R</i><span>Raids</span></a>`}
+      ${session ? renderNavDropdown("Servers", "V", summaryList, "servers") : ""}
     </nav>
     <div class="nav-actions">${renderAccountControls(session, guildId)}</div>
-  </aside>`;
+  </header>`;
 }
 
-function renderServerNav(session: WebSession, selectedGuild?: DiscordGuild): string {
-  const label = selectedGuild?.name ?? "Servers";
-  const servers = session.guilds
-    .map(
-      (guild) => `<a href="/?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><b>${escapeHtml(guild.name)}</b><small>Raids</small></span></a><a href="/stats?guild=${encodeURIComponent(guild.id)}"><i>S</i><span><b>${escapeHtml(guild.name)}</b><small>Stats</small></span></a>`
-    )
-    .join("");
-  return `<details class="nav-group server-nav" ${selectedGuild ? "open" : ""}><summary><i>V</i><span>${escapeHtml(label)}</span></summary><div>${servers || "<span class=\"nav-empty\">No servers found</span>"}</div></details>`;
+function renderNavDropdown(label: string, icon: string, summaries: GuildDashboardSummary[], mode: "stats" | "raids" | "servers"): string {
+  const items = summaries.map((summary) => renderNavGuildItem(summary, mode)).join("");
+  return `<details class="nav-group nav-dropdown">
+    <summary><i>${escapeHtml(icon)}</i><span>${escapeHtml(label)}</span></summary>
+    <div class="nav-menu">${items || "<span class=\"nav-empty\">No shared servers found</span>"}</div>
+  </details>`;
+}
+
+function renderNavGuildItem(summary: GuildDashboardSummary, mode: "stats" | "raids" | "servers"): string {
+  const href =
+    mode === "stats"
+      ? `/guilds/${encodeURIComponent(summary.guild.id)}/stats`
+      : mode === "raids"
+        ? `/guilds/${encodeURIComponent(summary.guild.id)}/raids`
+        : `/?guild=${encodeURIComponent(summary.guild.id)}`;
+  const meta =
+    mode === "stats"
+      ? `${summary.activeRaids} active | ${summary.totalSignups} signups`
+      : mode === "raids"
+        ? `${summary.activeRaids} active raids`
+        : `${summary.weeklyRaids ? `${summary.weeklyRaids} weekly` : "Setup ready"} | ${summary.activeRaids} active`;
+  return `<a class="nav-guild-item" href="${href}">${renderGuildAvatar(summary.guild)}<span><b>${escapeHtml(summary.guild.name)}</b><small>${escapeHtml(meta)}</small></span></a>`;
 }
 
 function renderGuildAvatar(guild: DiscordGuild): string {
@@ -1016,8 +1096,50 @@ function renderStat(label: string, value: string): string {
   return `<article class="stat-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
 }
 
-function renderStatsServerPicker(session: WebSession): string {
-  return `${renderNav(session)}<main class="shell">
+function buildGuildDashboardSummaries(guilds: DiscordGuild[], events: WarEvent[]): GuildDashboardSummary[] {
+  return guilds.map((guild) => {
+    const visibleEvents = events.filter((event) => event.guildId === guild.id && (!event.closed || (event.recurrence === "once" && event.active === false)));
+    const activeEvents = visibleEvents.filter(isEventActive);
+    const announcements = activeEvents.flatMap((event) => getUpcomingAnnouncements(event, 1)).sort((left, right) => announcementTimestamp(left) - announcementTimestamp(right));
+    return {
+      guild,
+      activeRaids: activeEvents.length,
+      upcomingRaids: announcements.length,
+      totalSignups: activeEvents.reduce((sum, event) => sum + activeRosterSignupCount(event), 0),
+      weeklyRaids: activeEvents.filter((event) => event.recurrence === "weekly").length,
+      nextAnnouncement: announcements[0] ? formatAnnouncementDateTime(announcements[0]) : "None queued"
+    };
+  });
+}
+
+function renderHomeCarouselScript(): string {
+  return `<script>
+(() => {
+  const cards = [...document.querySelectorAll("[data-home-server]")];
+  if (cards.length < 2) return;
+  let index = 0;
+  const show = (next) => {
+    index = (next + cards.length) % cards.length;
+    cards.forEach((card, cardIndex) => {
+      const active = cardIndex === index;
+      card.classList.toggle("is-active", active);
+      card.setAttribute("aria-hidden", active ? "false" : "true");
+    });
+  };
+  let timer = window.setInterval(() => show(index + 1), 5200);
+  const move = (delta) => {
+    window.clearInterval(timer);
+    show(index + delta);
+    timer = window.setInterval(() => show(index + 1), 5200);
+  };
+  document.querySelector("[data-home-prev]")?.addEventListener("click", () => move(-1));
+  document.querySelector("[data-home-next]")?.addEventListener("click", () => move(1));
+})();
+</script>`;
+}
+
+function renderStatsServerPicker(session: WebSession, summaries?: GuildDashboardSummary[]): string {
+  return `${renderNav(session, undefined, summaries)}<main class="shell">
     <section class="server-picker">
       <header><p class="eyebrow">War stats</p><h1>Select a server</h1><p>Open uploaded scoreboards and performance history for one Discord server.</p></header>
       <div class="server-grid">${session.guilds
@@ -1036,7 +1158,8 @@ function renderStatsDashboard(
   reports: ScoreReport[],
   notice?: "uploaded" | "rescanned" | "saved" | "deleted" | "renamed",
   sortKey: ScoreSortKey = "wars",
-  canManage = false
+  canManage = false,
+  summaries?: GuildDashboardSummary[]
 ): string {
   const rows = reports.flatMap((report) => report.rows);
   const players = sortScoreAggregates(aggregateScoreRows(rows), sortKey);
@@ -1045,7 +1168,7 @@ function renderStatsDashboard(
   const totalKills = rows.reduce((sum, row) => sum + row.kills, 0);
   const totalDeaths = rows.reduce((sum, row) => sum + row.deaths, 0);
 
-  return `${renderNav(session, guild.id)}<main class="shell stats-shell">
+  return `${renderNav(session, guild.id, summaries)}<main class="shell stats-shell">
     <section class="dashboard-head">
       <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">War stats</p><h1>${escapeHtml(guild.name)}</h1><p>Uploaded scoreboards, player participation, and performance trends.</p></div></div>
       <a class="button button-secondary" href="/?guild=${encodeURIComponent(guild.id)}">Raids</a>
