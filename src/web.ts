@@ -2005,10 +2005,16 @@ function parseRepeatDays(value: unknown, fallback?: WarDay): WarDay[] {
 }
 
 function formatDateLabel(date: string): string {
-  const parsed = new Date(`${date}T12:00:00Z`);
+  const parsed = parseDateOnlyAsUtc(date);
   return Number.isNaN(parsed.getTime())
     ? date
-    : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(parsed);
+    : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(parsed);
+}
+
+function parseDateOnlyAsUtc(date: string): Date {
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return new Date(Number.NaN);
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
 }
 
 function scheduleTitle(event: WarEvent): string {
