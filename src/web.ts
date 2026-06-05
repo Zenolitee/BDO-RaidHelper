@@ -70,6 +70,17 @@ interface PlayerScoreAggregate {
   resurrections: number;
 }
 
+interface PlayerImpactScore {
+  player: PlayerScoreAggregate;
+  score: number;
+  killsScore: number;
+  assistsScore: number;
+  damageScore: number;
+  structureScore: number;
+  objectiveScore: number;
+  survivalScore: number;
+}
+
 type ScoreSortKey = "wars" | "kills" | "damage";
 
 interface WebAppOptions {
@@ -1549,7 +1560,7 @@ function renderStatsDashboard(
     </section>` : ""}
     <section class="stats-analysis-panel">
       <header><p class="eyebrow">Player analysis</p><h2>Participation and performance</h2></header>
-      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTable(players, topDamage, sortKey, guild.id, session.csrfToken, canManage)}` : `<div class="empty-state compact-empty"><h2>No score data yet</h2><p>${canManage ? "Upload a scoreboard screenshot to start tracking player performance." : "No score data has been uploaded for this server yet."}</p></div>`}
+      ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTables(players, topDamage, sortKey, guild.id, session.csrfToken, canManage)}` : `<div class="empty-state compact-empty"><h2>No score data yet</h2><p>${canManage ? "Upload a scoreboard screenshot to start tracking player performance." : "No score data has been uploaded for this server yet."}</p></div>`}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
     <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken, canManage)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
@@ -1628,6 +1639,20 @@ function renderMetricLeaderboard(
   </div>`;
 }
 
+function renderScoreTables(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string, canManage: boolean): string {
+  const impactScores = calculateImpactScores(players);
+  return `<section class="score-table-grid">
+    <div class="score-table-panel score-table-panel-main">
+      <header><p class="eyebrow">Scoreboard totals</p><h3>Raw stats</h3><small>Sort each column to inspect volume, pressure, and support.</small></header>
+      ${renderScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage)}
+    </div>
+    <aside class="score-table-panel impact-panel">
+      <header><p class="eyebrow">Impact formula</p><h3>Impact ranking</h3><small>Kills 20% | Assists 10% | Damage 20% | Fort 30% | Objectives 10% | Survival 10%</small></header>
+      ${renderImpactTable(impactScores)}
+    </aside>
+  </section>${renderScoreSortScript()}`;
+}
+
 function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string, canManage: boolean): string {
   return `<div class="score-table-wrap"><table class="score-table" data-score-table data-score-sort="${sortKey}">
     <thead><tr><th>${renderScoreSortButton("Player", "player", sortKey)}</th><th>${renderScoreSortButton("Wars", "wars", sortKey)}</th><th>${renderScoreSortButton("K", "kills", sortKey)}</th><th>${renderScoreSortButton("D", "deaths", sortKey)}</th><th>${renderScoreSortButton("K/D", "kd", sortKey)}</th><th>${renderScoreSortButton("Damage", "damage", sortKey)}</th><th>${renderScoreSortButton("Taken", "taken", sortKey)}</th><th>${renderScoreSortButton("CC", "cc", sortKey)}</th><th>${renderScoreSortButton("Healed", "healed", sortKey)}</th><th>${renderScoreSortButton("Structure", "structure", sortKey)}</th></tr></thead>
@@ -1651,7 +1676,47 @@ function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, so
         }
       )
       .join("")}</tbody>
-  </table></div>${renderScoreSortScript()}`;
+  </table></div>`;
+}
+
+function renderImpactTable(impactScores: PlayerImpactScore[]): string {
+  const topScore = Math.max(1, ...impactScores.map((impact) => impact.score));
+  return `<div class="impact-summary">
+    <span><b>${impactScores.length}</b><small>ranked players</small></span>
+    <span><b>${impactScores[0] ? impactScores[0].score.toFixed(1) : "0.0"}</b><small>top impact</small></span>
+  </div>
+  <div class="score-table-wrap impact-table-wrap"><table class="score-table impact-table" data-score-table data-score-sort="impact">
+    <thead><tr><th>${renderScoreSortButton("Player", "player", "impact")}</th><th>${renderScoreSortButton("Impact", "impact", "impact")}</th><th>${renderScoreSortButton("Fort", "structure", "impact")}</th><th>${renderScoreSortButton("Obj", "objective", "impact")}</th><th>${renderScoreSortButton("Surv", "survival", "impact")}</th></tr></thead>
+    <tbody>${impactScores
+      .map((impact, index) => {
+        const player = impact.player;
+        const topClass = index < 3 ? ` impact-rank-top impact-rank-${index + 1}` : "";
+        return `<tr class="${topClass}" data-player="${escapeHtml(player.familyName.toLowerCase())}" data-impact="${impact.score}" data-structure="${impact.structureScore}" data-objective="${impact.objectiveScore}" data-survival="${impact.survivalScore}">
+          <td><span class="impact-player"><b>${index + 1}</b><strong>${escapeHtml(player.familyName)}</strong></span><span class="impact-bar"><i style="width:${Math.max(4, Math.round((impact.score / topScore) * 100))}%"></i></span></td>
+          <td><strong>${impact.score.toFixed(1)}</strong></td>
+          <td>${impact.structureScore.toFixed(0)}</td>
+          <td>${impact.objectiveScore.toFixed(0)}</td>
+          <td>${impact.survivalScore.toFixed(0)}</td>
+        </tr>
+        <tr class="impact-breakdown" data-player="${escapeHtml(player.familyName.toLowerCase())}" data-impact="${impact.score}" data-structure="${impact.structureScore}" data-objective="${impact.objectiveScore}" data-survival="${impact.survivalScore}">
+          <td colspan="5">
+            <div>
+              ${renderImpactChip("K", impact.killsScore, "kills")}
+              ${renderImpactChip("A", impact.assistsScore, "assists")}
+              ${renderImpactChip("DMG", impact.damageScore, "damage")}
+              ${renderImpactChip("FORT", impact.structureScore, "structure")}
+              ${renderImpactChip("OBJ", impact.objectiveScore, "objective")}
+              ${renderImpactChip("LIFE", impact.survivalScore, "survival")}
+            </div>
+          </td>
+        </tr>`;
+      })
+      .join("")}</tbody>
+  </table></div>`;
+}
+
+function renderImpactChip(label: string, score: number, tone: string): string {
+  return `<span class="impact-chip impact-chip-${escapeHtml(tone)}"><b>${escapeHtml(label)}</b><small>${score.toFixed(0)}</small></span>`;
 }
 
 function renderPlayerRenameControl(familyName: string, guildId: string, csrfToken: string): string {
@@ -1667,7 +1732,7 @@ function renderPlayerRenameControl(familyName: string, guildId: string, csrfToke
   </details>`;
 }
 
-function renderScoreSortButton(label: string, key: string, sortKey: ScoreSortKey): string {
+function renderScoreSortButton(label: string, key: string, sortKey: string): string {
   const active = key === sortKey ? " active" : "";
   return `<button class="score-sort-button${active}" type="button" data-score-sort-key="${escapeHtml(key)}" aria-label="Sort by ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
 }
@@ -1675,35 +1740,52 @@ function renderScoreSortButton(label: string, key: string, sortKey: ScoreSortKey
 function renderScoreSortScript(): string {
   return `<script>
 (() => {
-  const table = document.querySelector("[data-score-table]");
-  if (!table) return;
-  const tbody = table.tBodies[0];
-  const buttons = [...table.querySelectorAll("[data-score-sort-key]")];
-  let activeKey = table.dataset.scoreSort || "wars";
-  let direction = activeKey === "player" ? "asc" : "desc";
-  const readValue = (row, key) => key === "player" ? row.dataset.player || "" : Number(row.dataset[key] || 0);
-  const applySort = (key, nextDirection) => {
-    const rows = [...tbody.rows];
-    rows.sort((left, right) => {
-      const leftValue = readValue(left, key);
-      const rightValue = readValue(right, key);
-      const compared = typeof leftValue === "string" ? leftValue.localeCompare(String(rightValue)) : leftValue - Number(rightValue);
-      return nextDirection === "asc" ? compared : -compared;
-    });
-    rows.forEach((row) => tbody.appendChild(row));
-    activeKey = key;
-    direction = nextDirection;
+  document.querySelectorAll("[data-score-table]").forEach((table) => {
+    const tbody = table.tBodies[0];
+    if (!tbody) return;
+    const buttons = [...table.querySelectorAll("[data-score-sort-key]")];
+    let activeKey = table.dataset.scoreSort || "wars";
+    let direction = activeKey === "player" ? "asc" : "desc";
+    const readValue = (row, key) => key === "player" ? row.dataset.player || "" : Number(row.dataset[key] || 0);
+    const rowGroups = () => {
+      const groups = [];
+      for (let index = 0; index < tbody.rows.length; index += 1) {
+        const row = tbody.rows[index];
+        const nextRow = tbody.rows[index + 1];
+        if (nextRow && nextRow.classList.contains("impact-breakdown")) {
+          groups.push([row, nextRow]);
+          index += 1;
+        } else {
+          groups.push([row]);
+        }
+      }
+      return groups;
+    };
+    const applySort = (key, nextDirection) => {
+      const groups = rowGroups();
+      groups.sort((leftGroup, rightGroup) => {
+        const left = leftGroup[0];
+        const right = rightGroup[0];
+        const leftValue = readValue(left, key);
+        const rightValue = readValue(right, key);
+        const compared = typeof leftValue === "string" ? leftValue.localeCompare(String(rightValue)) : leftValue - Number(rightValue);
+        return nextDirection === "asc" ? compared : -compared;
+      });
+      groups.flat().forEach((row) => tbody.appendChild(row));
+      activeKey = key;
+      direction = nextDirection;
+      buttons.forEach((button) => {
+        const active = button.dataset.scoreSortKey === activeKey;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-sort", active ? direction : "none");
+      });
+    };
     buttons.forEach((button) => {
-      const active = button.dataset.scoreSortKey === activeKey;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-sort", active ? direction : "none");
-    });
-  };
-  buttons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const key = button.dataset.scoreSortKey || "wars";
-      const nextDirection = key === activeKey && direction === "desc" ? "asc" : key === "player" ? "asc" : "desc";
-      applySort(key, nextDirection);
+      button.addEventListener("click", () => {
+        const key = button.dataset.scoreSortKey || "wars";
+        const nextDirection = key === activeKey && direction === "desc" ? "asc" : key === "player" ? "asc" : "desc";
+        applySort(key, nextDirection);
+      });
     });
   });
 })();
@@ -1857,6 +1939,42 @@ function aggregateScoreRows(rows: ScoreRow[]): PlayerScoreAggregate[] {
       right.kills - left.kills ||
       left.familyName.localeCompare(right.familyName)
   );
+}
+
+function calculateImpactScores(players: PlayerScoreAggregate[]): PlayerImpactScore[] {
+  const maxKills = Math.max(1, ...players.map((player) => player.kills));
+  const maxAssists = Math.max(1, ...players.map((player) => player.assists));
+  const maxDamage = Math.max(1, ...players.map((player) => player.damageDealt));
+  const maxStructure = Math.max(1, ...players.map((player) => player.structureDamage));
+  const objectiveRaw = (player: PlayerScoreAggregate): number =>
+    player.crowdControls + player.resurrections * 5 + Math.round((player.hpHealed + player.allySupport) / 100_000);
+  const maxObjective = Math.max(1, ...players.map(objectiveRaw));
+  const normalized = (value: number, maxValue: number): number => Math.min(100, (value / maxValue) * 100);
+
+  return players
+    .map((player) => {
+      const killsScore = normalized(player.kills, maxKills);
+      const assistsScore = normalized(player.assists, maxAssists);
+      const damageScore = normalized(player.damageDealt, maxDamage);
+      const structureScore = normalized(player.structureDamage, maxStructure);
+      const rawObjective = objectiveRaw(player);
+      const objectiveScore = normalized(rawObjective, maxObjective);
+      const deathsPerWar = player.participations ? player.deaths / player.participations : player.deaths;
+      const survivalScore = Math.max(0, Math.min(100, 100 - deathsPerWar * 12));
+      const score = killsScore * 0.2 + assistsScore * 0.1 + damageScore * 0.2 + structureScore * 0.3 + objectiveScore * 0.1 + survivalScore * 0.1;
+
+      return {
+        player,
+        score,
+        killsScore,
+        assistsScore,
+        damageScore,
+        structureScore,
+        objectiveScore,
+        survivalScore
+      };
+    })
+    .sort((left, right) => right.score - left.score || right.player.structureDamage - left.player.structureDamage || right.player.damageDealt - left.player.damageDealt || left.player.familyName.localeCompare(right.player.familyName));
 }
 
 function sortScoreAggregates(players: PlayerScoreAggregate[], sortKey: ScoreSortKey): PlayerScoreAggregate[] {
