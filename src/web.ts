@@ -1348,6 +1348,7 @@ function renderOsShellScript(): string {
       var input = document.getElementById("server-pick-input");
       var output = document.getElementById("server-pick-output");
       var terminal = document.querySelector(".server-pick-terminal");
+      var cursor = terminal ? terminal.querySelector(".terminal-prompt-cursor") : null;
       if (!form || !input || !output || !terminal) {
         console.warn("[nwhelper] server picker elements missing", { form: !!form, input: !!input, output: !!output, terminal: !!terminal });
         return;
@@ -1524,6 +1525,7 @@ function renderOsShellScript(): string {
       function handleSubmit(raw) {
         try {
           var text = String(raw || "").trim();
+          console.log("[nwhelper] handleSubmit:", JSON.stringify(text), "servers:", serversData.length);
           echoPrompt(text);
           if (!text) return;
           history.push(text);
@@ -1590,10 +1592,21 @@ function renderOsShellScript(): string {
       }
 
       form.addEventListener("submit", function (e) {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
         var val = input.value;
         input.value = "";
         handleSubmit(val);
+        return false;
+      });
+
+      input.addEventListener("keypress", function (e) {
+        if (e.key === "Enter" || e.keyCode === 13) {
+          if (e && e.preventDefault) e.preventDefault();
+          var val = input.value;
+          input.value = "";
+          handleSubmit(val);
+        }
       });
 
       input.addEventListener("keydown", function (e) {
@@ -1611,10 +1624,17 @@ function renderOsShellScript(): string {
           setTimeout(function () { input.setSelectionRange(input.value.length, input.value.length); }, 0);
         } else if (e.key === "Enter") {
           e.preventDefault();
+          e.stopPropagation();
           var val = input.value;
           input.value = "";
+          console.log("[nwhelper] enter:", JSON.stringify(val));
           handleSubmit(val);
+          if (cursor) cursor.classList.remove("is-typing");
         }
+      });
+
+      input.addEventListener("input", function () {
+        if (cursor) cursor.classList.toggle("is-typing", input.value.length > 0);
       });
 
       function attachItemClick() {
@@ -1922,9 +1942,12 @@ function renderServersPicker(session: WebSession, summaries: GuildDashboardSumma
       <div class="terminal-line t-info">│ <span class="t-comment"># or just type a server name / number to jump there.</span></div>
       <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
     </div>
-    <form class="terminal-prompt-form" id="server-pick-form" autocomplete="off" onsubmit="return false;">
+    <form class="terminal-prompt-form" id="server-pick-form" action="javascript:void(0)" autocomplete="off" onsubmit="return false;">
       <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span>servers<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
-      <input type="text" id="server-pick-input" class="terminal-prompt-input" placeholder="ls | cd 1 | goto Zenolitee's server | help" autofocus spellcheck="false" />
+      <div class="terminal-prompt-input-wrap">
+        <input type="text" id="server-pick-input" class="terminal-prompt-input" placeholder="ls | cd 1 | goto Zenolitee's server | help" autofocus spellcheck="false" autocapitalize="off" autocorrect="off" />
+        <span class="t-cursor terminal-prompt-cursor" aria-hidden="true">▮</span>
+      </div>
     </form>
   </section>`;
 
@@ -2642,14 +2665,17 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
   const kdTone = killDeathPercent >= 200 ? "good" : killDeathPercent >= 100 ? "ok" : "low";
   const confidence = report.ocrConfidence === undefined ? "n/a" : `${Math.round(report.ocrConfidence)}%`;
   const resultTone = report.result === "win" ? "win" : report.result === "loss" ? "loss" : "unknown";
+  const truncatedEngine = report.ocrEngine.length > 18 ? report.ocrEngine.slice(0, 15) + "…" : report.ocrEngine;
   return `<article class="report-card">
     <div class="report-card-head">
       <p class="eyebrow report-result report-result-${resultTone}">${escapeHtml(report.result)}</p>
       <h3>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h3>
-      <small>${formatDateLabel(report.warDate)}</small>
-      <small>${escapeHtml(report.ocrEngine)}</small>
-      <small>OCR ${escapeHtml(confidence)}</small>
-      <small>Uploaded by ${escapeHtml(report.uploadedBy ?? "Unknown")}</small>
+      <div class="report-card-meta">
+        <span class="report-meta-row"><span class="t-muted">date</span><b>${formatDateLabel(report.warDate)}</b></span>
+        <span class="report-meta-row"><span class="t-muted">ocr</span><b title="${escapeHtml(report.ocrEngine)}">${escapeHtml(truncatedEngine)}</b></span>
+        <span class="report-meta-row"><span class="t-muted">conf</span><b>${escapeHtml(confidence)}</b></span>
+        <span class="report-meta-row"><span class="t-muted">by</span><b>${escapeHtml((report.uploadedBy ?? "Unknown").slice(0, 14))}</b></span>
+      </div>
     </div>
     <dl>
       <div><dt>Players</dt><dd>${rows.length}</dd></div>
@@ -2658,11 +2684,12 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
       <div><dt>K/D %</dt><dd><span class="kd-pill kd-${kdTone}">${killDeathPercent}%</span></dd></div>
       <div><dt>Damage</dt><dd>${formatStatNumber(damage)}</dd></div>
     </dl>
-    <div class="report-actions${canManage ? "" : " report-actions-view"}">
-      <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/preview?guild=${encodeURIComponent(report.guildId)}" target="_blank" rel="noopener">Preview</a>
-      ${canManage ? `<a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}">Edit</a>
-      <button class="button button-secondary" type="button" data-report-action="rescan" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}">Rescan</button>
-      <button class="button button-secondary danger-button" type="button" data-report-action="delete" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}">Delete</button>` : ""}
+    <div class="report-actions${canManage ? " report-actions-manage" : " report-actions-view"}">
+      <span class="report-actions-prompt">nwhelper<span class="t-muted">@</span>reports<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
+      <a class="report-action" href="/stats/reports/${encodeURIComponent(report.id)}/preview?guild=${encodeURIComponent(report.guildId)}" target="_blank" rel="noopener"><span class="report-action-prompt">&gt;</span> preview</a>
+      ${canManage ? `<a class="report-action" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}"><span class="report-action-prompt">&gt;</span> edit</a>
+      <button class="report-action" type="button" data-report-action="rescan" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}"><span class="report-action-prompt">&gt;</span> rescan</button>
+      <button class="report-action report-action-danger" type="button" data-report-action="delete" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}"><span class="report-action-prompt">&gt;</span> delete</button>` : ""}
     </div>
   </article>`;
 }
