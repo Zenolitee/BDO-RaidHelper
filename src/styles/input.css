@@ -2656,14 +2656,14 @@ h1 {
   grid-template-columns: 1fr;
 }
 
+.report-actions form {
+  display: contents;
+}
+
 .report-actions form,
 .report-actions .button {
   margin: 0;
   width: 100%;
-}
-
-.report-actions form {
-  display: grid;
 }
 
 .report-actions .button,

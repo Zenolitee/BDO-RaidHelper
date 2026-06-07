@@ -1357,14 +1357,32 @@ function renderOsShellScript(): string {
             if (serversData[i].idx === numeric) return serversData[i];
           }
         }
-        for (var j = 0; j < serversData.length; j++) {
-          if (serversData[j].lower === q) return serversData[j];
+        var candidates = [q];
+        var firstWord = q.split(/\\s+/)[0];
+        if (firstWord && firstWord !== q) candidates.push(firstWord);
+        var noSlash = q.replace(/\\s*\\/\\s*\\S+/g, "").trim();
+        if (noSlash && noSlash !== q) candidates.push(noSlash);
+        for (var c = 0; c < candidates.length; c++) {
+          var cq = candidates[c];
+          for (var j = 0; j < serversData.length; j++) {
+            if (serversData[j].lower === cq) return serversData[j];
+          }
         }
         for (var k = 0; k < serversData.length; k++) {
           if (serversData[k].lower.indexOf(q) === 0) return serversData[k];
         }
         for (var l = 0; l < serversData.length; l++) {
           if (serversData[l].lower.indexOf(q) !== -1) return serversData[l];
+        }
+        for (var m = 0; m < serversData.length; m++) {
+          for (var n = 0; n < candidates.length; n++) {
+            if (serversData[m].lower.indexOf(candidates[n]) === 0) return serversData[m];
+          }
+        }
+        for (var o = 0; o < serversData.length; o++) {
+          for (var p = 0; p < candidates.length; p++) {
+            if (serversData[o].lower.indexOf(candidates[p]) !== -1) return serversData[o];
+          }
         }
         return null;
       }
@@ -1536,6 +1554,11 @@ function renderOsShellScript(): string {
           histIdx = Math.min(history.length, histIdx + 1);
           input.value = histIdx === history.length ? "" : history[histIdx];
           setTimeout(function () { input.setSelectionRange(input.value.length, input.value.length); }, 0);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          var val = input.value;
+          input.value = "";
+          handleSubmit(val);
         }
       });
 
@@ -1818,7 +1841,7 @@ function renderServersPicker(session: WebSession, summaries: GuildDashboardSumma
       <div class="terminal-line t-info">│ <span class="t-comment"># or just type a server name / number to jump there.</span></div>
       <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
     </div>
-    <form class="terminal-prompt-form" id="server-pick-form" autocomplete="off">
+    <form class="terminal-prompt-form" id="server-pick-form" autocomplete="off" onsubmit="return false;">
       <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span>servers<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
       <input type="text" id="server-pick-input" class="terminal-prompt-input" placeholder="ls | cd 1 | goto Zenolitee's server | help" autofocus spellcheck="false" />
     </form>
