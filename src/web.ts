@@ -1124,19 +1124,165 @@ function renderOsShellScript(): string {
         document.body.classList.add("bg-variant-2");
       }
     } catch (e) {}
+
+    var CARD_TERMINAL_SELECTOR = [
+      ".stat-card", ".event-card", ".server-card", ".role-table", ".schedule-panel",
+      ".schedule-editor", ".delivery-editor", ".slot-editor", ".empty-state",
+      ".welcome-state", ".server-picker", ".score-table-panel", ".score-edit-card",
+      ".score-leader-card", ".score-mix-card", ".score-trend-card", ".stats-upload-panel",
+      ".report-card", ".day-card", ".impact-panel", ".member-server-card",
+      ".member-raid-card", ".preview-card", ".template-grid", ".eyebrow-card",
+      ".current-roster-summary", ".stats-row", ".command-rail", ".readiness-panel",
+      ".primary-war-focus", ".telemetry-module", ".fetch-panel"
+    ].join(",");
+
+    var TONE_FOR_CLASS = {
+      "stats-row": "pink",
+      "stats-upload-panel": "magenta",
+      "score-table-panel": "green",
+      "score-mix-card": "magenta",
+      "score-leader-card": "green",
+      "score-trend-card": "cyan",
+      "score-edit-card": "yellow",
+      "impact-panel": "orange",
+      "preview-card": "cyan",
+      "event-card": "pink",
+      "server-card": "aqua",
+      "stat-card": "cyan",
+      "day-card": "yellow",
+      "report-card": "green",
+      "member-raid-card": "pink",
+      "member-server-card": "aqua",
+      "schedule-panel": "magenta",
+      "schedule-editor": "magenta",
+      "delivery-editor": "orange",
+      "role-table": "blue",
+      "fetch-panel": "pink",
+      "command-rail": "magenta",
+      "readiness-panel": "green",
+      "primary-war-focus": "pink",
+      "telemetry-module": "blue"
+    };
+
+    function deriveTitle(host) {
+      var eyebrow = host.querySelector(":scope > .eyebrow, :scope > header .eyebrow, :scope > header h1, :scope > header h2, :scope > header h3, :scope > h1, :scope > h2, :scope > h3");
+      if (eyebrow) {
+        var t = (eyebrow.textContent || "").trim();
+        if (t) return t.split("\\n")[0].slice(0, 32);
+      }
+      var h = host.querySelector("h1, h2, h3, h4, .server-name, .card-title-text, .title, header");
+      if (h) {
+        var t2 = (h.textContent || "").trim();
+        if (t2) return t2.split("\\n")[0].slice(0, 32);
+      }
+      var cls = (host.className || "").split(/\\s+/).filter(function (c) { return c && c.indexOf("data-") !== 0; })[0] || "panel";
+      return cls.replace(/-/g, " ").replace(/_/g, " ");
+    }
+
+    function deriveTone(host) {
+      var classes = (host.className || "").split(/\\s+/);
+      for (var i = 0; i < classes.length; i++) {
+        if (TONE_FOR_CLASS[classes[i]]) return TONE_FOR_CLASS[classes[i]];
+      }
+      return "cyan";
+    }
+
+    function wrapTerminal(host) {
+      if (host.dataset.terminalReady === "1") return;
+      var tone = deriveTone(host);
+      var title = deriveTitle(host);
+      var id = host.id || ("term-" + Math.random().toString(36).slice(2, 9));
+
+      host.id = id;
+      host.dataset.terminalReady = "1";
+      host.classList.add("is-terminal");
+      if (getComputedStyle(host).position === "static") {
+        host.style.position = "relative";
+      }
+
+      var titlebar = document.createElement("header");
+      titlebar.className = "card-titlebar t-" + tone;
+      titlebar.innerHTML =
+        '<span class="card-title">' + title + '</span>' +
+        '<span class="card-spacer"></span>' +
+        '<button type="button" class="card-min" data-card-action="min" title="minimize" aria-label="minimize">─</button>' +
+        '<button type="button" class="card-close" data-card-action="close" title="close" aria-label="close">×</button>';
+
+      host.insertBefore(titlebar, host.firstChild);
+    }
+
+    function ensureTerminals(root) {
+      var nodes = (root || document).querySelectorAll(CARD_TERMINAL_SELECTOR);
+      nodes.forEach(wrapTerminal);
+    }
+
+    ensureTerminals(document);
+
+    var mo = new MutationObserver(function (muts) {
+      muts.forEach(function (m) {
+        m.addedNodes.forEach(function (n) {
+          if (n.nodeType !== 1) return;
+          if (n.matches && n.matches(CARD_TERMINAL_SELECTOR)) wrapTerminal(n);
+          if (n.querySelectorAll) ensureTerminals(n);
+        });
+      });
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    document.addEventListener("click", function (e) {
+      var target = e.target;
+      if (!target || !target.closest) return;
+
+      var winBtn = target.closest("[data-win-action]");
+      if (winBtn) {
+        var win = winBtn.closest("[data-window]");
+        if (!win) return;
+        var action = winBtn.getAttribute("data-win-action");
+        if (action === "min") {
+          var minimized = win.getAttribute("data-minimized") === "true";
+          win.setAttribute("data-minimized", minimized ? "false" : "true");
+          winBtn.setAttribute("title", minimized ? "minimize" : "restore");
+        } else if (action === "close") {
+          win.style.transition = "opacity .25s ease, transform .25s ease, margin .25s ease, grid-template-rows .25s ease";
+          win.style.opacity = "0";
+          win.style.transform = "scale(.98)";
+          setTimeout(function () { win.style.display = "none"; }, 260);
+        }
+        return;
+      }
+
+      var cardBtn = target.closest("[data-card-action]");
+      if (cardBtn) {
+        var card = cardBtn.closest(CARD_TERMINAL_SELECTOR);
+        if (!card) return;
+        var caction = cardBtn.getAttribute("data-card-action");
+        if (caction === "min") {
+          var cmin = card.getAttribute("data-minimized") === "true";
+          card.setAttribute("data-minimized", cmin ? "false" : "true");
+          cardBtn.setAttribute("title", cmin ? "minimize" : "restore");
+        } else if (caction === "close") {
+          card.style.transition = "opacity .25s ease, transform .25s ease, grid-template-rows .25s ease";
+          card.style.opacity = "0";
+          card.style.transform = "scale(.98)";
+          setTimeout(function () { card.style.display = "none"; }, 260);
+        }
+      }
+    });
   })();
   </script>`;
 }
 
-function renderWindow(title: string, body: string, options: { prompt?: string; tone?: "cyan" | "pink" | "magenta" | "green" | "yellow" | "orange" | "aqua" | "blue" } = {}): string {
+function renderWindow(title: string, body: string, options: { prompt?: string; tone?: "cyan" | "pink" | "magenta" | "green" | "yellow" | "orange" | "aqua" | "blue"; id?: string } = {}): string {
   const tone = options.tone ?? "cyan";
   const prompt = options.prompt ?? "nwhelper@os";
-  return `<section class="os-window">
+  const idAttr = options.id ? ` id="${escapeHtml(options.id)}" data-window-id="${escapeHtml(options.id)}"` : "";
+  return `<section class="os-window" data-window${idAttr}>
     <header class="window-titlebar">
       <span class="win-tab t-${tone}"><span class="win-tab-icon">▶</span><span>${escapeHtml(title)}</span></span>
       <span class="win-spacer"></span>
       <span class="win-meta"><span class="sep">┌──(</span>${escapeHtml(prompt)}<span class="sep">)</span></span>
-      <span class="win-close" title="close">×</span>
+      <button class="win-min" type="button" data-win-action="min" title="minimize" aria-label="minimize">─</button>
+      <button class="win-close" type="button" data-win-action="close" title="close" aria-label="close">×</button>
     </header>
     <div class="window-body">${body}</div>
   </section>`;
