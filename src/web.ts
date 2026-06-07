@@ -1235,7 +1235,7 @@ function renderOsShellScript(): string {
     function toggleMin(host) {
       var next = host.getAttribute("data-minimized") === "true" ? "false" : "true";
       host.setAttribute("data-minimized", next);
-      var btn = host.querySelector("[data-card-action=\"min\"]");
+      var btn = host.querySelector('[data-card-action="min"]');
       if (btn) {
         btn.textContent = next === "true" ? "▢" : "─";
         btn.setAttribute("title", next === "true" ? "restore" : "minimize");
@@ -1262,7 +1262,7 @@ function renderOsShellScript(): string {
         if (action === "min") {
           var minimized = win.getAttribute("data-minimized") === "true";
           win.setAttribute("data-minimized", minimized ? "false" : "true");
-          var wb = win.querySelector("[data-win-action=\"min\"]");
+          var wb = win.querySelector('[data-win-action="min"]');
           if (wb) {
             wb.textContent = minimized ? "─" : "▢";
             wb.setAttribute("title", minimized ? "minimize" : "restore");
@@ -1357,7 +1357,7 @@ function renderOsShellScript(): string {
       var serversData = [];
       try {
         var raw = terminal.getAttribute("data-servers") || "";
-        serversData = JSON.parse(raw.replace(/&quot;/g, "\""));
+        serversData = JSON.parse(raw.replace(/&quot;/g, '\\"'));
       } catch (e) { serversData = []; }
 
       var history = [];
@@ -2390,7 +2390,7 @@ function renderStatsDashboard(
       ${players.length ? `${renderScoreGraphics(players, reports)}${renderScoreTables(players, topDamage, sortKey, guild.id, session.csrfToken, canManage)}` : `<div class="empty-state compact-empty"><h2>No score data yet</h2><p>${canManage ? "Upload a scoreboard screenshot to start tracking player performance." : "No score data has been uploaded for this server yet."}</p></div>`}
     </section>
     <section class="section-title stats-title"><div><p class="eyebrow">Reports</p><h2>Recent scoreboards</h2></div><span>${reports.length} stored</span></section>
-    <section class="report-grid">${reports.slice(0, 8).map((report) => renderReportCard(report, session.csrfToken, canManage)).join("") || "<div class=\"empty-state compact-empty\"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>"}</section>
+    ${renderReportsTerminal(reports, session.csrfToken, canManage)}
   </main>`;
 }
 
@@ -2692,6 +2692,130 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
       <button class="report-action report-action-danger" type="button" data-report-action="delete" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}"><span class="report-action-prompt">&gt;</span> delete</button>` : ""}
     </div>
   </article>`;
+}
+
+function renderReportsTerminal(reports: ScoreReport[], csrfToken: string, canManage: boolean): string {
+  if (!reports.length) {
+    return `<div class="empty-state compact-empty"><h2>No reports stored</h2><p>Uploaded screenshots will appear here.</p></div>`;
+  }
+  const sorted = [...reports].sort((a, b) => b.warDate.localeCompare(a.warDate));
+  const reportsJson = JSON.stringify(
+    sorted.map((r) => ({
+      id: r.id,
+      guildId: r.guildId,
+      title: r.title || formatDateLabel(r.warDate),
+      warDate: formatDateLabel(r.warDate),
+      ocrEngine: r.ocrEngine,
+      confidence: r.ocrConfidence === undefined ? "n/a" : `${Math.round(r.ocrConfidence)}%`,
+      uploadedBy: r.uploadedBy ?? "Unknown",
+      result: r.result,
+      rows: r.rows,
+      csrfToken
+    }))
+  ).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+
+  const rail = `<aside class="report-terminal-rail">
+    <p class="report-terminal-eyebrow">scoreboards <span>${sorted.length}</span></p>
+    <ul class="report-terminal-list" id="report-terminal-list">${sorted.map((r, idx) => {
+      const kills = r.rows.reduce((s, row) => s + row.kills, 0);
+      const deaths = r.rows.reduce((s, row) => s + row.deaths, 0);
+      const resultTone = r.result === "win" ? "win" : r.result === "loss" ? "loss" : "unknown";
+      return `<li class="report-terminal-item${idx === 0 ? " is-active" : ""}" data-report-idx="${idx}">
+        <span class="report-terminal-pill report-result-${resultTone}">${escapeHtml(r.result)}</span>
+        <span class="report-terminal-date">${escapeHtml(formatDateLabel(r.warDate))}</span>
+        <span class="report-terminal-counts">${r.rows.length}p · ${formatStatNumber(kills)}k</span>
+      </li>`;
+    }).join("")}</ul>
+    <p class="report-terminal-hint">click any scoreboard to view details</p>
+  </aside>`;
+
+  const panel = `<section class="report-terminal-panel" data-reports="${reportsJson}">
+    <div class="report-terminal-output" id="report-terminal-output">
+      <div class="terminal-line t-info">┌── nwhelper@reports:~</div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># select a scoreboard on the left to preview, edit, or delete it.</span></div>
+      <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
+    </div>
+  </section>`;
+
+  return `<section class="report-terminal-shell" data-report-terminal>
+    ${rail}
+    ${panel}
+  </section>${renderReportsTerminalScript()}`;
+}
+
+function renderReportsTerminalScript(): string {
+  return `<script>
+(() => {
+  function bind() {
+    document.querySelectorAll("[data-report-terminal]").forEach(function (root) {
+      if (root.dataset.terminalBound === "1") return;
+      root.dataset.terminalBound = "1";
+      var panel = root.querySelector(".report-terminal-panel");
+      var output = root.querySelector("#report-terminal-output");
+      var items = root.querySelectorAll(".report-terminal-item");
+      if (!panel || !output || !items.length) return;
+
+      var reports = [];
+      try { reports = JSON.parse((panel.getAttribute("data-reports") || "").replace(/&quot;/g, '"').replace(/&#39;/g, "'")); } catch (e) { reports = []; }
+
+      function escapeHtml(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+      function line(text, kind) {
+        var div = document.createElement("div");
+        div.className = "terminal-line " + (kind ? "t-" + kind : "");
+        div.textContent = text;
+        output.appendChild(div);
+        output.scrollTop = output.scrollHeight;
+      }
+      function lineHTML(html) {
+        var div = document.createElement("div");
+        div.className = "terminal-line";
+        div.innerHTML = html;
+        output.appendChild(div);
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function showReport(idx) {
+        var r = reports[idx];
+        if (!r) return;
+        items.forEach(function (el) { el.classList.toggle("is-active", Number(el.getAttribute("data-report-idx")) === idx); });
+        var totalKills = r.rows.reduce(function (s, row) { return s + (row.kills || 0); }, 0);
+        var totalDeaths = r.rows.reduce(function (s, row) { return s + (row.deaths || 0); }, 0);
+        var totalDamage = r.rows.reduce(function (s, row) { return s + (row.damageDealt || 0); }, 0);
+        var kd = totalDeaths ? Math.round((totalKills / totalDeaths) * 100) : (totalKills ? 100 : 0);
+        line("", null);
+        line("━━ " + r.warDate + "  " + r.title + " ━━", "cyan");
+        line("  result     " + r.result, r.result === "win" ? "success" : r.result === "loss" ? "error" : "muted");
+        line("  ocr        " + r.ocrEngine + " (conf " + r.confidence + ")", "muted");
+        line("  uploaded   " + r.uploadedBy, "muted");
+        line("  players    " + r.rows.length, "info");
+        line("  kills      " + totalKills.toLocaleString(), "info");
+        line("  deaths     " + totalDeaths.toLocaleString(), "info");
+        line("  k/d %      " + kd + "%", kd >= 200 ? "success" : kd >= 100 ? "warn" : "error");
+        line("  damage     " + totalDamage.toLocaleString(), "info");
+        line("", null);
+        line("> commands:", "comment");
+        line("  preview  →  /stats/reports/" + r.id + "/preview", "key");
+        line("  edit     →  /stats/reports/" + r.id + "/edit", "key");
+        line("  rescan   →  POST /stats/reports/" + r.id + "/rescan", "key");
+        line("  delete   →  POST /stats/reports/" + r.id + "/delete", "error");
+      }
+
+      items.forEach(function (item) {
+        item.addEventListener("click", function () {
+          showReport(Number(item.getAttribute("data-report-idx")));
+        });
+      });
+
+      // Show first report by default
+      showReport(0);
+    });
+  }
+  bind();
+  try { new MutationObserver(bind).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+})();
+</script>`;
 }
 
 function renderScoreReportEditor(guild: DiscordGuild, session: WebSession, report: ScoreReport): string {
