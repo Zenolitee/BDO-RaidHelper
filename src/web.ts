@@ -1289,6 +1289,49 @@ function renderOsShellScript(): string {
         return;
       }
 
+      var reportBtn = target.closest("[data-report-action]");
+      if (reportBtn) {
+        e.preventDefault();
+        var raction = reportBtn.getAttribute("data-report-action");
+        var rid = reportBtn.getAttribute("data-report-id");
+        var rgid = reportBtn.getAttribute("data-guild-id");
+        var rcsrf = reportBtn.getAttribute("data-csrf");
+        if (!raction || !rid || !rgid || !rcsrf) return;
+        if (raction === "delete") {
+          if (!confirm("Delete this scoreboard and uploaded image?")) return;
+        }
+        reportBtn.disabled = true;
+        var origText = reportBtn.textContent;
+        reportBtn.textContent = raction === "delete" ? "Deleting…" : "Rescanning…";
+        var body = new URLSearchParams();
+        body.set("csrfToken", rcsrf);
+        body.set("guildId", rgid);
+        fetch("/stats/reports/" + encodeURIComponent(rid) + "/" + raction, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+          redirect: "follow"
+        }).then(function (resp) {
+          if (resp.redirected) {
+            window.location.href = resp.url;
+            return;
+          }
+          if (!resp.ok) {
+            reportBtn.disabled = false;
+            reportBtn.textContent = origText;
+            return resp.text().then(function (t) {
+              alert((raction === "delete" ? "Delete" : "Rescan") + " failed: " + (t || resp.statusText));
+            });
+          }
+          window.location.reload();
+        }).catch(function (err) {
+          reportBtn.disabled = false;
+          reportBtn.textContent = origText;
+          alert("Network error: " + (err && err.message ? err.message : err));
+        });
+        return;
+      }
+
       var cardTitlebar = target.closest(".card-titlebar");
       if (cardTitlebar) {
         var titlebarHost = cardTitlebar.parentElement;
@@ -2402,16 +2445,53 @@ function renderMetricLeaderboard(
 
 function renderScoreTables(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string, canManage: boolean): string {
   const impactScores = calculateImpactScores(players);
-  return `<section class="score-table-grid">
-    <div class="score-table-panel score-table-panel-main">
+  return `<section class="score-table-tabs" data-score-tabs>
+    <div class="score-tab-bar" role="tablist">
+      <button type="button" class="score-tab is-active" data-tab-target="scoreboard-totals" role="tab" aria-selected="true">▸ Scoreboard totals</button>
+      <button type="button" class="score-tab" data-tab-target="impact-formula" role="tab" aria-selected="false">▸ Impact formula</button>
+      <span class="score-tab-meta">Kills 20% · Assists 10% · Damage 20% · Fort 30% · Obj 10% · Survive 10%</span>
+    </div>
+    <div class="score-table-panel score-table-panel-main score-tab-panel is-active" data-tab-panel="scoreboard-totals" role="tabpanel">
       <header><p class="eyebrow">Scoreboard totals</p><h3>Raw stats</h3><small>Sort each column to inspect volume, pressure, and support.</small></header>
       ${renderScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage)}
     </div>
-    <aside class="score-table-panel impact-panel">
-      <header><p class="eyebrow">Impact formula</p><h3>Impact ranking</h3><small>Kills 20% | Assists 10% | Damage 20% | Fort 30% | Objectives 10% | Survival 10%</small></header>
+    <div class="score-table-panel impact-panel score-tab-panel" data-tab-panel="impact-formula" role="tabpanel" hidden>
+      <header><p class="eyebrow">Impact formula</p><h3>Impact ranking</h3><small>Weighted score: Kills 20% | Assists 10% | Damage 20% | Fort 30% | Objectives 10% | Survival 10%</small></header>
       ${renderImpactTable(impactScores)}
-    </aside>
-  </section>${renderScoreSortScript()}`;
+    </div>
+  </section>${renderScoreSortScript()}${renderScoreTabsScript()}`;
+}
+
+function renderScoreTabsScript(): string {
+  return `<script>
+(() => {
+  function bind() {
+    document.querySelectorAll("[data-score-tabs]").forEach(function (root) {
+      if (root.dataset.tabsBound === "1") return;
+      root.dataset.tabsBound = "1";
+      var buttons = root.querySelectorAll("[data-tab-target]");
+      var panels = root.querySelectorAll("[data-tab-panel]");
+      buttons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var target = btn.getAttribute("data-tab-target");
+          buttons.forEach(function (b) {
+            var on = b === btn;
+            b.classList.toggle("is-active", on);
+            b.setAttribute("aria-selected", on ? "true" : "false");
+          });
+          panels.forEach(function (p) {
+            var on = p.getAttribute("data-tab-panel") === target;
+            p.classList.toggle("is-active", on);
+            if (on) { p.removeAttribute("hidden"); } else { p.setAttribute("hidden", ""); }
+          });
+        });
+      });
+    });
+  }
+  bind();
+  try { new MutationObserver(bind).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+})();
+</script>`;
 }
 
 function renderScoreTable(players: PlayerScoreAggregate[], topDamage: number, sortKey: ScoreSortKey, guildId: string, csrfToken: string, canManage: boolean): string {
