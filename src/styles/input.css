@@ -367,8 +367,14 @@ body::before {
   font-size: 0.7rem;
   color: var(--text);
   user-select: none;
+  cursor: pointer;
   transition: transform 0.35s cubic-bezier(.4,0,.2,1), opacity 0.3s ease, height 0.4s cubic-bezier(.4,0,.2,1);
 }
+
+.card-titlebar:hover { background: rgba(46, 52, 64, 0.9); }
+.card-titlebar > .card-title { cursor: pointer; }
+.card-titlebar > .card-min,
+.card-titlebar > .card-close { cursor: pointer; }
 
 .card-titlebar .card-title {
   display: inline-flex;
@@ -4393,7 +4399,7 @@ body {
 }
 
 .timeline-item time {
-  color: var(--accent);
+  color: var(--green);
   font-size: 0.78rem;
   font-weight: 900;
 }
@@ -4404,9 +4410,9 @@ body {
   width: 12px;
   height: 12px;
   margin-top: 4px;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--green);
   border-radius: 50%;
-  box-shadow: 0 0 18px rgba(242, 184, 75, 0.32);
+  box-shadow: 0 0 18px rgba(43, 228, 145, 0.32);
 }
 
 .timeline-node::after {
@@ -4415,7 +4421,7 @@ body {
   left: 4px;
   width: 2px;
   height: 52px;
-  background: rgba(242, 184, 75, 0.22);
+  background: rgba(43, 228, 145, 0.22);
   content: "";
 }
 
@@ -5282,7 +5288,6 @@ dl.member-telemetry dd {
 
 /* Terminal in event/score cards */
 .score-table-panel { padding: 14px 16px; }
-.score-ring { background: var(--terminal) !important; border-color: var(--line) !important; }
 
 /* Buttons inside forms */
 .score-edit-form button[type="submit"] { margin-top: 8px; }
