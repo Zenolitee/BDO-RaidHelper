@@ -81,7 +81,7 @@ body {
 }
 
 body.bg-variant-2 {
-  background-image: var(--bg-image-alt);
+  --bg-image: var(--bg-image-alt);
 }
 
 body::before {
@@ -3841,8 +3841,10 @@ body {
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     radial-gradient(circle at 62% 16%, rgba(106, 166, 255, 0.12), transparent 28%),
     radial-gradient(circle at 18% 10%, rgba(242, 184, 75, 0.12), transparent 24%),
-    var(--bg);
-  background-size: 32px 32px, 32px 32px, auto, auto, auto;
+    var(--bg-image);
+  background-size: 32px 32px, 32px 32px, auto, auto, cover;
+  background-position: 0 0, 0 0, 0 0, 0 0, center;
+  background-attachment: fixed, fixed, fixed, fixed, fixed;
 }
 
 .app-nav {
