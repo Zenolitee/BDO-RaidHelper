@@ -1073,6 +1073,9 @@ function renderPolybar(currentTitle: string, isLoggedIn: boolean): string {
 function renderOsShellScript(): string {
   return `<script>
   (function () {
+    try {
+    if (window.__nwhelpBoot) return; window.__nwhelpBoot = true;
+    console.log("[nwhelper] os shell booting…");
     var clockEl = document.querySelector("[data-pb-clock]");
     var uptimeEl = document.querySelector("[data-pb-uptime]");
     var raidsEl = document.querySelector("[data-pb-raids]");
@@ -1297,11 +1300,15 @@ function renderOsShellScript(): string {
     });
 
     (function initServerTerminal() {
+      try {
       var form = document.getElementById("server-pick-form");
       var input = document.getElementById("server-pick-input");
       var output = document.getElementById("server-pick-output");
       var terminal = document.querySelector(".server-pick-terminal");
-      if (!form || !input || !output || !terminal) return;
+      if (!form || !input || !output || !terminal) {
+        console.warn("[nwhelper] server picker elements missing", { form: !!form, input: !!input, output: !!output, terminal: !!terminal });
+        return;
+      }
 
       var serversData = [];
       try {
@@ -1472,66 +1479,71 @@ function renderOsShellScript(): string {
       }
 
       function handleSubmit(raw) {
-        var text = String(raw || "").trim();
-        echoPrompt(text);
-        if (!text) return;
-        history.push(text);
-        histIdx = history.length;
-        var parts = text.split(/\\s+/);
-        var cmd = parts[0].toLowerCase();
-        var arg = parts.slice(1).join(" ");
+        try {
+          var text = String(raw || "").trim();
+          echoPrompt(text);
+          if (!text) return;
+          history.push(text);
+          histIdx = history.length;
+          var parts = text.split(/\\s+/);
+          var cmd = parts[0].toLowerCase();
+          var arg = parts.slice(1).join(" ");
 
-        if (commands[cmd]) {
-          commands[cmd](arg);
-          return;
-        }
-        if (cmd === "cd" || cmd === "select") {
-          if (!arg) {
-            var sel = selectedServer();
-            if (sel) line("current selection: " + sel.name + " (#" + sel.idx + ")", "info");
-            else line("usage: cd <name|number> — or click a server on the left", "warn");
+          if (commands[cmd]) {
+            commands[cmd](arg);
             return;
           }
-          var s = findServer(arg);
-          if (!s) { line("no server matches '" + arg + "'", "error"); return; }
-          selectServer(s);
-          return;
-        }
-        if (cmd === "goto" || cmd === "open") {
-          if (!arg) {
-            var sel2 = selectedServer();
-            if (sel2) { navigateTo(sel2); return; }
-            line("usage: goto <name|number>", "warn");
+          if (cmd === "cd" || cmd === "select") {
+            if (!arg) {
+              var sel = selectedServer();
+              if (sel) line("current selection: " + sel.name + " (#" + sel.idx + ")", "info");
+              else line("usage: cd <name|number> — or click a server on the left", "warn");
+              return;
+            }
+            var s = findServer(arg);
+            if (!s) { line("no server matches '" + arg + "'", "error"); return; }
+            selectServer(s);
             return;
           }
-          var s2 = findServer(arg);
-          if (!s2) { line("no server matches '" + arg + "'", "error"); return; }
-          highlightServer(s2.id);
-          navigateTo(s2);
-          return;
-        }
-        if (cmd === "stats") {
-          var sel3 = selectedServer();
-          if (!sel3) { line("no server selected. type: cd <name>", "warn"); return; }
-          window.location.href = "/guilds/" + encodeURIComponent(sel3.id) + "/stats";
-          return;
-        }
-        if (cmd === "raids") {
-          var sel4 = selectedServer();
-          if (!sel4) { line("no server selected. type: cd <name>", "warn"); return; }
-          window.location.href = "/guilds/" + encodeURIComponent(sel4.id) + "/raids";
-          return;
-        }
+          if (cmd === "goto" || cmd === "open") {
+            if (!arg) {
+              var sel2 = selectedServer();
+              if (sel2) { navigateTo(sel2); return; }
+              line("usage: goto <name|number>", "warn");
+              return;
+            }
+            var s2 = findServer(arg);
+            if (!s2) { line("no server matches '" + arg + "'", "error"); return; }
+            highlightServer(s2.id);
+            navigateTo(s2);
+            return;
+          }
+          if (cmd === "stats") {
+            var sel3 = selectedServer();
+            if (!sel3) { line("no server selected. type: cd <name>", "warn"); return; }
+            window.location.href = "/guilds/" + encodeURIComponent(sel3.id) + "/stats";
+            return;
+          }
+          if (cmd === "raids") {
+            var sel4 = selectedServer();
+            if (!sel4) { line("no server selected. type: cd <name>", "warn"); return; }
+            window.location.href = "/guilds/" + encodeURIComponent(sel4.id) + "/raids";
+            return;
+          }
 
-        var direct = findServer(text);
-        if (direct) {
-          highlightServer(direct.id);
-          navigateTo(direct);
-          return;
-        }
+          var direct = findServer(text);
+          if (direct) {
+            highlightServer(direct.id);
+            navigateTo(direct);
+            return;
+          }
 
-        line("command not found: " + cmd, "error");
-        line("type 'help' for the list of commands", "muted");
+          line("command not found: " + cmd, "error");
+          line("type 'help' for the list of commands", "muted");
+        } catch (err) {
+          console.error("[nwhelper] handleSubmit error:", err);
+          try { line("internal error: " + (err && err.message ? err.message : String(err)), "error"); } catch (_) {}
+        }
       }
 
       form.addEventListener("submit", function (e) {
@@ -1562,33 +1574,59 @@ function renderOsShellScript(): string {
         }
       });
 
-      document.querySelectorAll(".server-pick-item").forEach(function (item) {
-        item.addEventListener("click", function () {
-          var id = item.getAttribute("data-server-id");
-          var s = null;
-          for (var i = 0; i < serversData.length; i++) {
-            if (serversData[i].id === id) { s = serversData[i]; break; }
-          }
-          if (!s) return;
-          highlightServer(s.id);
-          input.value = s.name;
-          input.focus();
-          setTimeout(function () { input.setSelectionRange(input.value.length, input.value.length); }, 0);
+      function attachItemClick() {
+        document.querySelectorAll(".server-pick-item").forEach(function (item) {
+          if (item.dataset.pickBound === "1") return;
+          item.dataset.pickBound = "1";
+          item.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var id = item.getAttribute("data-server-id");
+            var s = null;
+            for (var i = 0; i < serversData.length; i++) {
+              if (serversData[i].id === id) { s = serversData[i]; break; }
+            }
+            if (!s) { line("could not resolve clicked server", "error"); return; }
+            highlightServer(s.id);
+            input.value = s.name;
+            line("→ connecting to #" + s.idx + " " + s.name + "  (/" + s.id + "/stats)", "info");
+            setTimeout(function () {
+              window.location.href = "/guilds/" + encodeURIComponent(s.id) + "/stats";
+            }, 220);
+          });
         });
-      });
+      }
+      attachItemClick();
+
+      var moPick = new MutationObserver(function () { attachItemClick(); });
+      moPick.observe(document.body, { childList: true, subtree: true });
 
       document.addEventListener("click", function (e) {
         var t = e.target;
         if (!t || !t.closest) return;
         var inTerminal = t.closest(".server-pick-terminal");
         var inRail = t.closest(".server-pick-rail");
-        if (inTerminal || inRail) {
+        var inItem = t.closest(".server-pick-item");
+        if ((inTerminal || inRail) && !inItem) {
           setTimeout(function () { input.focus(); }, 0);
         }
       });
 
       setTimeout(function () { input.focus(); }, 30);
+
+      window.__nwhelpPick = { servers: serversData, run: handleSubmit, echo: line, goto: function (id) {
+        for (var i = 0; i < serversData.length; i++) {
+          if (serversData[i].id === id) { handleSubmit("goto " + serversData[i].name); return; }
+        }
+      }};
+      console.log("[nwhelper] server picker ready:", serversData.length, "server(s)");
+      } catch (err) {
+        console.error("[nwhelper] server picker init failed:", err);
+      }
     })();
+    } catch (err) {
+      console.error("[nwhelper] os shell error:", err);
+    }
   })();
   </script>`;
 }
@@ -2543,16 +2581,8 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
     <div class="report-actions${canManage ? "" : " report-actions-view"}">
       <a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/preview?guild=${encodeURIComponent(report.guildId)}" target="_blank" rel="noopener">Preview</a>
       ${canManage ? `<a class="button button-secondary" href="/stats/reports/${encodeURIComponent(report.id)}/edit?guild=${encodeURIComponent(report.guildId)}">Edit</a>
-      <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/rescan">
-        <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
-        <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
-        <button class="button button-secondary" type="submit">Rescan</button>
-      </form>
-      <form method="post" action="/stats/reports/${encodeURIComponent(report.id)}/delete" onsubmit="return confirm('Delete this scoreboard and uploaded image?')">
-        <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
-        <input type="hidden" name="guildId" value="${escapeHtml(report.guildId)}">
-        <button class="button button-secondary danger-button" type="submit">Delete</button>
-      </form>` : ""}
+      <button class="button button-secondary" type="button" data-report-action="rescan" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}">Rescan</button>
+      <button class="button button-secondary danger-button" type="button" data-report-action="delete" data-report-id="${escapeHtml(report.id)}" data-guild-id="${escapeHtml(report.guildId)}" data-csrf="${escapeHtml(csrfToken)}">Delete</button>` : ""}
     </div>
   </article>`;
 }
