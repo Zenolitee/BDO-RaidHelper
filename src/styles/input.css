@@ -38,6 +38,7 @@
   --white: #F9F9F9;
   --bg: var(--nord-bg);
   --bg-image: url("/assets/wallpaper.jpg");
+  --bg-image-alt: url("/assets/wallpaper-2.jpg");
   --board: rgba(46, 52, 64, 0.78);
   --board-solid: #2E3440;
   --panel: rgba(59, 66, 82, 0.7);
@@ -77,6 +78,10 @@ body {
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
+}
+
+body.bg-variant-2 {
+  background-image: var(--bg-image-alt);
 }
 
 body::before {
@@ -141,7 +146,16 @@ body::before {
 }
 
 .pb-tag:hover { filter: brightness(1.15); }
-.pb-tag.active { box-shadow: inset 0 -2px 0 currentColor; }
+.pb-tag.active {
+  box-shadow: inset 0 -2px 0 currentColor, 0 0 0 1px var(--pink);
+  transform: translateY(-1px);
+}
+.pb-tag[data-pb-nav].active::after {
+  content: "â–¾";
+  margin-left: 6px;
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
 
 .pb-tag .ic { margin-right: 6px; opacity: 0.9; }
 
@@ -164,6 +178,17 @@ body::before {
   background: var(--pink);
   color: var(--nord-bg);
 }
+
+.pb-day-spacer {
+  display: inline-block;
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--line);
+  opacity: 0.5;
+}
+
+.app-nav { display: none !important; }
 
 .pb-tag.bg-pink   { background: var(--pink);   color: var(--nord-bg); }
 .pb-tag.bg-green  { background: var(--green);  color: var(--nord-bg); }
@@ -5154,7 +5179,7 @@ dl.member-telemetry dd {
 }
 
 .fetch-panel .fetch-info dt::before {
-  content: "› ";
+  content: "ï¿½ ";
   color: var(--green);
 }
 

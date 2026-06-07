@@ -226,33 +226,33 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     const [events, settings] = session ? await Promise.all([store.listEvents(), store.getSettings()]) : [[], {} as BotSettings];
     if (session && guild) {
-      response.type("html").send(renderPage("NW Helper", renderEventList(events.filter((event) => event.guildId === guild.id), session, guildId, buildGuildDashboardSummaries(session.guilds, events, settings))));
+      response.type("html").send(renderPage("NW Helper", renderEventList(events.filter((event) => event.guildId === guild.id), session, guildId, buildGuildDashboardSummaries(session.guilds, events, settings)), { loggedIn: !!session, path: request.path }));
       return;
     }
-    response.type("html").send(renderPage("NW Helper", renderHome(events, session, settings)));
+    response.type("html").send(renderPage("NW Helper", renderHome(events, session, settings), { loggedIn: !!session, path: request.path }));
   });
 
   app.get("/guilds/:guildId/raids", async (request, response) => {
     const session = await getSession(request, sessions);
     const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
     if (!session || !guild) {
-      response.status(404).type("html").send(renderPage("Not found", renderLoginRequired()));
+      response.status(404).type("html").send(renderPage("Not found", renderLoginRequired(), { loggedIn: !!session, path: request.path }));
       return;
     }
     const events = await store.listEvents();
     const settings = await store.getSettings();
-    response.type("html").send(renderPage(`${guild.name} raids`, renderEventList(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events, settings))));
+    response.type("html").send(renderPage(`${guild.name} raids`, renderEventList(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events, settings)), { loggedIn: !!session, path: request.path }));
   });
 
   app.get("/raids", async (request, response) => {
     const session = await getSession(request, sessions);
     if (!session) {
-      response.status(403).type("html").send(renderPage("Raids", renderLoginRequired()));
+      response.status(403).type("html").send(renderPage("Raids", renderLoginRequired(), { loggedIn: !!session, path: request.path }));
       return;
     }
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
     const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
-    response.type("html").send(renderPage("All Raids", renderAllRaidsDashboard(session, summaries)));
+    response.type("html").send(renderPage("All Raids", renderAllRaidsDashboard(session, summaries), { loggedIn: !!session, path: request.path }));
   });
 
   app.get("/guilds/:guildId/stats", async (request, response) => {
@@ -262,23 +262,23 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.get("/servers", async (request, response) => {
     const session = await getSession(request, sessions);
     if (!session) {
-      response.status(403).type("html").send(renderPage("Servers", renderLoginRequired()));
+      response.status(403).type("html").send(renderPage("Servers", renderLoginRequired(), { loggedIn: !!session, path: request.path }));
       return;
     }
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
-    response.type("html").send(renderPage("Servers", renderServersPicker(session, buildGuildDashboardSummaries(session.guilds, events, settings))));
+    response.type("html").send(renderPage("Servers", renderServersPicker(session, buildGuildDashboardSummaries(session.guilds, events, settings)), { loggedIn: !!session, path: request.path }));
   });
 
   app.get("/member", async (request, response) => {
     const session = await getSession(request, sessions);
     if (!session) {
-      response.type("html").send(renderPage("Member View", renderMemberLogin()));
+      response.type("html").send(renderPage("Member View", renderMemberLogin(), { loggedIn: !!session, path: request.path }));
       return;
     }
 
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
     const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
-    response.type("html").send(renderPage("Member View", renderMemberDashboard(session, summaries)));
+    response.type("html").send(renderPage("Member View", renderMemberDashboard(session, summaries), { loggedIn: !!session, path: request.path }));
   });
 
   app.get("/stats", async (request, response) => {
@@ -290,14 +290,14 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     if (!session) {
-      response.status(403).type("html").send(renderPage("Stats", renderLoginRequired()));
+      response.status(403).type("html").send(renderPage("Stats", renderLoginRequired(), { loggedIn: !!session, path: request.path }));
       return;
     }
 
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
     const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
     if (!guild) {
-      response.type("html").send(renderPage("Stats", renderStatsServerPicker(session, summaries)));
+      response.type("html").send(renderPage("Stats", renderStatsServerPicker(session, summaries), { loggedIn: !!session, path: request.path }));
       return;
     }
 
@@ -316,9 +316,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
                 : request.query.renamed === "1"
                   ? "renamed"
                   : undefined;
-      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id), summaries)));
+      response.type("html").send(renderPage("Stats", renderStatsDashboard(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id), summaries), { loggedIn: !!session, path: request.path }));
     } catch (error) {
-      response.status(502).type("html").send(renderPage("Stats", renderWebError(error)));
+      response.status(502).type("html").send(renderPage("Stats", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   }
 
@@ -367,7 +367,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats upload failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats upload failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -386,9 +386,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         response.status(404).send("Score report not found.");
         return;
       }
-      response.type("html").send(renderPage("Edit scoreboard", renderScoreReportEditor(guild, session, report)));
+      response.type("html").send(renderPage("Edit scoreboard", renderScoreReportEditor(guild, session, report), { loggedIn: !!session, path: request.path }));
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -414,7 +414,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         .setHeader("Cache-Control", "private, max-age=300")
         .send(reportImage.imageBuffer);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats preview failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats preview failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -439,7 +439,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       console.info(`Score report ${request.params.id} manually edited by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); saved ${rows.length} rows.`);
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&saved=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats edit failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -461,7 +461,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       console.info(`Score player ${oldName} renamed to ${newName} by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); updated ${renamed} rows.`);
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&renamed=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats player rename failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats player rename failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -479,7 +479,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       console.info(`Score report ${request.params.id} deleted by ${formatUploader(session)} for guild ${guild.name} (${guild.id}).`);
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&deleted=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats delete failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats delete failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -517,7 +517,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       );
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&rescanned=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Stats rescan failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Stats rescan failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -568,7 +568,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.setHeader("Set-Cookie", sessionCookie(sessionId));
       response.redirect("/");
     } catch {
-      response.status(502).type("html").send(renderPage("Login failed", renderLoginError()));
+      response.status(502).type("html").send(renderPage("Login failed", renderLoginError(), { loggedIn: false, path: request.path }));
     }
   });
 
@@ -583,16 +583,16 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     if (!session) {
-      response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
+      response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired(), { loggedIn: !!session, path: request.path }));
       return;
     }
     if (!guildId) {
       const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
-      response.type("html").send(renderPage("Create Raid", renderCreateServerPicker(session, buildGuildDashboardSummaries(session.guilds, events, settings))));
+      response.type("html").send(renderPage("Create Raid", renderCreateServerPicker(session, buildGuildDashboardSummaries(session.guilds, events, settings)), { loggedIn: !!session, path: request.path }));
       return;
     }
     if (!canManageGuild(session, guildId)) {
-      response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired()));
+      response.status(403).type("html").send(renderPage("Create Raid", renderLoginRequired(), { loggedIn: !!session, path: request.path }));
       return;
     }
     try {
@@ -601,7 +601,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         .type("html")
         .send(renderPage("Create Raid", renderCreateRaid(guildId, session.csrfToken, session, deliveryOptions, settings.nodeWarChannelIds?.[guildId] ?? config.nodeWarChannelId)));
     } catch (error) {
-      response.status(502).type("html").send(renderPage("Create Raid", renderWebError(error)));
+      response.status(502).type("html").send(renderPage("Create Raid", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -654,7 +654,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       await store.createEvent(event);
       response.redirect(`/events/${event.id}/edit?created=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Create Raid", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Create Raid", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -662,23 +662,23 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const event = await store.getEvent(request.params.id);
     const session = await getSession(request, sessions);
     if (!event) {
-      response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
+      response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>", { loggedIn: !!session, path: request.path }));
       return;
     }
 
     const canManage = Boolean(event.guildId && session && canManageGuild(session, event.guildId));
     const deliveryOptions = event.guildId ? await fetchGuildDeliveryOptions(event.guildId).catch(() => undefined) : undefined;
-    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage, session, deliveryOptions)));
+    response.type("html").send(renderPage(event.title, renderEventDetail(event, canManage, session, deliveryOptions), { loggedIn: !!session, path: request.path }));
   });
 
   app.get("/events/:id/edit", async (request, response) => {
     const event = await store.getEvent(request.params.id);
     const session = await getSession(request, sessions);
     if (!event || !session || !canManageEvent(event, session)) {
-      response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>"));
+      response.status(404).type("html").send(renderPage("Not found", "<main><h1>Event not found</h1></main>", { loggedIn: !!session, path: request.path }));
       return;
     }
-    response.type("html").send(renderPage(`Edit ${event.title}`, renderEditRaid(event, session.csrfToken, session)));
+    response.type("html").send(renderPage(`Edit ${event.title}`, renderEditRaid(event, session.csrfToken, session), { loggedIn: !!session, path: request.path }));
   });
 
   app.post("/events/:id/composition", async (request, response) => {
@@ -727,7 +727,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       await refreshPostedEvent(options, updated);
       response.redirect(`/events/${event.id}/edit?saved=1`);
     } catch (error) {
-      response.status(400).type("html").send(renderPage("Composition update failed", renderWebError(error)));
+      response.status(400).type("html").send(renderPage("Composition update failed", renderWebError(error), { loggedIn: !!session, path: request.path }));
     }
   });
 
@@ -834,12 +834,12 @@ function formatUploader(session: WebSession): string {
 
 function renderLoginRequired(): string {
   const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to view servers you share with NW Helper. Moderator permissions are required for edits.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
-  return `${renderNav()}${renderWindow("sudo ./login", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("sudo ./login", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderLoginError(): string {
   const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login failed</h1><p>The OAuth request could not be completed. Check the configured redirect URI and try again.</p><a class="button" href="/auth/discord">Try again</a></section></main>`;
-  return `${renderNav()}${renderWindow("error: oauth failed", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("error: oauth failed", inner, { prompt: "nwhelper@os" })}`;
 }
 
 async function exchangeDiscordCode(code: string): Promise<string> {
@@ -1002,7 +1002,7 @@ function setSecurityHeaders(_request: Request, response: express.Response, next:
   next();
 }
 
-function renderPage(title: string, body: string): string {
+function renderPage(title: string, body: string, opts: { loggedIn?: boolean; path?: string } = {}): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1011,9 +1011,9 @@ function renderPage(title: string, body: string): string {
   <title>${escapeHtml(title)} | nwhelper ~ pinknord</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
-<body class="antialiased">
+<body class="antialiased" data-path="${escapeHtml(opts.path ?? "/")}">
   <div class="os-shell">
-    ${renderPolybar(title)}
+    ${renderPolybar(title, !!opts.loggedIn)}
     <div class="os-desktop">${body}</div>
   </div>
   ${renderOsShellScript()}
@@ -1021,34 +1021,51 @@ function renderPage(title: string, body: string): string {
 </html>`;
 }
 
-function renderPolybar(currentTitle: string): string {
+function renderPolybar(currentTitle: string, isLoggedIn: boolean): string {
   const days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
   const now = new Date();
   const jsDay = now.getDay();
   const isoDay = jsDay === 0 ? 6 : jsDay - 1;
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const dayTags = days.map((d, i) => {
     const isToday = i === isoDay;
     const isWeekend = i >= 5;
     return `<span class="pb-day${isToday ? " today" : ""}${isWeekend && !isToday ? " weekend" : ""}" title="${d}">${isToday ? "•" : d[0]}</span>`;
   }).join("");
 
+  const navItems: { href: string; label: string; icon: string; tone: string }[] = [
+    { href: "/",         label: "home",   icon: "", tone: "bg-pink" },
+    { href: "/raids",    label: "raids",  icon: "", tone: "bg-cyan" },
+    { href: "/stats",    label: "stats",  icon: "", tone: "bg-magenta" },
+    { href: "/servers",  label: "servers",icon: "", tone: "bg-aqua" }
+  ];
+  if (isLoggedIn) {
+    navItems.push({ href: "/member", label: "member", icon: "", tone: "bg-blue" });
+    navItems.push({ href: "/create", label: "+new",   icon: "", tone: "bg-yellow" });
+  } else {
+    navItems.push({ href: "/auth/discord", label: "login", icon: "", tone: "bg-green" });
+  }
+
+  const navTags = navItems.map((item) => `<a class="pb-tag ${item.tone}" data-pb-nav href="${escapeHtml(item.href)}" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</a>`).join("");
+
   return `<div class="polybar" role="banner" aria-label="System bar">
     <section class="pb-left">
-      <span class="pb-tag bg-pink" title="Workspace">nw</span>
-      ${dayTags}
+      <a class="pb-tag bg-pink" href="/" title="Home">nw</a>
+      ${navTags}
     </section>
     <section class="pb-center">
+      <span class="pb-day-spacer"></span>
       <span class="pb-tag bg-cyan" title="Current window">${escapeHtml(currentTitle)}</span>
     </section>
     <section class="pb-right">
-      <span class="pb-tag bg-green" title="Active raids"><span class="ic">●</span><span data-pb-raids>—</span></span>
-      <span class="pb-tag bg-aqua" title="Discord bot"><span class="ic">●</span>on</span>
-      <span class="pb-tag bg-magenta" title="Bot process">pid ${process.pid}</span>
+      <span class="pb-tag bg-magenta" title="Active raids"><span class="ic">●</span><span data-pb-raids>—</span></span>
+      <span class="pb-tag bg-green" title="Discord bot"><span class="ic">●</span>bot</span>
       <span class="pb-tag bg-yellow" title="Theme">PinkNord</span>
+      <span class="pb-day-spacer"></span>
+      ${dayTags}
+      <span class="pb-day-spacer"></span>
       <span class="pb-tag bg-ghost" data-pb-uptime title="Uptime">up —</span>
       <span class="pb-tag bg-white" data-pb-clock title="Clock">—</span>
-      <a class="pb-tag bg-red" href="/logout" title="Sign out">⏻</a>
+      ${isLoggedIn ? `<a class="pb-tag bg-red" href="/logout" title="Sign out">⏻</a>` : ""}
     </section>
   </div>`;
 }
@@ -1090,6 +1107,23 @@ function renderOsShellScript(): string {
     tickRaids();
     setInterval(tickClock, 15000);
     setInterval(tickUptime, 1000);
+
+    var navTags = document.querySelectorAll("[data-pb-nav]");
+    var path = (document.body && document.body.getAttribute("data-path")) || (window.location.pathname || "/");
+    navTags.forEach(function (tag) {
+      var href = tag.getAttribute("href") || "";
+      if (!href) return;
+      var isExact = href === path;
+      var isPrefix = !isExact && href !== "/" && path.indexOf(href + "/") === 0;
+      if (isExact || isPrefix) tag.classList.add("active");
+    });
+
+    try {
+      var stored = localStorage.getItem("nwhelper.bg");
+      if (stored === "2" || (!stored && Math.random() < 0.5)) {
+        document.body.classList.add("bg-variant-2");
+      }
+    } catch (e) {}
   })();
   </script>`;
 }
@@ -1186,13 +1220,13 @@ function renderHome(events: WarEvent[], session?: WebSession, settings: BotSetti
       ])}
       <div class="button-row">${renderAccountControls()}${renderInviteButton("Invite Bot")}</div>
     `;
-    return `${renderNav()}${renderWindow("welcome", heroBody, { prompt: "nwhelper@os" })}`;
+    return `${renderWindow("welcome", heroBody, { prompt: "nwhelper@os" })}`;
   }
 
   const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
 
   if (!summaries.length) {
-    return `${renderNav(session, undefined, summaries)}${renderWindow("no-shared-servers", renderNoSharedServersHome(), { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+    return `${renderWindow("no-shared-servers", renderNoSharedServersHome(), { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
   }
 
   const body = `
@@ -1208,7 +1242,7 @@ function renderHome(events: WarEvent[], session?: WebSession, settings: BotSetti
     ${renderServerFleetSection(summaries)}
     ${renderRecentActivitySection()}
   `;
-  return `${renderNav(session, undefined, summaries)}${renderWindow("nw-helper --dashboard", body, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+  return `${renderWindow("nw-helper --dashboard", body, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string, summaries?: GuildDashboardSummary[]): string {
@@ -1252,11 +1286,11 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
     </section>` : ""}
     ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : ""}
   </main>`;
-  return `${renderNav(session, guildId, summaries)}${renderWindow(selectedGuild ? `ls /guilds/${escapeHtml(selectedGuild.name)}/raids` : "raids", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow(selectedGuild ? `ls /guilds/${escapeHtml(selectedGuild.name)}/raids` : "raids", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderMemberLogin(): string {
-  return `${renderNav()}<main class="shell member-shell">
+  return `<main class="shell member-shell">
     <section class="member-hero member-login-hero">
       <div><p class="eyebrow">Member roster view</p><h1>Check your guild's Node War roster without admin controls.</h1><p>Log in with Discord to see only servers you share with NW Helper and the current raid rosters available to your account.</p><div class="button-row"><a class="button" href="/auth/discord">Log in with Discord</a>${renderInviteButton("Invite Bot")}</div></div>
     </section>
@@ -1282,7 +1316,7 @@ function renderAllRaidsDashboard(session: WebSession, summaries: GuildDashboardS
       <div class="member-raid-grid">${raids.map(({ summary, event }) => renderMemberRaidCard(summary, event)).join("") || `<div class="empty-state compact-empty"><h2>No raids found</h2><p>No raid schedules are available for your shared servers yet.</p></div>`}</div>
     </section>
   </main>`;
-  return `${renderNav(session, undefined, summaries)}${renderWindow("ls ~/raids", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+  return `${renderWindow("ls ~/raids", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 function renderServersPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
@@ -1301,7 +1335,7 @@ function renderServersPicker(session: WebSession, summaries: GuildDashboardSumma
       <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("") || `<div class="empty-state compact-empty"><h2>No shared servers</h2><p>Invite NW Helper to a Discord server and log in again.</p></div>`}</div>
     </section>
   </main>`;
-  return `${renderNav(session, undefined, summaries)}${renderWindow("ls /servers", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("ls /servers", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderCreateServerPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
@@ -1329,7 +1363,7 @@ function renderCreateServerPicker(session: WebSession, summaries: GuildDashboard
         .join("") || `<div class="empty-state compact-empty"><h2>No manageable servers</h2><p>Your Discord account needs Administrator, Manage Server, Manage Channels, Manage Roles, or Manage Messages on a shared server to create raids.</p></div>`}</div>
     </section>
   </main>`;
-  return `${renderNav(session, undefined, summaries)}${renderWindow("create --select-server", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("create --select-server", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderMemberDashboard(session: WebSession, summaries: GuildDashboardSummary[]): string {
@@ -1358,7 +1392,7 @@ function renderMemberDashboard(session: WebSession, summaries: GuildDashboardSum
       <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("")}</div>
     </section>` : renderMemberNoServers()}
   </main>`;
-  return `${renderNav(session, undefined, summaries)}${renderWindow("member --roster", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+  return `${renderWindow("member --roster", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 function renderMemberFeaturedRaid(summary: GuildDashboardSummary, event: WarEvent): string {
@@ -1687,7 +1721,7 @@ function renderStatsServerPicker(session: WebSession, summaries?: GuildDashboard
         .join("") || "<p>No shared servers found.</p>"}</div>
     </section>
   </main>`;
-  return `${renderNav(session, undefined, summaries)}${renderWindow("cat /stats/index", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("cat /stats/index", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderStatsDashboard(
@@ -1706,7 +1740,7 @@ function renderStatsDashboard(
   const totalKills = rows.reduce((sum, row) => sum + row.kills, 0);
   const totalDeaths = rows.reduce((sum, row) => sum + row.deaths, 0);
 
-  return `${renderNav(session, guild.id, summaries)}<main class="shell stats-shell">
+  return `<main class="shell stats-shell">
     <section class="dashboard-head">
       <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">War stats</p><h1>${escapeHtml(guild.name)}</h1><p>Uploaded scoreboards, player participation, and performance trends.</p></div></div>
       <a class="button button-secondary" href="/?guild=${encodeURIComponent(guild.id)}">Raids</a>
@@ -2027,7 +2061,7 @@ function renderScoreReportEditor(guild: DiscordGuild, session: WebSession, repor
       <div class="detail-actions"><a class="button button-secondary" href="/stats?guild=${encodeURIComponent(guild.id)}">Cancel</a><button type="submit">Save edits</button></div>
     </form>
   </main>`;
-  return `${renderNav(session, guild.id)}${renderWindow(`vim /stats/reports/${escapeHtml(report.id)}`, inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow(`vim /stats/reports/${escapeHtml(report.id)}`, inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderScoreResultOptions(selected: ScoreReportResult): string {
@@ -2210,7 +2244,7 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
     <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatClockTime(event.time)}</span></section>
     <section class="roster-grid">${renderRosterColumns(event, canManage)}</section>
   </main>`;
-  return `${renderNav(session, event.guildId)}${renderWindow(`cat /events/${escapeHtml(event.id)}`, inner, { prompt: "nwhelper@os" })}${canManage && session ? renderRosterMoveScript(event.id, session.csrfToken) : ""}`;
+  return `${renderWindow(`cat /events/${escapeHtml(event.id)}`, inner, { prompt: "nwhelper@os" })}${canManage && session ? renderRosterMoveScript(event.id, session.csrfToken) : ""}`;
 }
 
 function renderCurrentRosterSummary(event: WarEvent): string {
@@ -2441,7 +2475,7 @@ function renderCreateRaid(
       <div class="editor-actions"><button type="submit">Schedule Raid</button></div>
     </form>
   </main>`;
-  return `${renderNav(session, guildId)}${renderWindow("create --new-raid", inner, { prompt: "nwhelper@os" })}${renderRecurrenceDayScript()}${renderAllocationScript(true)}`;
+  return `${renderWindow("create --new-raid", inner, { prompt: "nwhelper@os" })}${renderRecurrenceDayScript()}${renderAllocationScript(true)}`;
 }
 
 function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {
@@ -2490,7 +2524,7 @@ function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession)
       <div class="editor-actions"><button type="submit">Save raid settings</button></div>
     </form>
   </main>`;
-  return `${renderNav(session, event.guildId)}${renderWindow(`edit /events/${escapeHtml(event.id)}`, inner, { prompt: "nwhelper@os" })}${renderRecurrenceDayScript()}${renderAllocationScript(false)}`;
+  return `${renderWindow(`edit /events/${escapeHtml(event.id)}`, inner, { prompt: "nwhelper@os" })}${renderRecurrenceDayScript()}${renderAllocationScript(false)}`;
 }
 
 function renderDayChecks(selectedDays: WarDay[]): string {
@@ -2972,7 +3006,7 @@ function warDayForDate(date: string): WarDay {
 function renderWebError(error: unknown): string {
   const message = error instanceof Error ? error.message : "The request could not be completed.";
   const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p>${escapeHtml(message)}</p><a class="button button-secondary" href="/">Return to dashboard</a></section></main>`;
-  return `${renderNav()}${renderWindow("error", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("error", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function escapeHtml(value: string): string {
