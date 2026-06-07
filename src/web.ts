@@ -1003,68 +1003,75 @@ function setSecurityHeaders(_request: Request, response: express.Response, next:
 }
 
 function renderPage(title: string, body: string): string {
-  const clock = renderStatusBarClock();
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)} | nwhelper ~ awedots</title>
+  <title>${escapeHtml(title)} | nwhelper ~ pinknord</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body class="antialiased">
   <div class="os-shell">
-    <div class="status-bar" role="banner" aria-label="System status">
-      <div class="status-bar-left">
-        <span class="os-logo">awedots</span>
-        <span class="activities">activities</span>
-        <span class="uptime" data-os-uptime>uptime --pretty</span>
-      </div>
-      <div class="status-bar-right">
-        <span class="user-chip">user@nwhelper</span>
-        <span class="clock" data-os-clock>${escapeHtml(clock)}</span>
-      </div>
-    </div>
-    <div class="os-desktop">
-      ${body}
-    </div>
-    <nav class="dock" aria-label="Application dock">
-      <a href="/" title="Home">~/</a>
-      <a href="/raids" title="Raids">war</a>
-      <a href="/stats" title="Stats">stat</a>
-      <a href="/servers" title="Servers">srv</a>
-      <a href="/member" title="Member">mem</a>
-      <span class="dock-sep" aria-hidden="true"></span>
-      <a href="/create" title="Create">+</a>
-    </nav>
+    ${renderPolybar(title)}
+    <div class="os-desktop">${body}</div>
   </div>
   ${renderOsShellScript()}
 </body>
 </html>`;
 }
 
-function renderStatusBarClock(): string {
+function renderPolybar(currentTitle: string): string {
+  const days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
   const now = new Date();
-  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][now.getDay()];
-  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][now.getMonth()];
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  return `${weekday} ${month} ${now.getDate()} ${hh}:${mm}`;
+  const jsDay = now.getDay();
+  const isoDay = jsDay === 0 ? 6 : jsDay - 1;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dayTags = days.map((d, i) => {
+    const isToday = i === isoDay;
+    const isWeekend = i >= 5;
+    return `<span class="pb-day${isToday ? " today" : ""}${isWeekend && !isToday ? " weekend" : ""}" title="${d}">${isToday ? "•" : d[0]}</span>`;
+  }).join("");
+
+  return `<div class="polybar" role="banner" aria-label="System bar">
+    <section class="pb-left">
+      <span class="pb-tag bg-pink" title="Workspace">nw</span>
+      ${dayTags}
+    </section>
+    <section class="pb-center">
+      <span class="pb-tag bg-cyan" title="Current window">${escapeHtml(currentTitle)}</span>
+    </section>
+    <section class="pb-right">
+      <span class="pb-tag bg-green" title="Active raids"><span class="ic">●</span><span data-pb-raids>—</span></span>
+      <span class="pb-tag bg-aqua" title="Discord bot"><span class="ic">●</span>on</span>
+      <span class="pb-tag bg-magenta" title="Bot process">pid ${process.pid}</span>
+      <span class="pb-tag bg-yellow" title="Theme">PinkNord</span>
+      <span class="pb-tag bg-ghost" data-pb-uptime title="Uptime">up —</span>
+      <span class="pb-tag bg-white" data-pb-clock title="Clock">—</span>
+      <a class="pb-tag bg-red" href="/logout" title="Sign out">⏻</a>
+    </section>
+  </div>`;
 }
 
 function renderOsShellScript(): string {
   return `<script>
   (function () {
-    var clockEl = document.querySelector("[data-os-clock]");
-    var uptimeEl = document.querySelector("[data-os-uptime]");
+    var clockEl = document.querySelector("[data-pb-clock]");
+    var uptimeEl = document.querySelector("[data-pb-uptime]");
+    var raidsEl = document.querySelector("[data-pb-raids]");
     var boot = Date.now();
     function pad(n) { return n < 10 ? "0" + n : "" + n; }
+    function fmt12(h, m) {
+      var p = h >= 12 ? "PM" : "AM";
+      var hh = h % 12; if (hh === 0) hh = 12;
+      return pad(hh) + ":" + pad(m) + " " + p;
+    }
     function tickClock() {
       if (!clockEl) return;
       var d = new Date();
       var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      clockEl.textContent = days[d.getDay()] + " " + months[d.getMonth()] + " " + d.getDate() + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+      clockEl.textContent = days[d.getDay()] + " " + months[d.getMonth()] + " " + d.getDate() + " " + fmt12(d.getHours(), d.getMinutes());
     }
     function tickUptime() {
       if (!uptimeEl) return;
@@ -1074,25 +1081,28 @@ function renderOsShellScript(): string {
       var sec = s % 60;
       uptimeEl.textContent = "up " + pad(h) + ":" + pad(m) + ":" + pad(sec);
     }
+    function tickRaids() {
+      if (!raidsEl || !raidsEl.dataset.static) return;
+      raidsEl.textContent = raidsEl.dataset.static;
+    }
     tickClock();
     tickUptime();
-    setInterval(tickClock, 30000);
+    tickRaids();
+    setInterval(tickClock, 15000);
     setInterval(tickUptime, 1000);
   })();
   </script>`;
 }
 
-function renderWindow(title: string, body: string, options: { prompt?: string } = {}): string {
+function renderWindow(title: string, body: string, options: { prompt?: string; tone?: "cyan" | "pink" | "magenta" | "green" | "yellow" | "orange" | "aqua" | "blue" } = {}): string {
+  const tone = options.tone ?? "cyan";
   const prompt = options.prompt ?? "nwhelper@os";
   return `<section class="os-window">
     <header class="window-titlebar">
-      <div class="traffic-lights" aria-hidden="true">
-        <span class="t-red"></span>
-        <span class="t-yellow"></span>
-        <span class="t-green"></span>
-      </div>
-      <div class="window-title"><span class="prompt">┌──(</span>${escapeHtml(prompt)}<span>)-[</span>${escapeHtml(title)}<span>]</span></div>
-      <span style="width:46px"></span>
+      <span class="win-tab t-${tone}"><span class="win-tab-icon">▶</span><span>${escapeHtml(title)}</span></span>
+      <span class="win-spacer"></span>
+      <span class="win-meta"><span class="sep">┌──(</span>${escapeHtml(prompt)}<span class="sep">)</span></span>
+      <span class="win-close" title="close">×</span>
     </header>
     <div class="window-body">${body}</div>
   </section>`;
@@ -1108,26 +1118,45 @@ function renderFetchPanel(summaries: GuildDashboardSummary[], session: WebSessio
   const uptimeHours = Math.floor(process.uptime() / 3600);
   const uptimeMin = Math.floor((process.uptime() % 3600) / 60);
   const totalGuilds = summaries.length;
+  const colors = [
+    { name: "bg", hex: "#2E3440" },
+    { name: "pink", hex: "#FA5AA4" },
+    { name: "green", hex: "#2BE491" },
+    { name: "yellow", hex: "#EBCB8B" },
+    { name: "cyan", hex: "#63C5EA" },
+    { name: "magenta", hex: "#CF8EF4" },
+    { name: "aqua", hex: "#8FBCBB" },
+    { name: "white", hex: "#F9F9F9" }
+  ];
   return `<aside class="fetch-panel">
-    <pre class="fetch-ascii" aria-hidden="true">    _   _ _____ _    _  ____
-   | \\ | | ____| |  | |/ __ \\
-   |  \\| |  _| | |__| | |  | |
-   | |\\  | |___| |__| | |__| |
-   |_| \\_|_____|_____/ \\____/</pre>
+    <pre class="fetch-ascii" aria-hidden="true">${"  "}     /\\
+${"  "}    /  \\
+${"  "}   /    \\
+${"  "}  /      \\
+${"  "} /  /\\    \\
+${"  "}/  /  \\    \\
+${"  "}/  /    \\    \\
+${"  "}\\  \\    /  /
+${"  "} \\  \\  /  /
+${"  "}  \\  \\/  /
+${"  "}   \\    /
+${"  "}    \\  /
+${"  "}     \\/</pre>
     <dl class="fetch-info">
-      <div><dt class="t-key">user</dt><dd>${escapeHtml(session.user.username)}</dd></div>
-      <div><dt class="t-key">host</dt><dd>nwhelper-os</dd></div>
-      <div><dt class="t-key">shell</dt><dd>zsh 5.9</dd></div>
-      <div><dt class="t-key">wm</dt><dd>awedots</dd></div>
-      <div><dt class="t-key">kernel</dt><dd>${escapeHtml(node)}</dd></div>
-      <div><dt class="t-key">uptime</dt><dd>${uptimeHours}h ${uptimeMin}m</dd></div>
-      <div><dt class="t-key">guilds</dt><dd>${totalGuilds}</dd></div>
-      <div><dt class="t-key">raids</dt><dd>${totalRaids}</dd></div>
-      <div><dt class="t-key">signups</dt><dd>${totalSignups}</dd></div>
-      <div><dt class="t-key">next</dt><dd>${next ? escapeHtml(next.nextWarStart ?? "queued") : "none"}</dd></div>
-      <div><dt class="t-key">theme</dt><dd>paradise</dd></div>
-      <div><dt class="t-key">accent</dt><dd>#d9bc8c</dd></div>
+      <div><dt>user</dt><dd>${escapeHtml(session.user.username)}</dd></div>
+      <div><dt>host</dt><dd>nwhelper-os</dd></div>
+      <div><dt>shell</dt><dd>zsh 5.9</dd></div>
+      <div><dt>wm</dt><dd>pinknord</dd></div>
+      <div><dt>kernel</dt><dd>${escapeHtml(node)}</dd></div>
+      <div><dt>uptime</dt><dd>${uptimeHours}h ${uptimeMin}m</dd></div>
+      <div><dt>guilds</dt><dd>${totalGuilds}</dd></div>
+      <div><dt>raids</dt><dd>${totalRaids}</dd></div>
+      <div><dt>signups</dt><dd>${totalSignups}</dd></div>
+      <div><dt>next</dt><dd>${next ? escapeHtml(next.nextWarStart ?? "queued") : "none"}</dd></div>
+      <div><dt>theme</dt><dd>PinkNord</dd></div>
+      <div><dt>accent</dt><dd>#FA5AA4</dd></div>
     </dl>
+    <div class="swatches" aria-hidden="true" style="grid-column: 1 / -1;">${colors.map((c) => `<span style="background:${c.hex}" title="${c.name} ${c.hex}"></span>`).join("")}</div>
   </aside>`;
 }
 
@@ -1135,10 +1164,10 @@ function renderPromptLine(parts: { user?: string; host?: string; path?: string; 
   const user = parts.user ?? "nwhelper";
   const host = parts.host ?? "os";
   const path = parts.path ?? "~";
-  return `<div class="prompt-line"><span class="user">${escapeHtml(user)}</span><span>@</span><span class="host">${escapeHtml(host)}</span><span>:</span><span class="path">${escapeHtml(path)}</span><span class="arrow">$</span>${parts.suffix ? `<span>${escapeHtml(parts.suffix)}</span>` : ""}</div>`;
+  return `<div class="prompt-line"><span class="user">${escapeHtml(user)}</span>@<span class="host">${escapeHtml(host)}</span>:<span class="path">${escapeHtml(path)}</span><span class="arrow">$</span>${parts.suffix ? `<span class="suffix">${escapeHtml(parts.suffix)}</span>` : ""}</div>`;
 }
 
-function renderTerminal(lines: Array<{ kind?: "key" | "val" | "comment" | "success" | "warn" | "error" | "info" | "magenta" | "plain"; text: string }>): string {
+function renderTerminal(lines: Array<{ kind?: "key" | "val" | "comment" | "success" | "warn" | "error" | "info" | "magenta" | "pink" | "plain"; text: string }>): string {
   return `<pre class="terminal-block">${lines.map((line) => `<span class="t-line"><span class="t-${line.kind ?? "plain"}">${escapeHtml(line.text)}</span></span>`).join("")}</pre>`;
 }
 
