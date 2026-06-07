@@ -1229,6 +1229,24 @@ function renderOsShellScript(): string {
     });
     mo.observe(document.body, { childList: true, subtree: true });
 
+    function toggleMin(host) {
+      var next = host.getAttribute("data-minimized") === "true" ? "false" : "true";
+      host.setAttribute("data-minimized", next);
+      var btn = host.querySelector("[data-card-action=\"min\"]");
+      if (btn) {
+        btn.textContent = next === "true" ? "▢" : "─";
+        btn.setAttribute("title", next === "true" ? "restore" : "minimize");
+        btn.setAttribute("aria-label", next === "true" ? "restore" : "minimize");
+      }
+    }
+
+    function closeTerminal(host) {
+      host.style.transition = "opacity .25s ease, transform .25s ease, max-height .25s ease";
+      host.style.opacity = "0";
+      host.style.transform = "scale(.98)";
+      setTimeout(function () { host.style.display = "none"; }, 260);
+    }
+
     document.addEventListener("click", function (e) {
       var target = e.target;
       if (!target || !target.closest) return;
@@ -1241,7 +1259,11 @@ function renderOsShellScript(): string {
         if (action === "min") {
           var minimized = win.getAttribute("data-minimized") === "true";
           win.setAttribute("data-minimized", minimized ? "false" : "true");
-          winBtn.setAttribute("title", minimized ? "minimize" : "restore");
+          var wb = win.querySelector("[data-win-action=\"min\"]");
+          if (wb) {
+            wb.textContent = minimized ? "─" : "▢";
+            wb.setAttribute("title", minimized ? "minimize" : "restore");
+          }
         } else if (action === "close") {
           win.style.transition = "opacity .25s ease, transform .25s ease, margin .25s ease, grid-template-rows .25s ease";
           win.style.opacity = "0";
@@ -1257,17 +1279,293 @@ function renderOsShellScript(): string {
         if (!card) return;
         var caction = cardBtn.getAttribute("data-card-action");
         if (caction === "min") {
-          var cmin = card.getAttribute("data-minimized") === "true";
-          card.setAttribute("data-minimized", cmin ? "false" : "true");
-          cardBtn.setAttribute("title", cmin ? "minimize" : "restore");
+          toggleMin(card);
         } else if (caction === "close") {
-          card.style.transition = "opacity .25s ease, transform .25s ease, grid-template-rows .25s ease";
-          card.style.opacity = "0";
-          card.style.transform = "scale(.98)";
-          setTimeout(function () { card.style.display = "none"; }, 260);
+          closeTerminal(card);
+        }
+        return;
+      }
+
+      var cardTitlebar = target.closest(".card-titlebar");
+      if (cardTitlebar) {
+        var titlebarHost = cardTitlebar.parentElement;
+        if (titlebarHost && titlebarHost.matches && titlebarHost.matches(CARD_TERMINAL_SELECTOR)) {
+          if (target.closest("button")) return;
+          toggleMin(titlebarHost);
         }
       }
     });
+
+    (function initServerTerminal() {
+      var form = document.getElementById("server-pick-form");
+      var input = document.getElementById("server-pick-input");
+      var output = document.getElementById("server-pick-output");
+      var terminal = document.querySelector(".server-pick-terminal");
+      if (!form || !input || !output || !terminal) return;
+
+      var serversData = [];
+      try {
+        var raw = terminal.getAttribute("data-servers") || "";
+        serversData = JSON.parse(raw.replace(/&quot;/g, "\""));
+      } catch (e) { serversData = []; }
+
+      var history = [];
+      var histIdx = 0;
+
+      function scrollToBottom() {
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function line(text, kind) {
+        var div = document.createElement("div");
+        div.className = "terminal-line " + (kind ? "t-" + kind : "");
+        div.textContent = text;
+        output.appendChild(div);
+        scrollToBottom();
+      }
+
+      function lineHTML(html) {
+        var div = document.createElement("div");
+        div.className = "terminal-line";
+        div.innerHTML = html;
+        output.appendChild(div);
+        scrollToBottom();
+      }
+
+      function echoPrompt(text) {
+        lineHTML(
+          '<span class="t-success">nwhelper</span><span class="t-muted">@</span><span class="t-success">servers</span><span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span> ' +
+          '<span>' + escapeHTMLForTerminal(text) + '</span>'
+        );
+      }
+
+      function escapeHTMLForTerminal(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function findServer(query) {
+        if (!query) return null;
+        var q = String(query).trim().toLowerCase();
+        if (!q) return null;
+        var numeric = parseInt(q, 10);
+        if (!isNaN(numeric) && String(numeric) === q) {
+          for (var i = 0; i < serversData.length; i++) {
+            if (serversData[i].idx === numeric) return serversData[i];
+          }
+        }
+        for (var j = 0; j < serversData.length; j++) {
+          if (serversData[j].lower === q) return serversData[j];
+        }
+        for (var k = 0; k < serversData.length; k++) {
+          if (serversData[k].lower.indexOf(q) === 0) return serversData[k];
+        }
+        for (var l = 0; l < serversData.length; l++) {
+          if (serversData[l].lower.indexOf(q) !== -1) return serversData[l];
+        }
+        return null;
+      }
+
+      function highlightServer(id) {
+        var items = document.querySelectorAll(".server-pick-item");
+        items.forEach(function (el) {
+          if (el.getAttribute("data-server-id") === id) el.classList.add("is-active");
+          else el.classList.remove("is-active");
+        });
+      }
+
+      function navigateTo(server) {
+        line("→ connecting to " + server.name + " (/" + server.id + "/stats)", "info");
+        line("✓ routing to stats dashboard for #" + server.idx + " " + server.name, "success");
+        setTimeout(function () {
+          window.location.href = "/guilds/" + encodeURIComponent(server.id) + "/stats";
+        }, 380);
+      }
+
+      function selectServer(server) {
+        highlightServer(server.id);
+        line("• selected #" + server.idx + "  " + server.name, "pink");
+        line("  press Enter or type a command to navigate. (try: goto, cd, ls, help, clear)", "muted");
+      }
+
+      var commands = {
+        help: function () {
+          lineHTML(
+            '<span class="t-info">Available commands</span><br>' +
+            '<span class="t-key">  ls</span><span class="t-muted">, </span><span class="t-key">list</span><span class="t-muted">                 list all shared servers</span><br>' +
+            '<span class="t-key">  cd &lt;name|number&gt;</span><span class="t-muted">     select a server (highlights the row)</span><br>' +
+            '<span class="t-key">  goto &lt;name|number&gt;</span><span class="t-muted">   navigate to that server\'s stats dashboard</span><br>' +
+            '<span class="t-key">  open &lt;name|number&gt;</span><span class="t-muted">   alias for goto</span><br>' +
+            '<span class="t-key">  stats</span><span class="t-muted">                 open stats for the currently selected server</span><br>' +
+            '<span class="t-key">  raids</span><span class="t-muted">                 open raids for the currently selected server</span><br>' +
+            '<span class="t-key">  clear</span><span class="t-muted">, </span><span class="t-key">cls</span><span class="t-muted">             clear the terminal</span><br>' +
+            '<span class="t-key">  whoami</span><span class="t-muted">                 show current user</span><br>' +
+            '<span class="t-key">  home</span><span class="t-muted">                   return to dashboard</span><br>' +
+            '<span class="t-comment">  Tip: click any server in the column on the left to select it.</span>'
+          );
+        },
+        ls: function () {
+          if (!serversData.length) {
+            line("no shared servers available", "warn");
+            return;
+          }
+          lineHTML(
+            '<span class="t-muted">idx  guild                                              id</span>'
+          );
+          serversData.forEach(function (s) {
+            var name = s.name;
+            if (name.length > 38) name = name.slice(0, 35) + "...";
+            lineHTML(
+              '<span class="t-cyan">  ' + String(s.idx).padStart(2, " ") + ' </span>' +
+              '<span class="t-info">' + escapeHTMLForTerminal(name).padEnd(48, " ") + '</span>' +
+              '<span class="t-muted">' + escapeHTMLForTerminal(s.id) + '</span>'
+            );
+          });
+          lineHTML(
+            '<span class="t-muted">' + serversData.length + ' server' + (serversData.length === 1 ? "" : "s") + ' available</span>'
+          );
+        },
+        list: function () { commands.ls(); },
+        clear: function () {
+          while (output.firstChild) output.removeChild(output.firstChild);
+        },
+        cls: function () { commands.clear(); },
+        whoami: function () {
+          var u = (document.body && document.body.getAttribute("data-path")) || "/";
+          line("user: " + (u || "nwhelper"), "info");
+        },
+        home: function () {
+          line("→ returning to dashboard", "info");
+          setTimeout(function () { window.location.href = "/"; }, 280);
+        }
+      };
+
+      function selectedServer() {
+        var active = document.querySelector(".server-pick-item.is-active");
+        if (!active) return null;
+        var id = active.getAttribute("data-server-id");
+        for (var i = 0; i < serversData.length; i++) {
+          if (serversData[i].id === id) return serversData[i];
+        }
+        return null;
+      }
+
+      function handleSubmit(raw) {
+        var text = String(raw || "").trim();
+        echoPrompt(text);
+        if (!text) return;
+        history.push(text);
+        histIdx = history.length;
+        var parts = text.split(/\\s+/);
+        var cmd = parts[0].toLowerCase();
+        var arg = parts.slice(1).join(" ");
+
+        if (commands[cmd]) {
+          commands[cmd](arg);
+          return;
+        }
+        if (cmd === "cd" || cmd === "select") {
+          if (!arg) {
+            var sel = selectedServer();
+            if (sel) line("current selection: " + sel.name + " (#" + sel.idx + ")", "info");
+            else line("usage: cd <name|number> — or click a server on the left", "warn");
+            return;
+          }
+          var s = findServer(arg);
+          if (!s) { line("no server matches '" + arg + "'", "error"); return; }
+          selectServer(s);
+          return;
+        }
+        if (cmd === "goto" || cmd === "open") {
+          if (!arg) {
+            var sel2 = selectedServer();
+            if (sel2) { navigateTo(sel2); return; }
+            line("usage: goto <name|number>", "warn");
+            return;
+          }
+          var s2 = findServer(arg);
+          if (!s2) { line("no server matches '" + arg + "'", "error"); return; }
+          highlightServer(s2.id);
+          navigateTo(s2);
+          return;
+        }
+        if (cmd === "stats") {
+          var sel3 = selectedServer();
+          if (!sel3) { line("no server selected. type: cd <name>", "warn"); return; }
+          window.location.href = "/guilds/" + encodeURIComponent(sel3.id) + "/stats";
+          return;
+        }
+        if (cmd === "raids") {
+          var sel4 = selectedServer();
+          if (!sel4) { line("no server selected. type: cd <name>", "warn"); return; }
+          window.location.href = "/guilds/" + encodeURIComponent(sel4.id) + "/raids";
+          return;
+        }
+
+        var direct = findServer(text);
+        if (direct) {
+          highlightServer(direct.id);
+          navigateTo(direct);
+          return;
+        }
+
+        line("command not found: " + cmd, "error");
+        line("type 'help' for the list of commands", "muted");
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var val = input.value;
+        input.value = "";
+        handleSubmit(val);
+      });
+
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "ArrowUp") {
+          if (!history.length) return;
+          e.preventDefault();
+          histIdx = Math.max(0, histIdx - 1);
+          input.value = history[histIdx];
+          setTimeout(function () { input.setSelectionRange(input.value.length, input.value.length); }, 0);
+        } else if (e.key === "ArrowDown") {
+          if (!history.length) return;
+          e.preventDefault();
+          histIdx = Math.min(history.length, histIdx + 1);
+          input.value = histIdx === history.length ? "" : history[histIdx];
+          setTimeout(function () { input.setSelectionRange(input.value.length, input.value.length); }, 0);
+        }
+      });
+
+      document.querySelectorAll(".server-pick-item").forEach(function (item) {
+        item.addEventListener("click", function () {
+          var id = item.getAttribute("data-server-id");
+          var s = null;
+          for (var i = 0; i < serversData.length; i++) {
+            if (serversData[i].id === id) { s = serversData[i]; break; }
+          }
+          if (!s) return;
+          highlightServer(s.id);
+          input.value = s.name;
+          input.focus();
+          setTimeout(function () { input.setSelectionRange(input.value.length, input.value.length); }, 0);
+        });
+      });
+
+      document.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        var inTerminal = t.closest(".server-pick-terminal");
+        var inRail = t.closest(".server-pick-rail");
+        if (inTerminal || inRail) {
+          setTimeout(function () { input.focus(); }, 0);
+        }
+      });
+
+      setTimeout(function () { input.focus(); }, 30);
+    })();
   })();
   </script>`;
 }
@@ -1289,11 +1587,16 @@ function renderWindow(title: string, body: string, options: { prompt?: string; t
 }
 
 function renderFetchPanel(summaries: GuildDashboardSummary[], session: WebSession): string {
-  const totalRaids = summaries.reduce((sum, s) => sum + s.activeRaids, 0);
+  const totalActive = summaries.reduce((sum, s) => sum + s.activeRaids, 0);
+  const totalUpcoming = summaries.reduce((sum, s) => sum + s.upcomingRaids, 0);
   const totalSignups = summaries.reduce((sum, s) => sum + s.totalSignups, 0);
   const next = summaries
     .filter((s) => s.nextWarStartTime)
     .sort((a, b) => (a.nextWarStartTime ?? 0) - (b.nextWarStartTime ?? 0))[0];
+  const nextAnnounce = summaries
+    .filter((s) => s.nextAnnouncementTime)
+    .sort((a, b) => (a.nextAnnouncementTime ?? 0) - (b.nextAnnouncementTime ?? 0))[0];
+  const ready = summaries.filter((s) => s.setupWarnings.length === 0).length;
   const node = process.version;
   const uptimeHours = Math.floor(process.uptime() / 3600);
   const uptimeMin = Math.floor((process.uptime() % 3600) / 60);
@@ -1330,12 +1633,22 @@ ${"  "}     \\/</pre>
       <div><dt>kernel</dt><dd>${escapeHtml(node)}</dd></div>
       <div><dt>uptime</dt><dd>${uptimeHours}h ${uptimeMin}m</dd></div>
       <div><dt>guilds</dt><dd>${totalGuilds}</dd></div>
-      <div><dt>raids</dt><dd>${totalRaids}</dd></div>
-      <div><dt>signups</dt><dd>${totalSignups}</dd></div>
-      <div><dt>next</dt><dd>${next ? escapeHtml(next.nextWarStart ?? "queued") : "none"}</dd></div>
       <div><dt>theme</dt><dd>PinkNord</dd></div>
       <div><dt>accent</dt><dd>#FA5AA4</dd></div>
     </dl>
+    <div class="fetch-divider" aria-hidden="true"></div>
+    <div class="fetch-telemetry">
+      <p class="fetch-section-label">telemetry</p>
+      <dl class="fetch-telemetry-grid">
+        <div><dt>shared</dt><dd>${totalGuilds}</dd></div>
+        <div><dt>active</dt><dd>${totalActive}</dd></div>
+        <div><dt>queued</dt><dd>${totalUpcoming}</dd></div>
+        <div><dt>signups</dt><dd>${totalSignups}</dd></div>
+        <div><dt>ready</dt><dd>${ready}/${totalGuilds}</dd></div>
+        <div><dt>announce</dt><dd>${nextAnnounce ? escapeHtml(nextAnnounce.nextAnnouncement ?? "queued") : "none"}</dd></div>
+        <div><dt>war start</dt><dd>${next ? escapeHtml(next.nextWarStart ?? "queued") : "none"}</dd></div>
+      </dl>
+    </div>
     <div class="swatches" aria-hidden="true" style="grid-column: 1 / -1;">${colors.map((c) => `<span style="background:${c.hex}" title="${c.name} ${c.hex}"></span>`).join("")}</div>
   </aside>`;
 }
@@ -1377,7 +1690,6 @@ function renderHome(events: WarEvent[], session?: WebSession, settings: BotSetti
 
   const body = `
     ${renderPromptLine({ path: "~", suffix: "./nw-helper --dashboard" })}
-    ${renderGlobalStatsStrip(summaries)}
     <section class="war-room-layout" aria-label="NW Helper war room">
       ${renderCommandRail()}
       ${renderPrimaryWarFocus(summaries, session)}
@@ -1466,22 +1778,57 @@ function renderAllRaidsDashboard(session: WebSession, summaries: GuildDashboardS
 }
 
 function renderServersPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
-  const inner = `<main class="shell member-shell">
-    <section class="member-hero">
-      <div><p class="eyebrow">Servers</p><h1>Choose a server to manage</h1><p>Only Discord servers you share with NW Helper are listed here.</p></div>
-      <dl class="member-telemetry">
-        <div><dt>Visible</dt><dd>${summaries.length}</dd></div>
-        <div><dt>Ready</dt><dd>${summaries.filter((summary) => !summary.setupWarnings.length).length}</dd></div>
-        <div><dt>Active raids</dt><dd>${summaries.reduce((sum, summary) => sum + summary.activeRaids, 0)}</dd></div>
-        <div><dt>Signups</dt><dd>${summaries.reduce((sum, summary) => sum + summary.totalSignups, 0)}</dd></div>
-      </dl>
-    </section>
-    <section class="member-section">
-      <div class="section-title"><div><p class="eyebrow">Server picker</p><h2>Open a dashboard</h2></div><span>${summaries.length} servers</span></div>
-      <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("") || `<div class="empty-state compact-empty"><h2>No shared servers</h2><p>Invite NW Helper to a Discord server and log in again.</p></div>`}</div>
-    </section>
+  const servers = summaries.map((summary, idx) => ({
+    idx: idx + 1,
+    id: summary.guild.id,
+    name: summary.guild.name,
+    icon: summary.guild.icon,
+    active: summary.activeRaids,
+    upcoming: summary.upcomingRaids,
+    signups: summary.totalSignups,
+    ready: summary.setupWarnings.length === 0,
+    warnings: summary.setupWarnings
+  }));
+
+  const column = `<aside class="server-pick-rail">
+    <p class="server-pick-eyebrow">fleet <span>${servers.length}</span></p>
+    <ul class="server-pick-list" id="server-pick-list">${servers
+      .map(
+        (s) => `<li class="server-pick-item" data-server-id="${escapeHtml(s.id)}" data-server-name="${escapeHtml(s.name.toLowerCase())}" data-server-index="${s.idx}">
+          <span class="server-pick-num">${String(s.idx).padStart(2, "0")}</span>
+          <span class="server-pick-name">${escapeHtml(s.name)}</span>
+          <span class="server-pick-meta">
+            <span class="server-pick-dot ${s.ready ? "is-ready" : "is-warn"}" title="${s.ready ? "ready" : s.warnings[0] ?? "attention"}"></span>
+            <span class="server-pick-count">${s.active}·${s.upcoming}</span>
+          </span>
+        </li>`
+      )
+      .join("") || `<li class="server-pick-empty">no shared servers</li>`}</ul>
+    <p class="server-pick-hint">click any server or type a name</p>
+  </aside>`;
+
+  const serverDataJson = JSON.stringify(
+    servers.map((s) => ({ idx: s.idx, id: s.id, name: s.name, lower: s.name.toLowerCase() }))
+  ).replace(/"/g, "&quot;");
+
+  const terminal = `<section class="server-pick-terminal" data-servers="${serverDataJson}">
+    <div class="terminal-output" id="server-pick-output" aria-live="polite">
+      <div class="terminal-line t-info">┌── nwhelper@servers:~</div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># type </span><span class="t-key">ls</span><span class="t-comment"> to list servers, </span><span class="t-key">help</span><span class="t-comment"> for commands,</span></div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># or just type a server name / number to jump there.</span></div>
+      <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
+    </div>
+    <form class="terminal-prompt-form" id="server-pick-form" autocomplete="off">
+      <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span>servers<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
+      <input type="text" id="server-pick-input" class="terminal-prompt-input" placeholder="ls | cd 1 | goto Zenolitee's server | help" autofocus spellcheck="false" />
+    </form>
+  </section>`;
+
+  const inner = `<main class="server-pick-shell">
+    ${column}
+    ${terminal}
   </main>`;
-  return `${renderWindow("ls /servers", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("cd /servers", inner, { prompt: "nwhelper@os", tone: "cyan" })}`;
 }
 
 function renderCreateServerPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
