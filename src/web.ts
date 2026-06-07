@@ -521,7 +521,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
   });
 
-  app.get("/auth/discord", (_request, response) => {
+  app.get("/auth/discord", (request, response) => {
     if (!config.discordClientId || !config.discordClientSecret) {
       response.status(503).send("Discord login is not configured.");
       return;
@@ -546,8 +546,13 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const state = typeof request.query.state === "string" ? request.query.state : "";
     const expiresAt = oauthStates.get(state);
     oauthStates.delete(state);
-    if (!code || !expiresAt || expiresAt < Date.now() || !config.discordClientId || !config.discordClientSecret) {
+    if (!code || !expiresAt || expiresAt < Date.now()) {
       response.status(400).send("Invalid or expired Discord login.");
+      return;
+    }
+
+    if (!config.discordClientId || !config.discordClientSecret) {
+      response.status(400).send("Discord login is not configured.");
       return;
     }
 
@@ -1466,7 +1471,7 @@ function renderOsShellScript(): string {
             '<span class="t-info">Available commands</span><br>' +
             '<span class="t-key">  ls</span><span class="t-muted">, </span><span class="t-key">list</span><span class="t-muted">                 list all shared servers</span><br>' +
             '<span class="t-key">  cd &lt;name|number&gt;</span><span class="t-muted">     select a server (highlights the row)</span><br>' +
-            '<span class="t-key">  goto &lt;name|number&gt;</span><span class="t-muted">   navigate to that server\'s stats dashboard</span><br>' +
+            '<span class="t-key">  goto &lt;name|number&gt;</span><span class="t-muted">   open that server stats dashboard</span><br>' +
             '<span class="t-key">  open &lt;name|number&gt;</span><span class="t-muted">   alias for goto</span><br>' +
             '<span class="t-key">  stats</span><span class="t-muted">                 open stats for the currently selected server</span><br>' +
             '<span class="t-key">  raids</span><span class="t-muted">                 open raids for the currently selected server</span><br>' +
@@ -2733,8 +2738,16 @@ function renderReportsTerminal(reports: ScoreReport[], csrfToken: string, canMan
     <div class="report-terminal-output" id="report-terminal-output">
       <div class="terminal-line t-info">┌── nwhelper@reports:~</div>
       <div class="terminal-line t-info">│ <span class="t-comment"># select a scoreboard on the left to preview, edit, or delete it.</span></div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># or type </span><span class="t-key">help</span><span class="t-comment">, </span><span class="t-key">ls</span><span class="t-comment">, </span><span class="t-key">open 3</span><span class="t-comment">, </span><span class="t-key">delete 1</span><span class="t-comment">, etc.</span></div>
       <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
     </div>
+    <form class="terminal-prompt-form report-terminal-prompt" id="report-terminal-form" action="javascript:void(0)" autocomplete="off" onsubmit="return false;">
+      <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span>reports<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
+      <div class="terminal-prompt-input-wrap">
+        <input type="text" id="report-terminal-input" class="terminal-prompt-input" placeholder="open 1 | preview 2 | rescan 3 | delete 1 | ls | help | clear" spellcheck="false" autocapitalize="off" autocorrect="off" />
+        <span class="t-cursor terminal-prompt-cursor" aria-hidden="true">▮</span>
+      </div>
+    </form>
   </section>`;
 
   return `<section class="report-terminal-shell" data-report-terminal>
@@ -2753,13 +2766,18 @@ function renderReportsTerminalScript(): string {
       var panel = root.querySelector(".report-terminal-panel");
       var output = root.querySelector("#report-terminal-output");
       var items = root.querySelectorAll(".report-terminal-item");
-      if (!panel || !output || !items.length) return;
+      var form = root.querySelector("#report-terminal-form");
+      var input = root.querySelector("#report-terminal-input");
+      if (!panel || !output || !items.length || !form || !input) return;
 
       var reports = [];
       try { reports = JSON.parse((panel.getAttribute("data-reports") || "").replace(/&quot;/g, '"').replace(/&#39;/g, "'")); } catch (e) { reports = []; }
 
       function escapeHtml(s) {
         return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+      function clearOutput() {
+        while (output.firstChild) output.removeChild(output.firstChild);
       }
       function line(text, kind) {
         var div = document.createElement("div");
@@ -2775,16 +2793,42 @@ function renderReportsTerminalScript(): string {
         output.appendChild(div);
         output.scrollTop = output.scrollHeight;
       }
+      function echoPrompt(text) {
+        lineHTML(
+          '<span class="t-success">nwhelper</span><span class="t-muted">@</span><span class="t-success">reports</span><span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span> ' +
+          '<span>' + escapeHtml(text) + '</span>'
+        );
+      }
+      function findReport(query) {
+        if (!query) return -1;
+        var q = String(query).trim();
+        var numeric = parseInt(q, 10);
+        if (!isNaN(numeric) && String(numeric) === q) {
+          if (numeric >= 1 && numeric <= reports.length) return numeric - 1;
+        }
+        var ql = q.toLowerCase();
+        for (var i = 0; i < reports.length; i++) {
+          if ((reports[i].title || "").toLowerCase() === ql) return i;
+          if ((reports[i].warDate || "").toLowerCase() === ql) return i;
+        }
+        for (var j = 0; j < reports.length; j++) {
+          if ((reports[j].title || "").toLowerCase().indexOf(ql) === 0) return j;
+        }
+        for (var k = 0; k < reports.length; k++) {
+          if ((reports[k].title || "").toLowerCase().indexOf(ql) !== -1) return k;
+        }
+        return -1;
+      }
 
       function showReport(idx) {
         var r = reports[idx];
         if (!r) return;
+        clearOutput();
         items.forEach(function (el) { el.classList.toggle("is-active", Number(el.getAttribute("data-report-idx")) === idx); });
         var totalKills = r.rows.reduce(function (s, row) { return s + (row.kills || 0); }, 0);
         var totalDeaths = r.rows.reduce(function (s, row) { return s + (row.deaths || 0); }, 0);
         var totalDamage = r.rows.reduce(function (s, row) { return s + (row.damageDealt || 0); }, 0);
         var kd = totalDeaths ? Math.round((totalKills / totalDeaths) * 100) : (totalKills ? 100 : 0);
-        line("", null);
         line("━━ " + r.warDate + "  " + r.title + " ━━", "cyan");
         line("  result     " + r.result, r.result === "win" ? "success" : r.result === "loss" ? "error" : "muted");
         line("  ocr        " + r.ocrEngine + " (conf " + r.confidence + ")", "muted");
@@ -2800,12 +2844,142 @@ function renderReportsTerminalScript(): string {
         line("  edit     →  /stats/reports/" + r.id + "/edit", "key");
         line("  rescan   →  POST /stats/reports/" + r.id + "/rescan", "key");
         line("  delete   →  POST /stats/reports/" + r.id + "/delete", "error");
+        line("", null);
+        line("> tip: click another scoreboard, or type a command above", "muted");
+      }
+
+      function selectedReport() {
+        var active = root.querySelector(".report-terminal-item.is-active");
+        if (!active) return -1;
+        return Number(active.getAttribute("data-report-idx"));
+      }
+
+      function runCommand(text) {
+        var t = String(text || "").trim();
+        echoPrompt(text);
+        if (!t) return;
+        var parts = t.split(/\\s+/);
+        var cmd = parts[0].toLowerCase();
+        var arg = parts.slice(1).join(" ");
+
+        if (cmd === "help" || cmd === "?") {
+          lineHTML(
+            '<span class="t-info">Available commands</span><br>' +
+            '<span class="t-key">  ls</span><span class="t-muted">                           list scoreboards (alias: list)</span><br>' +
+            '<span class="t-key">  open &lt;n&gt;</span><span class="t-muted">     show details for scoreboard #n (alias: select, view)</span><br>' +
+            '<span class="t-key">  preview &lt;n&gt;</span><span class="t-muted">  open /stats/reports/&lt;id&gt;/preview</span><br>' +
+            '<span class="t-key">  edit &lt;n&gt;</span><span class="t-muted">     open /stats/reports/&lt;id&gt;/edit</span><br>' +
+            '<span class="t-key">  rescan &lt;n&gt;</span><span class="t-muted">   POST /stats/reports/&lt;id&gt;/rescan</span><br>' +
+            '<span class="t-key">  delete &lt;n&gt;</span><span class="t-muted">   POST /stats/reports/&lt;id&gt;/delete (with confirm)</span><br>' +
+            '<span class="t-key">  clear</span><span class="t-muted">                       clear the terminal (alias: cls)</span><br>' +
+            '<span class="t-comment">  Tip: click any scoreboard on the left to select it.</span>'
+          );
+          return;
+        }
+        if (cmd === "ls" || cmd === "list") {
+          line("idx  result  date            title                          players", "muted");
+          reports.forEach(function (r, i) {
+            line(
+              String(i + 1).padStart(2, " ") + "   " +
+              r.result.padEnd(7, " ") + "  " +
+              (r.warDate || "").padEnd(15, " ") + "  " +
+              (r.title || "").slice(0, 30).padEnd(30, " ") + "  " +
+              r.rows.length + "p",
+              "info"
+            );
+          });
+          line(reports.length + " scoreboard" + (reports.length === 1 ? "" : "s"), "muted");
+          return;
+        }
+        if (cmd === "clear" || cmd === "cls") {
+          clearOutput();
+          return;
+        }
+        var targetIdx = -1;
+        if (cmd === "open" || cmd === "select" || cmd === "view") {
+          targetIdx = arg ? findReport(arg) : selectedReport();
+        } else if (cmd === "preview" || cmd === "edit" || cmd === "rescan" || cmd === "delete") {
+          targetIdx = arg ? findReport(arg) : selectedReport();
+        }
+        if (["open", "select", "view", "preview", "edit", "rescan", "delete"].indexOf(cmd) !== -1) {
+          if (targetIdx < 0) { line("no scoreboard matches '" + (arg || "current") + "'", "error"); return; }
+          var r = reports[targetIdx];
+          if (!r) { line("scoreboard not found", "error"); return; }
+          if (cmd === "open" || cmd === "select" || cmd === "view") {
+            showReport(targetIdx);
+            return;
+          }
+          if (cmd === "preview") { window.location.href = "/stats/reports/" + r.id + "/preview"; return; }
+          if (cmd === "edit") { window.location.href = "/stats/reports/" + r.id + "/edit"; return; }
+          if (cmd === "delete") {
+            if (!confirm("Delete scoreboard " + r.title + "?")) { line("delete cancelled", "muted"); return; }
+            var formEl = document.createElement("form");
+            formEl.method = "post";
+            formEl.action = "/stats/reports/" + r.id + "/delete";
+            var csrf = document.createElement("input");
+            csrf.type = "hidden";
+            csrf.name = "csrfToken";
+            csrf.value = r.csrfToken || "";
+            formEl.appendChild(csrf);
+            var gid = document.createElement("input");
+            gid.type = "hidden";
+            gid.name = "guildId";
+            gid.value = r.guildId || "";
+            formEl.appendChild(gid);
+            document.body.appendChild(formEl);
+            formEl.submit();
+            return;
+          }
+          if (cmd === "rescan") {
+            var formEl2 = document.createElement("form");
+            formEl2.method = "post";
+            formEl2.action = "/stats/reports/" + r.id + "/rescan";
+            var csrf2 = document.createElement("input");
+            csrf2.type = "hidden";
+            csrf2.name = "csrfToken";
+            csrf2.value = r.csrfToken || "";
+            formEl2.appendChild(csrf2);
+            var gid2 = document.createElement("input");
+            gid2.type = "hidden";
+            gid2.name = "guildId";
+            gid2.value = r.guildId || "";
+            formEl2.appendChild(gid2);
+            document.body.appendChild(formEl2);
+            formEl2.submit();
+            return;
+          }
+        }
+
+        var direct = findReport(t);
+        if (direct >= 0) { showReport(direct); return; }
+
+        line("command not found: " + cmd, "error");
+        line("type 'help' for the list of commands", "muted");
       }
 
       items.forEach(function (item) {
         item.addEventListener("click", function () {
           showReport(Number(item.getAttribute("data-report-idx")));
         });
+      });
+
+      form.addEventListener("submit", function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        var val = input.value;
+        input.value = "";
+        runCommand(val);
+        return false;
+      });
+
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          var val = input.value;
+          input.value = "";
+          runCommand(val);
+        }
       });
 
       // Show first report by default

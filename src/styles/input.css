@@ -2753,6 +2753,10 @@ h1 {
   font-family: ui-monospace, "JetBrains Mono", "Iosevka", monospace;
 }
 
+.report-terminal-prompt {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 760px) {
   .report-terminal-shell { grid-template-columns: 1fr; }
   .report-terminal-rail { max-height: 220px; }
@@ -4742,6 +4746,11 @@ body {
   margin: 4px 0 0;
 }
 
+.timeline-item .card-top {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
 .timeline-item p {
   color: var(--muted);
   font-size: 0.84rem;
@@ -5454,6 +5463,7 @@ input:focus, select:focus, textarea:focus {
 
 .guild-heading { display: flex; align-items: center; gap: 10px; }
 .guild-heading h1 { margin: 0; color: var(--text-bright); }
+.guild-heading > div > p:not(.eyebrow) { color: var(--text); opacity: 0.85; }
 
 /* Pills, status, badges */
 .type-pill,
@@ -5979,16 +5989,17 @@ dl.member-telemetry dd {
 
 .fetch-panel .fetch-telemetry-grid > div {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px;
   align-items: baseline;
 }
 
 .fetch-panel .fetch-telemetry-grid dt {
   color: var(--cyan);
   font-weight: 700;
-  text-align: right;
+  text-align: left;
   font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .fetch-panel .fetch-telemetry-grid dt::before {
