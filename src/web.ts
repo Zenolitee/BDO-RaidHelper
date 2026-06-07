@@ -833,11 +833,13 @@ function formatUploader(session: WebSession): string {
 }
 
 function renderLoginRequired(): string {
-  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to view servers you share with NW Helper. Moderator permissions are required for edits.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
+  const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login required</h1><p>Log in to view servers you share with NW Helper. Moderator permissions are required for edits.</p><a class="button" href="/auth/discord">Log in with Discord</a></section></main>`;
+  return `${renderNav()}${renderWindow("sudo ./login", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderLoginError(): string {
-  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login failed</h1><p>The OAuth request could not be completed. Check the configured redirect URI and try again.</p><a class="button" href="/auth/discord">Try again</a></section></main>`;
+  const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Private dashboard</p><h1>Discord login failed</h1><p>The OAuth request could not be completed. Check the configured redirect URI and try again.</p><a class="button" href="/auth/discord">Try again</a></section></main>`;
+  return `${renderNav()}${renderWindow("error: oauth failed", inner, { prompt: "nwhelper@os" })}`;
 }
 
 async function exchangeDiscordCode(code: string): Promise<string> {
@@ -1001,47 +1003,183 @@ function setSecurityHeaders(_request: Request, response: express.Response, next:
 }
 
 function renderPage(title: string, body: string): string {
+  const clock = renderStatusBarClock();
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)} | NW Helper</title>
+  <title>${escapeHtml(title)} | nwhelper ~ awedots</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
-<body class="antialiased selection:bg-amber-300/30 selection:text-amber-50">
-  ${body}
+<body class="antialiased">
+  <div class="os-shell">
+    <div class="status-bar" role="banner" aria-label="System status">
+      <div class="status-bar-left">
+        <span class="os-logo">awedots</span>
+        <span class="activities">activities</span>
+        <span class="uptime" data-os-uptime>uptime --pretty</span>
+      </div>
+      <div class="status-bar-right">
+        <span class="user-chip">user@nwhelper</span>
+        <span class="clock" data-os-clock>${escapeHtml(clock)}</span>
+      </div>
+    </div>
+    <div class="os-desktop">
+      ${body}
+    </div>
+    <nav class="dock" aria-label="Application dock">
+      <a href="/" title="Home">~/</a>
+      <a href="/raids" title="Raids">war</a>
+      <a href="/stats" title="Stats">stat</a>
+      <a href="/servers" title="Servers">srv</a>
+      <a href="/member" title="Member">mem</a>
+      <span class="dock-sep" aria-hidden="true"></span>
+      <a href="/create" title="Create">+</a>
+    </nav>
+  </div>
+  ${renderOsShellScript()}
 </body>
 </html>`;
 }
 
+function renderStatusBarClock(): string {
+  const now = new Date();
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][now.getDay()];
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][now.getMonth()];
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${weekday} ${month} ${now.getDate()} ${hh}:${mm}`;
+}
+
+function renderOsShellScript(): string {
+  return `<script>
+  (function () {
+    var clockEl = document.querySelector("[data-os-clock]");
+    var uptimeEl = document.querySelector("[data-os-uptime]");
+    var boot = Date.now();
+    function pad(n) { return n < 10 ? "0" + n : "" + n; }
+    function tickClock() {
+      if (!clockEl) return;
+      var d = new Date();
+      var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      clockEl.textContent = days[d.getDay()] + " " + months[d.getMonth()] + " " + d.getDate() + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+    function tickUptime() {
+      if (!uptimeEl) return;
+      var s = Math.max(0, Math.floor((Date.now() - boot) / 1000));
+      var h = Math.floor(s / 3600);
+      var m = Math.floor((s % 3600) / 60);
+      var sec = s % 60;
+      uptimeEl.textContent = "up " + pad(h) + ":" + pad(m) + ":" + pad(sec);
+    }
+    tickClock();
+    tickUptime();
+    setInterval(tickClock, 30000);
+    setInterval(tickUptime, 1000);
+  })();
+  </script>`;
+}
+
+function renderWindow(title: string, body: string, options: { prompt?: string } = {}): string {
+  const prompt = options.prompt ?? "nwhelper@os";
+  return `<section class="os-window">
+    <header class="window-titlebar">
+      <div class="traffic-lights" aria-hidden="true">
+        <span class="t-red"></span>
+        <span class="t-yellow"></span>
+        <span class="t-green"></span>
+      </div>
+      <div class="window-title"><span class="prompt">┌──(</span>${escapeHtml(prompt)}<span>)-[</span>${escapeHtml(title)}<span>]</span></div>
+      <span style="width:46px"></span>
+    </header>
+    <div class="window-body">${body}</div>
+  </section>`;
+}
+
+function renderFetchPanel(summaries: GuildDashboardSummary[], session: WebSession): string {
+  const totalRaids = summaries.reduce((sum, s) => sum + s.activeRaids, 0);
+  const totalSignups = summaries.reduce((sum, s) => sum + s.totalSignups, 0);
+  const next = summaries
+    .filter((s) => s.nextWarStartTime)
+    .sort((a, b) => (a.nextWarStartTime ?? 0) - (b.nextWarStartTime ?? 0))[0];
+  const node = process.version;
+  const uptimeHours = Math.floor(process.uptime() / 3600);
+  const uptimeMin = Math.floor((process.uptime() % 3600) / 60);
+  const totalGuilds = summaries.length;
+  return `<aside class="fetch-panel">
+    <pre class="fetch-ascii" aria-hidden="true">    _   _ _____ _    _  ____
+   | \\ | | ____| |  | |/ __ \\
+   |  \\| |  _| | |__| | |  | |
+   | |\\  | |___| |__| | |__| |
+   |_| \\_|_____|_____/ \\____/</pre>
+    <dl class="fetch-info">
+      <div><dt class="t-key">user</dt><dd>${escapeHtml(session.user.username)}</dd></div>
+      <div><dt class="t-key">host</dt><dd>nwhelper-os</dd></div>
+      <div><dt class="t-key">shell</dt><dd>zsh 5.9</dd></div>
+      <div><dt class="t-key">wm</dt><dd>awedots</dd></div>
+      <div><dt class="t-key">kernel</dt><dd>${escapeHtml(node)}</dd></div>
+      <div><dt class="t-key">uptime</dt><dd>${uptimeHours}h ${uptimeMin}m</dd></div>
+      <div><dt class="t-key">guilds</dt><dd>${totalGuilds}</dd></div>
+      <div><dt class="t-key">raids</dt><dd>${totalRaids}</dd></div>
+      <div><dt class="t-key">signups</dt><dd>${totalSignups}</dd></div>
+      <div><dt class="t-key">next</dt><dd>${next ? escapeHtml(next.nextWarStart ?? "queued") : "none"}</dd></div>
+      <div><dt class="t-key">theme</dt><dd>paradise</dd></div>
+      <div><dt class="t-key">accent</dt><dd>#d9bc8c</dd></div>
+    </dl>
+  </aside>`;
+}
+
+function renderPromptLine(parts: { user?: string; host?: string; path?: string; suffix?: string } = {}): string {
+  const user = parts.user ?? "nwhelper";
+  const host = parts.host ?? "os";
+  const path = parts.path ?? "~";
+  return `<div class="prompt-line"><span class="user">${escapeHtml(user)}</span><span>@</span><span class="host">${escapeHtml(host)}</span><span>:</span><span class="path">${escapeHtml(path)}</span><span class="arrow">$</span>${parts.suffix ? `<span>${escapeHtml(parts.suffix)}</span>` : ""}</div>`;
+}
+
+function renderTerminal(lines: Array<{ kind?: "key" | "val" | "comment" | "success" | "warn" | "error" | "info" | "magenta" | "plain"; text: string }>): string {
+  return `<pre class="terminal-block">${lines.map((line) => `<span class="t-line"><span class="t-${line.kind ?? "plain"}">${escapeHtml(line.text)}</span></span>`).join("")}</pre>`;
+}
+
 function renderHome(events: WarEvent[], session?: WebSession, settings: BotSettings = {}): string {
   if (!session) {
-    return `${renderNav()}<main class="shell home-shell">
-      <section class="home-hero logged-out-hero command-hero">
-        <div>
-          <p class="eyebrow">Discord Node War command center</p>
-          <h1>NW Helper keeps raids, rosters, and war stats organized.</h1>
-          <p class="summary">Connect Discord to manage shared servers, schedule weekly Node War signup posts, track active rosters, and review uploaded scoreboard stats from one dark dashboard.</p>
-          <div class="button-row">${renderAccountControls()}${renderInviteButton("Invite Bot")}</div>
-        </div>
-      </section>
-    </main>`;
+    const heroBody = `
+      <p class="eyebrow">~/welcome.md</p>
+      <h1>NW Helper keeps raids, rosters, and war stats organized.</h1>
+      <p class="summary">Connect Discord to manage shared servers, schedule weekly Node War signup posts, track active rosters, and review uploaded scoreboard stats from one dark dashboard.</p>
+      ${renderPromptLine({ path: "~", suffix: "cat welcome.md" })}
+      ${renderTerminal([
+        { kind: "comment", text: "# launch the bot, then sign in with Discord to unlock" },
+        { kind: "key", text: "discord.oauth " },
+        { kind: "val", text: "--scopes=identify,guilds" },
+        { kind: "success", text: "  // ready" }
+      ])}
+      <div class="button-row">${renderAccountControls()}${renderInviteButton("Invite Bot")}</div>
+    `;
+    return `${renderNav()}${renderWindow("welcome", heroBody, { prompt: "nwhelper@os" })}`;
   }
 
   const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
 
-  return `${renderNav(session, undefined, summaries)}<main class="shell home-shell">
-    ${summaries.length ? `${renderGlobalStatsStrip(summaries)}
+  if (!summaries.length) {
+    return `${renderNav(session, undefined, summaries)}${renderWindow("no-shared-servers", renderNoSharedServersHome(), { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+  }
+
+  const body = `
+    ${renderPromptLine({ path: "~", suffix: "./nw-helper --dashboard" })}
+    ${renderGlobalStatsStrip(summaries)}
     <section class="war-room-layout" aria-label="NW Helper war room">
       ${renderCommandRail()}
       ${renderPrimaryWarFocus(summaries, session)}
       ${renderReadinessPanel(summaries[0])}
     </section>
+    <section class="fetch-strip">${renderFetchPanel(summaries, session)}</section>
     ${renderUpcomingRaidsTimeline(summaries)}
     ${renderServerFleetSection(summaries)}
-    ${renderRecentActivitySection()}` : renderNoSharedServersHome()}
-  </main>${renderCountdownScript()}`;
+    ${renderRecentActivitySection()}
+  `;
+  return `${renderNav(session, undefined, summaries)}${renderWindow("nw-helper --dashboard", body, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 function renderEventList(events: WarEvent[], session?: WebSession, guildId?: string, summaries?: GuildDashboardSummary[]): string {
@@ -1075,7 +1213,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
       </article>`;
     })
     .join("");
-  return `${renderNav(session, guildId, summaries)}<main class="shell">
+  const inner = `<main class="shell">
     ${selectedGuild ? `<section class="dashboard-head"><div class="guild-heading">${renderGuildAvatar(selectedGuild)}<div><p class="eyebrow">Raid dashboard</p><h1>${escapeHtml(selectedGuild.name)}</h1><p>Upcoming Node War rosters and recurring schedules.</p></div></div>${selectedCanManage ? `<a class="button" href="/create?guild=${encodeURIComponent(selectedGuild.id)}">+ Create raid</a>` : ""}</section>
     <section class="stats-row">
       ${renderStat("Active raids", String(activeEvents.length))}
@@ -1085,6 +1223,7 @@ function renderEventList(events: WarEvent[], session?: WebSession, guildId?: str
     </section>` : ""}
     ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : ""}
   </main>`;
+  return `${renderNav(session, guildId, summaries)}${renderWindow(selectedGuild ? `ls /guilds/${escapeHtml(selectedGuild.name)}/raids` : "raids", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderMemberLogin(): string {
@@ -1099,7 +1238,7 @@ function renderAllRaidsDashboard(session: WebSession, summaries: GuildDashboardS
   const raids = summaries
     .flatMap((summary) => summary.events.map((event) => ({ summary, event, sortTime: eventSortTimestamp(event) })))
     .sort((left, right) => left.sortTime - right.sortTime);
-  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+  const inner = `<main class="shell member-shell">
     <section class="member-hero">
       <div><p class="eyebrow">All raids</p><h1>Raid board across your shared servers</h1><p>Aggregated read-only raid schedule for every server you share with NW Helper.</p></div>
       <dl class="member-telemetry">
@@ -1113,11 +1252,12 @@ function renderAllRaidsDashboard(session: WebSession, summaries: GuildDashboardS
       <div class="section-title"><div><p class="eyebrow">Raid operations</p><h2>All visible schedules</h2></div><span>${raids.length} raids</span></div>
       <div class="member-raid-grid">${raids.map(({ summary, event }) => renderMemberRaidCard(summary, event)).join("") || `<div class="empty-state compact-empty"><h2>No raids found</h2><p>No raid schedules are available for your shared servers yet.</p></div>`}</div>
     </section>
-  </main>${renderCountdownScript()}`;
+  </main>`;
+  return `${renderNav(session, undefined, summaries)}${renderWindow("ls ~/raids", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 function renderServersPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
-  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+  const inner = `<main class="shell member-shell">
     <section class="member-hero">
       <div><p class="eyebrow">Servers</p><h1>Choose a server to manage</h1><p>Only Discord servers you share with NW Helper are listed here.</p></div>
       <dl class="member-telemetry">
@@ -1132,11 +1272,12 @@ function renderServersPicker(session: WebSession, summaries: GuildDashboardSumma
       <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("") || `<div class="empty-state compact-empty"><h2>No shared servers</h2><p>Invite NW Helper to a Discord server and log in again.</p></div>`}</div>
     </section>
   </main>`;
+  return `${renderNav(session, undefined, summaries)}${renderWindow("ls /servers", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderCreateServerPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
   const manageable = summaries.filter((summary) => canManageGuild(session, summary.guild.id));
-  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+  const inner = `<main class="shell member-shell">
     <section class="member-hero">
       <div><p class="eyebrow">Create raid</p><h1>Choose a server first</h1><p>Create permissions depend on Discord permissions. Pick the server where you want to schedule the roster.</p></div>
       <dl class="member-telemetry">
@@ -1159,6 +1300,7 @@ function renderCreateServerPicker(session: WebSession, summaries: GuildDashboard
         .join("") || `<div class="empty-state compact-empty"><h2>No manageable servers</h2><p>Your Discord account needs Administrator, Manage Server, Manage Channels, Manage Roles, or Manage Messages on a shared server to create raids.</p></div>`}</div>
     </section>
   </main>`;
+  return `${renderNav(session, undefined, summaries)}${renderWindow("create --select-server", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderMemberDashboard(session: WebSession, summaries: GuildDashboardSummary[]): string {
@@ -1167,7 +1309,7 @@ function renderMemberDashboard(session: WebSession, summaries: GuildDashboardSum
     .sort((left, right) => left.sortTime - right.sortTime);
   const next = events[0];
   const totalSignups = summaries.reduce((sum, summary) => sum + summary.totalSignups, 0);
-  return `${renderNav(session, undefined, summaries)}<main class="shell member-shell">
+  const inner = `<main class="shell member-shell">
     ${summaries.length ? `<section class="member-hero">
       <div><p class="eyebrow">Member view</p><h1>Roster board for your shared servers</h1><p>Read-only raid schedule, signup counts, and roster composition. Admin configuration controls stay hidden here.</p></div>
       <dl class="member-telemetry">
@@ -1186,7 +1328,8 @@ function renderMemberDashboard(session: WebSession, summaries: GuildDashboardSum
       <div class="section-title"><div><p class="eyebrow">Server list</p><h2>Your NW Helper servers</h2></div><span>${summaries.length} visible</span></div>
       <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("")}</div>
     </section>` : renderMemberNoServers()}
-  </main>${renderCountdownScript()}`;
+  </main>`;
+  return `${renderNav(session, undefined, summaries)}${renderWindow("member --roster", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 function renderMemberFeaturedRaid(summary: GuildDashboardSummary, event: WarEvent): string {
@@ -1504,7 +1647,7 @@ function warStartTimestamp(event: WarEvent): number {
 }
 
 function renderStatsServerPicker(session: WebSession, summaries?: GuildDashboardSummary[]): string {
-  return `${renderNav(session, undefined, summaries)}<main class="shell">
+  const inner = `<main class="shell">
     <section class="server-picker">
       <header><p class="eyebrow">War stats</p><h1>Select a server</h1><p>Open uploaded scoreboards and performance history for one Discord server.</p></header>
       <div class="server-grid">${session.guilds
@@ -1515,6 +1658,7 @@ function renderStatsServerPicker(session: WebSession, summaries?: GuildDashboard
         .join("") || "<p>No shared servers found.</p>"}</div>
     </section>
   </main>`;
+  return `${renderNav(session, undefined, summaries)}${renderWindow("cat /stats/index", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderStatsDashboard(
@@ -1836,7 +1980,7 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
 
 function renderScoreReportEditor(guild: DiscordGuild, session: WebSession, report: ScoreReport): string {
   const rows = [...report.rows, ...Array.from({ length: 3 }, () => undefined)];
-  return `${renderNav(session, guild.id)}<main class="shell stats-shell">
+  const inner = `<main class="shell stats-shell">
     <section class="dashboard-head">
       <div class="guild-heading">${renderGuildAvatar(guild)}<div><p class="eyebrow">Edit scoreboard</p><h1>${escapeHtml(report.title || formatDateLabel(report.warDate))}</h1><p>Correct OCR rows and save the scoreboard totals.</p></div></div>
       <a class="button button-secondary" href="/stats?guild=${encodeURIComponent(guild.id)}">Stats</a>
@@ -1854,6 +1998,7 @@ function renderScoreReportEditor(guild: DiscordGuild, session: WebSession, repor
       <div class="detail-actions"><a class="button button-secondary" href="/stats?guild=${encodeURIComponent(guild.id)}">Cancel</a><button type="submit">Save edits</button></div>
     </form>
   </main>`;
+  return `${renderNav(session, guild.id)}${renderWindow(`vim /stats/reports/${escapeHtml(report.id)}`, inner, { prompt: "nwhelper@os" })}`;
 }
 
 function renderScoreResultOptions(selected: ScoreReportResult): string {
@@ -2016,7 +2161,7 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
   const signed = activeRosterSignupCount(event);
   const guild = session?.guilds.find((candidate) => candidate.id === event.guildId);
 
-  return `${renderNav(session, event.guildId)}<main class="shell detail-shell">
+  const inner = `<main class="shell detail-shell">
     <section class="event-summary">
       <div>
         <p class="eyebrow">${event.tier ? `${labelTier(event.tier)} schedule` : event.kind === "siege" ? "Siege schedule" : "Node War schedule"}</p>
@@ -2035,7 +2180,8 @@ function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSes
     ${renderDayRail(event)}
     <section class="section-title roster-title"><div><p class="eyebrow">Current roster</p><h2>${escapeHtml(event.title)}</h2></div><span>${formatDateLabel(event.date)} | ${formatClockTime(event.time)}</span></section>
     <section class="roster-grid">${renderRosterColumns(event, canManage)}</section>
-  </main>${canManage && session ? renderRosterMoveScript(event.id, session.csrfToken) : ""}`;
+  </main>`;
+  return `${renderNav(session, event.guildId)}${renderWindow(`cat /events/${escapeHtml(event.id)}`, inner, { prompt: "nwhelper@os" })}${canManage && session ? renderRosterMoveScript(event.id, session.csrfToken) : ""}`;
 }
 
 function renderCurrentRosterSummary(event: WarEvent): string {
@@ -2235,7 +2381,7 @@ function renderCreateRaid(
     { key: "shai", label: getGroupLabel("shai"), capacity: 2 }
   ];
 
-  return `${renderNav(session, guildId)}<main class="shell create-shell">
+  const inner = `<main class="shell create-shell">
     <div class="page-nav"><a href="/?guild=${encodeURIComponent(guildId)}">Back to raids</a></div>
     <section class="builder-head">
       <div>
@@ -2265,7 +2411,8 @@ function renderCreateRaid(
       ${renderAllocationEditor(groups)}
       <div class="editor-actions"><button type="submit">Schedule Raid</button></div>
     </form>
-  </main>${renderRecurrenceDayScript()}${renderAllocationScript(true)}`;
+  </main>`;
+  return `${renderNav(session, guildId)}${renderWindow("create --new-raid", inner, { prompt: "nwhelper@os" })}${renderRecurrenceDayScript()}${renderAllocationScript(true)}`;
 }
 
 function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {
@@ -2295,7 +2442,7 @@ function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId
 
 function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession): string {
   const repeatDays = event.recurrence === "weekly" && event.repeatDays?.length ? event.repeatDays : event.day ? [event.day] : [];
-  return `${renderNav(session, event.guildId)}<main class="shell create-shell">
+  const inner = `<main class="shell create-shell">
     <nav class="page-nav"><a href="/events/${event.id}">Back to roster</a><a href="/?guild=${encodeURIComponent(event.guildId ?? "")}">Server raids</a></nav>
     <section class="builder-head">
       <div><p class="eyebrow">Raid settings</p><h1>Edit raid</h1><p class="summary">${escapeHtml(event.title)}</p></div>
@@ -2313,7 +2460,8 @@ function renderEditRaid(event: WarEvent, csrfToken: string, session: WebSession)
       ${renderAllocationEditor(event.groups.filter((group) => isRosterGroup(group.key)))}
       <div class="editor-actions"><button type="submit">Save raid settings</button></div>
     </form>
-  </main>${renderRecurrenceDayScript()}${renderAllocationScript(false)}`;
+  </main>`;
+  return `${renderNav(session, event.guildId)}${renderWindow(`edit /events/${escapeHtml(event.id)}`, inner, { prompt: "nwhelper@os" })}${renderRecurrenceDayScript()}${renderAllocationScript(false)}`;
 }
 
 function renderDayChecks(selectedDays: WarDay[]): string {
@@ -2794,7 +2942,8 @@ function warDayForDate(date: string): WarDay {
 
 function renderWebError(error: unknown): string {
   const message = error instanceof Error ? error.message : "The request could not be completed.";
-  return `${renderNav()}<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p>${escapeHtml(message)}</p><a class="button button-secondary" href="/">Return to dashboard</a></section></main>`;
+  const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p>${escapeHtml(message)}</p><a class="button button-secondary" href="/">Return to dashboard</a></section></main>`;
+  return `${renderNav()}${renderWindow("error", inner, { prompt: "nwhelper@os" })}`;
 }
 
 function escapeHtml(value: string): string {
