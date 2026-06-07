@@ -1126,19 +1126,20 @@ function renderOsShellScript(): string {
     } catch (e) {}
 
     var CARD_TERMINAL_SELECTOR = [
-      ".stat-card", ".event-card", ".server-card", ".role-table", ".schedule-panel",
+      ".event-card", ".server-card", ".role-table", ".schedule-panel",
       ".schedule-editor", ".delivery-editor", ".slot-editor", ".empty-state",
       ".welcome-state", ".server-picker", ".score-table-panel", ".score-edit-card",
       ".score-leader-card", ".score-mix-card", ".score-trend-card", ".stats-upload-panel",
-      ".report-card", ".day-card", ".impact-panel", ".member-server-card",
-      ".member-raid-card", ".preview-card", ".template-grid", ".eyebrow-card",
-      ".current-roster-summary", ".stats-row", ".command-rail", ".readiness-panel",
-      ".primary-war-focus", ".telemetry-module", ".fetch-panel"
+      ".stats-analysis-panel", ".report-card", ".day-card", ".impact-panel",
+      ".member-server-card", ".member-raid-card", ".preview-card", ".template-grid",
+      ".eyebrow-card", ".current-roster-summary", ".stats-row", ".command-rail",
+      ".readiness-panel", ".primary-war-focus", ".telemetry-module", ".fetch-panel"
     ].join(",");
 
     var TONE_FOR_CLASS = {
       "stats-row": "pink",
       "stats-upload-panel": "magenta",
+      "stats-analysis-panel": "cyan",
       "score-table-panel": "green",
       "score-mix-card": "magenta",
       "score-leader-card": "green",
@@ -1148,7 +1149,6 @@ function renderOsShellScript(): string {
       "preview-card": "cyan",
       "event-card": "pink",
       "server-card": "aqua",
-      "stat-card": "cyan",
       "day-card": "yellow",
       "report-card": "green",
       "member-raid-card": "pink",
