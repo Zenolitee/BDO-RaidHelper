@@ -1018,7 +1018,7 @@ function renderPage(title: string, body: string, opts: { loggedIn?: boolean; pat
 </head>
 <body class="antialiased" data-path="${escapeHtml(opts.path ?? "/")}">
   <div class="os-shell">
-    ${renderPolybar(title, !!opts.loggedIn)}
+    ${renderPolybarClean(title, !!opts.loggedIn)}
     <div class="os-desktop">${body}</div>
   </div>
   ${renderOsShellScript()}
@@ -1040,11 +1040,9 @@ function renderPolybar(currentTitle: string, isLoggedIn: boolean): string {
   const navItems: { href: string; label: string; icon: string; tone: string }[] = [
     { href: "/",         label: "home",   icon: "", tone: "bg-pink" },
     { href: "/raids",    label: "raids",  icon: "", tone: "bg-cyan" },
-    { href: "/stats",    label: "stats",  icon: "", tone: "bg-magenta" },
     { href: "/servers",  label: "servers",icon: "", tone: "bg-aqua" }
   ];
   if (isLoggedIn) {
-    navItems.push({ href: "/member", label: "member", icon: "", tone: "bg-blue" });
     navItems.push({ href: "/create", label: "+new",   icon: "", tone: "bg-yellow" });
   } else {
     navItems.push({ href: "/auth/discord", label: "login", icon: "", tone: "bg-green" });
@@ -1054,7 +1052,6 @@ function renderPolybar(currentTitle: string, isLoggedIn: boolean): string {
 
   return `<div class="polybar" role="banner" aria-label="System bar">
     <section class="pb-left">
-      <a class="pb-tag bg-pink" href="/" title="Home">nw</a>
       ${navTags}
     </section>
     <section class="pb-center">
@@ -1071,6 +1068,52 @@ function renderPolybar(currentTitle: string, isLoggedIn: boolean): string {
       <span class="pb-tag bg-ghost" data-pb-uptime title="Uptime">up —</span>
       <span class="pb-tag bg-white" data-pb-clock title="Clock">—</span>
       ${isLoggedIn ? `<a class="pb-tag bg-red" href="/logout" title="Sign out">⏻</a>` : ""}
+    </section>
+  </div>`;
+}
+
+function renderPolybarClean(currentTitle: string, isLoggedIn: boolean): string {
+  const days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+  const now = new Date();
+  const jsDay = now.getDay();
+  const isoDay = jsDay === 0 ? 6 : jsDay - 1;
+  const dayTags = days
+    .map((d, i) => {
+      const isToday = i === isoDay;
+      const isWeekend = i >= 5;
+      return `<span class="pb-day${isToday ? " today" : ""}${isWeekend && !isToday ? " weekend" : ""}" title="${d}">${isToday ? "*" : d[0]}</span>`;
+    })
+    .join("");
+
+  const navItems: { href: string; label: string; icon: string; tone: string }[] = [
+    { href: "/", label: "home", icon: "", tone: "bg-pink" },
+    { href: "/raids", label: "raids", icon: "", tone: "bg-cyan" },
+    { href: "/servers", label: "servers", icon: "", tone: "bg-aqua" }
+  ];
+  if (isLoggedIn) {
+    navItems.push({ href: "/create", label: "+new", icon: "", tone: "bg-yellow" });
+  } else {
+    navItems.push({ href: "/auth/discord", label: "login", icon: "", tone: "bg-green" });
+  }
+
+  const navTags = navItems
+    .map((item) => `<a class="pb-tag ${item.tone}" data-pb-nav href="${escapeHtml(item.href)}" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</a>`)
+    .join("");
+
+  return `<div class="polybar" role="banner" aria-label="System bar">
+    <section class="pb-left">
+      ${navTags}
+    </section>
+    <section class="pb-center">
+      <span class="pb-day-spacer"></span>
+      <span class="pb-tag bg-cyan" title="Current window">${escapeHtml(currentTitle)}</span>
+    </section>
+    <section class="pb-right">
+      ${dayTags}
+      <span class="pb-day-spacer"></span>
+      <span class="pb-tag bg-ghost" data-pb-uptime title="Uptime">up --</span>
+      <span class="pb-tag bg-white" data-pb-clock title="Clock">--</span>
+      ${isLoggedIn ? `<a class="pb-tag bg-red" href="/logout" title="Sign out">off</a>` : ""}
     </section>
   </div>`;
 }
@@ -1365,6 +1408,9 @@ function renderOsShellScript(): string {
         serversData = JSON.parse(raw.replace(/&quot;/g, '\\"'));
       } catch (e) { serversData = []; }
 
+      var targetTemplate = terminal.getAttribute("data-target-template") || "/guilds/{id}/stats";
+      function buildTarget(id) { return targetTemplate.replace(/\{id\}/g, encodeURIComponent(id)); }
+
       var history = [];
       var histIdx = 0;
 
@@ -1455,7 +1501,7 @@ function renderOsShellScript(): string {
         line("→ connecting to " + server.name + " (/" + server.id + "/stats)", "info");
         line("✓ routing to stats dashboard for #" + server.idx + " " + server.name, "success");
         setTimeout(function () {
-          window.location.href = "/guilds/" + encodeURIComponent(server.id) + "/stats";
+          window.location.href = buildTarget(server.id);
         }, 380);
       }
 
@@ -1571,7 +1617,7 @@ function renderOsShellScript(): string {
           if (cmd === "stats") {
             var sel3 = selectedServer();
             if (!sel3) { line("no server selected. type: cd <name>", "warn"); return; }
-            window.location.href = "/guilds/" + encodeURIComponent(sel3.id) + "/stats";
+            window.location.href = buildTarget(sel3.id);
             return;
           }
           if (cmd === "raids") {
@@ -1659,7 +1705,7 @@ function renderOsShellScript(): string {
             input.value = s.name;
             line("→ connecting to #" + s.idx + " " + s.name + "  (/" + s.id + "/stats)", "info");
             setTimeout(function () {
-              window.location.href = "/guilds/" + encodeURIComponent(s.id) + "/stats";
+              window.location.href = buildTarget(s.id);
             }, 220);
           });
         });
@@ -1906,7 +1952,16 @@ function renderAllRaidsDashboard(session: WebSession, summaries: GuildDashboardS
   return `${renderWindow("ls ~/raids", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
-function renderServersPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
+function renderServersPicker(
+  session: WebSession,
+  summaries: GuildDashboardSummary[],
+  options: { title?: string; prompt?: string; tone?: "cyan" | "pink" | "magenta" | "green" | "yellow" | "orange" | "aqua" | "blue"; targetTemplate?: string } = {}
+): string {
+  const targetTemplate = options.targetTemplate ?? "/guilds/{id}/stats";
+  const title = options.title ?? "cd /servers";
+  const prompt = options.prompt ?? "nwhelper@servers";
+  const tone = options.tone ?? "cyan";
+
   const servers = summaries.map((summary, idx) => ({
     idx: idx + 1,
     id: summary.guild.id,
@@ -1940,15 +1995,16 @@ function renderServersPicker(session: WebSession, summaries: GuildDashboardSumma
     servers.map((s) => ({ idx: s.idx, id: s.id, name: s.name, lower: s.name.toLowerCase() }))
   ).replace(/"/g, "&quot;");
 
-  const terminal = `<section class="server-pick-terminal" data-servers="${serverDataJson}">
+  const targetAttr = escapeHtml(targetTemplate);
+  const terminal = `<section class="server-pick-terminal" data-servers="${serverDataJson}" data-target-template="${targetAttr}">
     <div class="terminal-output" id="server-pick-output" aria-live="polite">
-      <div class="terminal-line t-info">┌── nwhelper@servers:~</div>
+      <div class="terminal-line t-info">┌── ${escapeHtml(prompt)}:~</div>
       <div class="terminal-line t-info">│ <span class="t-comment"># type </span><span class="t-key">ls</span><span class="t-comment"> to list servers, </span><span class="t-key">help</span><span class="t-comment"> for commands,</span></div>
       <div class="terminal-line t-info">│ <span class="t-comment"># or just type a server name / number to jump there.</span></div>
       <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
     </div>
     <form class="terminal-prompt-form" id="server-pick-form" action="javascript:void(0)" autocomplete="off" onsubmit="return false;">
-      <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span>servers<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
+      <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span><span class="t-success">servers</span><span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
       <div class="terminal-prompt-input-wrap">
         <input type="text" id="server-pick-input" class="terminal-prompt-input" placeholder="ls | cd 1 | goto Zenolitee's server | help" autofocus spellcheck="false" autocapitalize="off" autocorrect="off" />
         <span class="t-cursor terminal-prompt-cursor" aria-hidden="true">▮</span>
@@ -1960,7 +2016,7 @@ function renderServersPicker(session: WebSession, summaries: GuildDashboardSumma
     ${column}
     ${terminal}
   </main>`;
-  return `${renderWindow("cd /servers", inner, { prompt: "nwhelper@os", tone: "cyan" })}`;
+  return `${renderWindow(title, inner, { prompt: "nwhelper@os", tone })}`;
 }
 
 function renderCreateServerPicker(session: WebSession, summaries: GuildDashboardSummary[]): string {
@@ -2145,6 +2201,22 @@ function renderGuildAvatar(guild: DiscordGuild): string {
 
 function renderStat(label: string, value: string): string {
   return `<article class="stat-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
+}
+
+function renderStatsTerminalSummary(items: Array<{ label: string; value: string }>): string {
+  return `<section class="stats-row">
+    <header><h3>Stats overview</h3></header>
+    <div class="report-terminal-output stats-terminal-output">
+      <div class="terminal-line"><span class="t-success">nwhelper</span><span class="t-muted">@</span><span class="t-success">stats</span><span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span> cat summary</div>
+      ${items
+        .map(
+          (item) =>
+            `<div class="terminal-line stats-terminal-line"><span class="t-key">${escapeHtml(item.label.toLowerCase())}</span><span class="t-muted">=</span><span class="t-val">${escapeHtml(item.value)}</span></div>`
+        )
+        .join("")}
+      <div class="terminal-line"><span class="t-muted">status:</span> <span class="t-success">ready</span><span class="t-cursor">▮</span></div>
+    </div>
+  </section>`;
 }
 
 function renderGlobalStatsStrip(summaries: GuildDashboardSummary[]): string {
@@ -2335,18 +2407,13 @@ function warStartTimestamp(event: WarEvent): number {
 }
 
 function renderStatsServerPicker(session: WebSession, summaries?: GuildDashboardSummary[]): string {
-  const inner = `<main class="shell">
-    <section class="server-picker">
-      <header><p class="eyebrow">War stats</p><h1>Select a server</h1><p>Open uploaded scoreboards and performance history for one Discord server.</p></header>
-      <div class="server-grid">${session.guilds
-        .map(
-          (guild) =>
-            `<a class="server-card group transition duration-200 ease-out" href="/stats?guild=${encodeURIComponent(guild.id)}">${renderGuildAvatar(guild)}<span><strong>${escapeHtml(guild.name)}</strong><small>Open stats dashboard</small></span><b>Stats</b></a>`
-        )
-        .join("") || "<p>No shared servers found.</p>"}</div>
-    </section>
-  </main>`;
-  return `${renderWindow("cat /stats/index", inner, { prompt: "nwhelper@os" })}`;
+  const list = summaries ?? buildGuildDashboardSummaries(session.guilds, [], {});
+  return renderServersPicker(session, list, {
+    title: "cat /stats/index",
+    prompt: "nwhelper@stats",
+    tone: "magenta",
+    targetTemplate: "/stats?guild={id}"
+  });
 }
 
 function renderStatsDashboard(
@@ -2371,13 +2438,13 @@ function renderStatsDashboard(
       <a class="button button-secondary" href="/?guild=${encodeURIComponent(guild.id)}">Raids</a>
     </section>
     ${notice ? `<section class="notice">${renderStatsNotice(notice)}</section>` : ""}
-    <section class="stats-row">
-      ${renderStat("Scoreboards", String(reports.length))}
-      ${renderStat("Players tracked", String(players.length))}
-      ${renderStat("Total kills", formatStatNumber(totalKills))}
-      ${renderStat("Team K/D", totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills))}
-      ${renderStat("Latest war", latest ? formatDateLabel(latest.warDate) : "No uploads")}
-    </section>
+    ${renderStatsTerminalSummary([
+      { label: "Scoreboards", value: String(reports.length) },
+      { label: "Players tracked", value: String(players.length) },
+      { label: "Total kills", value: formatStatNumber(totalKills) },
+      { label: "Team K/D", value: totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills) },
+      { label: "Latest war", value: latest ? formatDateLabel(latest.warDate) : "No uploads" }
+    ])}
     ${canManage ? `<section class="stats-workspace">
       <form class="stats-upload-panel" method="post" action="/stats/upload" enctype="multipart/form-data">
         <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
@@ -2421,13 +2488,15 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
   return `<section class="score-graphics">
     <div class="score-mix-card">
       <header><p class="eyebrow">Team profile</p><h3>War output mix</h3></header>
-      <div class="score-ring" style="--damage:${Math.round((totalDamage / impactTotal) * 100)}%; --support:${Math.round((totalSupport / impactTotal) * 100)}%;"><span>${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills)}</span><small>Team K/D</small></div>
-      <div class="mix-bars">
-        ${renderMixBar("Damage", totalDamage, impactTotal, "damage")}
-        ${renderMixBar("+ Ally Support", totalSupport, impactTotal, "support")}
-        ${renderMixBar("Taken", totalTaken, impactTotal, "taken")}
-        ${renderMixBar("CCs", totalCc, Math.max(1, totalCc), "cc")}
-        ${renderMixBar("Fort Damage", totalStructure, Math.max(1, totalStructure), "cc")}
+      <div class="score-mix-body">
+        <div class="score-ring" style="--damage:${Math.round((totalDamage / impactTotal) * 100)}%; --support:${Math.round((totalSupport / impactTotal) * 100)}%;"><span>${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : formatStatNumber(totalKills)}</span><small>Team K/D</small></div>
+        <div class="mix-stats" role="list">
+          ${renderMixStat("Damage", totalDamage, "damage")}
+          ${renderMixStat("+ Ally Support", totalSupport, "support")}
+          ${renderMixStat("Taken", totalTaken, "taken")}
+          ${renderMixStat("CCs", totalCc, "cc")}
+          ${renderMixStat("Fort Damage", totalStructure, "cc")}
+        </div>
       </div>
     </div>
     ${renderMetricLeaderboard("Damage leaders", "Pressure", players, (player) => player.damageDealt)}
@@ -2436,20 +2505,19 @@ function renderScoreGraphics(players: PlayerScoreAggregate[], reports: ScoreRepo
     ${renderMetricLeaderboard("Fort Damage leaders", "Structure", players, (player) => player.structureDamage)}
     ${renderMetricLeaderboard("CC leaders", "Crowd control", players, (player) => player.crowdControls)}
     <div class="score-trend-card">
-      <header><p class="eyebrow">Recent wars</p><h3>Damage trend</h3></header>
-      <div class="trend-bars">${recentReports
-        .map((report) => {
-          const damage = report.rows.reduce((sum, row) => sum + row.damageDealt, 0);
-          const maxDamage = Math.max(1, ...recentReports.map((candidate) => candidate.rows.reduce((sum, row) => sum + row.damageDealt, 0)));
-          return `<span title="${escapeHtml(report.title || formatDateLabel(report.warDate))}"><i style="height:${Math.max(8, Math.round((damage / maxDamage) * 100))}%"></i><small>${escapeHtml(formatDateLabel(report.warDate).split(",")[0])}</small></span>`;
-        })
-        .join("")}</div>
+      <header><p class="eyebrow">Kill chart</p><h3>Recent war kills</h3></header>
+      ${renderKillChart(recentReports)}
     </div>
   </section>`;
 }
 
-function renderMixBar(label: string, value: number, total: number, tone: string): string {
-  return `<div class="mix-bar mix-${tone}"><span><b>${escapeHtml(label)}</b><small>${formatStatNumber(value)}</small></span><i style="width:${Math.max(3, Math.round((value / total) * 100))}%"></i></div>`;
+function renderMixStat(label: string, value: number, tone: string): string {
+  return `<div class="mix-stat mix-${tone}" role="listitem"><b>${escapeHtml(label)}</b><small>${formatStatNumber(value)}</small></div>`;
+}
+
+function renderRankBadge(rank: number): string {
+  if (rank === 1) return `<span class="rank-badge rank-top" aria-label="Rank 1">&#x1F451;</span>`;
+  return `<span class="rank-badge" aria-label="Rank ${rank}">${rank}</span>`;
 }
 
 function renderMetricLeaderboard(
@@ -2459,14 +2527,51 @@ function renderMetricLeaderboard(
   metric: (player: PlayerScoreAggregate) => number
 ): string {
   const leaders = [...players].sort((left, right) => metric(right) - metric(left)).slice(0, 4);
-  const maxValue = Math.max(1, ...leaders.map(metric));
   return `<div class="score-leader-card">
     <header><p class="eyebrow">${escapeHtml(eyebrow)}</p><h3>${escapeHtml(title)}</h3></header>
-    <div class="leader-bars">${leaders
-      .map((player) => {
+    <div class="leader-stats" role="list">${leaders
+      .map((player, index) => {
         const value = metric(player);
-        return `<div><span><b>${escapeHtml(player.familyName)}</b><small>${formatStatNumber(value)}</small></span><i style="width:${Math.max(5, Math.round((value / maxValue) * 100))}%"></i></div>`;
+        return `<div class="leader-stat" role="listitem">${renderRankBadge(index + 1)}<b>${escapeHtml(player.familyName)}</b><small>${formatStatNumber(value)}</small></div>`;
       })
+      .join("")}</div>
+  </div>`;
+}
+
+function renderKillChart(reports: ScoreReport[]): string {
+  if (!reports.length) {
+    return `<div class="kill-chart-empty">No recent war data.</div>`;
+  }
+  const series = reports.map((report) => ({
+    label: formatDateLabel(report.warDate).split(",")[0],
+    title: report.title || formatDateLabel(report.warDate),
+    kills: report.rows.reduce((sum, row) => sum + row.kills, 0),
+  }));
+  const maxKills = Math.max(1, ...series.map((item) => item.kills));
+  const width = 320;
+  const height = 150;
+  const points = series
+    .map((item, index) => {
+      const x = series.length === 1 ? width / 2 : Math.round((index / (series.length - 1)) * width);
+      const y = Math.round(height - (item.kills / maxKills) * (height - 18) - 9);
+      return { ...item, x, y };
+    });
+  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const area = `0,${height} ${points.map((point) => `${point.x},${point.y}`).join(" ")} ${width},${height}`;
+  return `<div class="kill-chart">
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Recent war kill chart">
+      <defs>
+        <linearGradient id="kill-chart-fill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="rgba(116, 166, 255, 0.42)" />
+          <stop offset="100%" stop-color="rgba(116, 166, 255, 0.02)" />
+        </linearGradient>
+      </defs>
+      <path class="kill-chart-area" d="M ${area.replace(/ /g, " L ")} Z"></path>
+      <polyline class="kill-chart-line" points="${polyline}"></polyline>
+      ${points.map((point) => `<circle class="kill-chart-point" cx="${point.x}" cy="${point.y}" r="4"><title>${escapeHtml(point.title)}: ${formatStatNumber(point.kills)} kills</title></circle>`).join("")}
+    </svg>
+    <div class="kill-chart-labels">${points
+      .map((point) => `<span><b>${formatStatNumber(point.kills)}</b><small>${escapeHtml(point.label)}</small></span>`)
       .join("")}</div>
   </div>`;
 }
@@ -2480,7 +2585,7 @@ function renderScoreTables(players: PlayerScoreAggregate[], topDamage: number, s
       <span class="score-tab-meta">Kills 20% · Assists 10% · Damage 20% · Fort 30% · Obj 10% · Survive 10%</span>
     </div>
     <div class="score-table-panel score-table-panel-main score-tab-panel is-active" data-tab-panel="scoreboard-totals" role="tabpanel">
-      <header><p class="eyebrow">Scoreboard totals</p><h3>Raw stats</h3><small>Sort each column to inspect volume, pressure, and support.</small></header>
+      <header><h3>Raw stats</h3><small>Sort each column to inspect volume, pressure, and support.</small></header>
       ${renderScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage)}
     </div>
     <div class="score-table-panel impact-panel score-tab-panel" data-tab-panel="impact-formula" role="tabpanel" hidden>
@@ -2731,20 +2836,21 @@ function renderReportsTerminal(reports: ScoreReport[], csrfToken: string, canMan
         <span class="report-terminal-counts">${r.rows.length}p · ${formatStatNumber(kills)}k</span>
       </li>`;
     }).join("")}</ul>
-    <p class="report-terminal-hint">click any scoreboard to view details</p>
+    <p class="report-terminal-hint">click to select, then type a command</p>
   </aside>`;
 
   const panel = `<section class="report-terminal-panel" data-reports="${reportsJson}">
     <div class="report-terminal-output" id="report-terminal-output">
       <div class="terminal-line t-info">┌── nwhelper@reports:~</div>
-      <div class="terminal-line t-info">│ <span class="t-comment"># select a scoreboard on the left to preview, edit, or delete it.</span></div>
-      <div class="terminal-line t-info">│ <span class="t-comment"># or type </span><span class="t-key">help</span><span class="t-comment">, </span><span class="t-key">ls</span><span class="t-comment">, </span><span class="t-key">open 3</span><span class="t-comment">, </span><span class="t-key">delete 1</span><span class="t-comment">, etc.</span></div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># click a scoreboard on the left, then type a command below.</span></div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># </span><span class="t-key">preview</span><span class="t-comment"> / </span><span class="t-key">edit</span><span class="t-comment"> / </span><span class="t-key">rescan</span><span class="t-comment"> / </span><span class="t-key">delete</span><span class="t-comment"> act on the selected one.</span></div>
+      <div class="terminal-line t-info">│ <span class="t-comment"># add a number to target a different one, e.g. </span><span class="t-key">preview 2</span><span class="t-comment">.</span></div>
       <div class="terminal-line t-info">└─$ <span class="t-cursor">▮</span></div>
     </div>
     <form class="terminal-prompt-form report-terminal-prompt" id="report-terminal-form" action="javascript:void(0)" autocomplete="off" onsubmit="return false;">
       <span class="terminal-prompt-label">nwhelper<span class="t-muted">@</span>reports<span class="t-muted">:</span><span class="t-path">~</span><span class="t-muted">$</span></span>
       <div class="terminal-prompt-input-wrap">
-        <input type="text" id="report-terminal-input" class="terminal-prompt-input" placeholder="open 1 | preview 2 | rescan 3 | delete 1 | ls | help | clear" spellcheck="false" autocapitalize="off" autocorrect="off" />
+        <input type="text" id="report-terminal-input" class="terminal-prompt-input" placeholder="preview | edit | rescan | delete | ls | help | clear" spellcheck="false" autocapitalize="off" autocorrect="off" />
         <span class="t-cursor terminal-prompt-cursor" aria-hidden="true">▮</span>
       </div>
     </form>
@@ -2839,13 +2945,15 @@ function renderReportsTerminalScript(): string {
         line("  k/d %      " + kd + "%", kd >= 200 ? "success" : kd >= 100 ? "warn" : "error");
         line("  damage     " + totalDamage.toLocaleString(), "info");
         line("", null);
-        line("> commands:", "comment");
-        line("  preview  →  /stats/reports/" + r.id + "/preview", "key");
-        line("  edit     →  /stats/reports/" + r.id + "/edit", "key");
-        line("  rescan   →  POST /stats/reports/" + r.id + "/rescan", "key");
-        line("  delete   →  POST /stats/reports/" + r.id + "/delete", "error");
+        lineHTML(
+          '<span class="t-comment">› selected · type one of:</span><br>' +
+          '<span class="t-key">  preview</span><span class="t-muted">  ·  open the screenshot</span><br>' +
+          '<span class="t-key">  edit</span><span class="t-muted">     ·  open the scoreboard editor</span><br>' +
+          '<span class="t-key">  rescan</span><span class="t-muted">   ·  re-run OCR on the screenshot</span><br>' +
+          '<span class="t-error">  delete</span><span class="t-muted">   ·  remove this scoreboard (asks first)</span>'
+        );
         line("", null);
-        line("> tip: click another scoreboard, or type a command above", "muted");
+        line("> tip: click another scoreboard on the left, or add a number to target a different one (e.g. preview 2).", "muted");
       }
 
       function selectedReport() {
@@ -2865,14 +2973,16 @@ function renderReportsTerminalScript(): string {
         if (cmd === "help" || cmd === "?") {
           lineHTML(
             '<span class="t-info">Available commands</span><br>' +
-            '<span class="t-key">  ls</span><span class="t-muted">                           list scoreboards (alias: list)</span><br>' +
-            '<span class="t-key">  open &lt;n&gt;</span><span class="t-muted">     show details for scoreboard #n (alias: select, view)</span><br>' +
-            '<span class="t-key">  preview &lt;n&gt;</span><span class="t-muted">  open /stats/reports/&lt;id&gt;/preview</span><br>' +
-            '<span class="t-key">  edit &lt;n&gt;</span><span class="t-muted">     open /stats/reports/&lt;id&gt;/edit</span><br>' +
-            '<span class="t-key">  rescan &lt;n&gt;</span><span class="t-muted">   POST /stats/reports/&lt;id&gt;/rescan</span><br>' +
-            '<span class="t-key">  delete &lt;n&gt;</span><span class="t-muted">   POST /stats/reports/&lt;id&gt;/delete (with confirm)</span><br>' +
-            '<span class="t-key">  clear</span><span class="t-muted">                       clear the terminal (alias: cls)</span><br>' +
-            '<span class="t-comment">  Tip: click any scoreboard on the left to select it.</span>'
+            '<span class="t-comment">  click a scoreboard on the left to select it, then:</span><br>' +
+            '<span class="t-key">  preview</span><span class="t-muted">          open the screenshot for the selected scoreboard</span><br>' +
+            '<span class="t-key">  edit</span><span class="t-muted">             open the scoreboard editor</span><br>' +
+            '<span class="t-key">  rescan</span><span class="t-muted">           re-run OCR on the screenshot</span><br>' +
+            '<span class="t-error">  delete</span><span class="t-muted">           remove the selected scoreboard (asks first)</span><br>' +
+            '<span class="t-key">  open &lt;n&gt;</span><span class="t-muted">       show details for scoreboard #n (alias: select, view)</span><br>' +
+            '<span class="t-key">  preview &lt;n&gt; | edit &lt;n&gt; | rescan &lt;n&gt; | delete &lt;n&gt;</span><br>' +
+            '<span class="t-muted">                       target a specific scoreboard by number, title, or date</span><br>' +
+            '<span class="t-key">  ls</span><span class="t-muted">                 list scoreboards (alias: list)</span><br>' +
+            '<span class="t-key">  clear</span><span class="t-muted">              clear the terminal (alias: cls)</span>'
           );
           return;
         }

@@ -254,8 +254,10 @@ body::before {
 
 .window-titlebar .win-tab {
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   padding: 0 10px;
   height: 22px;
   border-radius: 3px;
@@ -278,10 +280,14 @@ body::before {
 
 .window-titlebar .win-min,
 .window-titlebar .win-close {
+  flex: 0 0 22px;
   display: inline-grid;
   place-items: center;
+  min-width: 22px;
+  min-height: 22px;
   width: 22px;
   height: 22px;
+  padding: 0;
   border-radius: 3px;
   color: var(--white);
   font-size: 0.78rem;
@@ -309,9 +315,14 @@ body::before {
 .window-titlebar .win-close:active { transform: translateY(0); }
 
 .window-titlebar .win-meta {
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--text);
   font-size: 0.74rem;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .window-titlebar .win-meta .sep { color: var(--muted); margin: 0 6px; }
@@ -331,13 +342,23 @@ body::before {
 }
 
 .is-terminal {
-  padding-top: 34px !important;
+  display: flex;
+  flex-direction: column;
+  padding-top: 28px !important;
   transition: max-height 0.4s cubic-bezier(.4,0,.2,1), opacity 0.3s ease, border-color 0.3s ease, padding 0.4s cubic-bezier(.4,0,.2,1) !important;
 }
 
 .is-terminal > *:not(.card-titlebar) {
   transition: opacity 0.3s ease, transform 0.4s cubic-bezier(.4,0,.2,1);
   transform-origin: top center;
+}
+
+/* The card-titlebar is the single source of truth for the card title.
+   Hide the original <header> (eyebrow + h2/h3) inside terminal cards
+   so titles are not duplicated and the layout no longer collides with
+   the absolute-positioned titlebar. */
+.is-terminal > header:not(.card-titlebar) {
+  display: none !important;
 }
 
 .is-terminal[data-minimized="true"] > *:not(.card-titlebar) {
@@ -353,45 +374,53 @@ body::before {
 
 .card-titlebar {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 5px;
+  left: 10px;
+  right: 10px;
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px 0 10px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(40, 46, 58, 0.78);
-  font-size: 0.7rem;
+  flex-wrap: nowrap;
+  gap: 4px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+  font-size: 0.68rem;
   color: var(--text);
   user-select: none;
   cursor: pointer;
+  overflow: hidden;
   transition: transform 0.35s cubic-bezier(.4,0,.2,1), opacity 0.3s ease, height 0.4s cubic-bezier(.4,0,.2,1);
 }
 
 .card-titlebar:hover { background: rgba(46, 52, 64, 0.9); }
+.card-titlebar:hover { background: transparent; }
 .card-titlebar > .card-title { cursor: pointer; }
 .card-titlebar > .card-min,
 .card-titlebar > .card-close { cursor: pointer; }
 
 .card-titlebar .card-title {
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 8px;
-  height: 18px;
+  min-width: 0;
+  padding: 0 7px;
+  height: 16px;
   border-radius: 3px;
   background: var(--cyan);
   color: var(--nord-bg);
   font-weight: 700;
+  font-size: 0.66rem;
   letter-spacing: 0.02em;
   text-transform: lowercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  max-width: min(52%, 240px);
+  opacity: 0.85;
 }
 
 .card-titlebar.t-pink    .card-title { background: var(--pink); }
@@ -402,23 +431,45 @@ body::before {
 .card-titlebar.t-aqua    .card-title { background: var(--aqua); }
 .card-titlebar.t-blue    .card-title { background: var(--blue); }
 
-.card-titlebar .card-spacer { flex: 1 1 auto; }
+.card-titlebar .card-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
 
 .card-titlebar .card-min,
 .card-titlebar .card-close {
+  position: static;
+  flex: 0 0 16px;
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  box-sizing: border-box;
+  min-width: 16px;
+  min-height: 16px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
   border-radius: 3px;
   border: 0;
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: 0;
   line-height: 1;
   font-weight: 700;
-  padding: 0;
+  text-align: center;
   transition: filter 0.12s ease, transform 0.12s ease;
 }
+
+.card-titlebar .card-min::before,
+.card-titlebar .card-close::before {
+  display: block;
+  width: 16px;
+  height: 16px;
+  font-size: 0.62rem;
+  line-height: 16px;
+  text-align: center;
+}
+
+.card-titlebar .card-min::before { content: "─"; }
+.card-titlebar .card-close::before { content: "×"; }
 
 .card-titlebar .card-min {
   background: var(--yellow);
@@ -1979,8 +2030,10 @@ h1 {
 
 .score-mix-card {
   grid-column: span 2;
-  grid-template-columns: 132px minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 18px;
+  row-gap: 12px;
 }
 
 .score-mix-card header {
@@ -2630,6 +2683,9 @@ h1 {
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 12px;
   min-height: 420px;
+  max-height: 70vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .report-terminal-rail {
@@ -2643,6 +2699,8 @@ h1 {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .report-terminal-eyebrow {
@@ -2672,7 +2730,8 @@ h1 {
   gap: 2px;
   overflow-y: auto;
   flex: 1 1 auto;
-  max-height: 480px;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .report-terminal-item {
@@ -2740,18 +2799,27 @@ h1 {
   display: flex;
   flex-direction: column;
   min-height: 420px;
+  max-height: 70vh;
   overflow: hidden;
 }
 
 .report-terminal-output {
   flex: 1 1 auto;
+  min-height: 0;
   padding: 14px 16px;
   overflow-y: auto;
   font-size: 0.82rem;
   line-height: 1.55;
   color: var(--text);
   font-family: ui-monospace, "JetBrains Mono", "Iosevka", monospace;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(43, 228, 145, 0.4) transparent;
 }
+
+.report-terminal-output::-webkit-scrollbar { width: 6px; }
+.report-terminal-output::-webkit-scrollbar-track { background: transparent; }
+.report-terminal-output::-webkit-scrollbar-thumb { background: rgba(43, 228, 145, 0.35); border-radius: 3px; }
+.report-terminal-output::-webkit-scrollbar-thumb:hover { background: rgba(43, 228, 145, 0.6); }
 
 .report-terminal-prompt {
   flex: 0 0 auto;
@@ -5411,7 +5479,7 @@ input:focus, select:focus, textarea:focus {
 .telemetry-module[data-minimized="true"],
 .fetch-panel[data-minimized="true"],
 .terminal-card[data-minimized="true"] {
-  max-height: 34px;
+  max-height: 30px;
   opacity: 0.65;
 }
 
@@ -5547,6 +5615,736 @@ input:focus, select:focus, textarea:focus {
   font-size: 1.4rem;
   font-weight: 800;
   line-height: 1.1;
+}
+
+.stats-row.is-terminal {
+  display: flex;
+  flex-direction: column;
+  padding: 36px 0 0 !important;
+  background:
+    linear-gradient(180deg, rgba(20, 24, 32, 0.88), rgba(25, 30, 40, 0.76)),
+    rgba(40, 46, 58, 0.62);
+}
+
+.stats-terminal-output {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 16px 14px;
+  background: transparent;
+}
+
+.stats-terminal-line {
+  display: grid;
+  grid-template-columns: minmax(130px, max-content) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  max-width: 560px;
+}
+
+.event-card.is-terminal,
+.server-card.is-terminal,
+.role-table.is-terminal,
+.schedule-panel.is-terminal,
+.schedule-editor.is-terminal,
+.delivery-editor.is-terminal,
+.slot-editor.is-terminal,
+.empty-state.is-terminal,
+.welcome-state.is-terminal,
+.server-picker.is-terminal,
+.score-table-panel.is-terminal,
+.score-edit-card.is-terminal,
+.score-leader-card.is-terminal,
+.score-mix-card.is-terminal,
+.score-trend-card.is-terminal,
+.stats-upload-panel.is-terminal,
+.stats-analysis-panel.is-terminal,
+.report-card.is-terminal,
+.day-card.is-terminal,
+.impact-panel.is-terminal,
+.member-server-card.is-terminal,
+.member-raid-card.is-terminal,
+.preview-card.is-terminal,
+.template-grid.is-terminal,
+.eyebrow-card.is-terminal,
+.current-roster-summary.is-terminal,
+.command-rail.is-terminal,
+.readiness-panel.is-terminal,
+.primary-war-focus.is-terminal,
+.telemetry-module.is-terminal,
+.fetch-panel.is-terminal,
+.terminal-card.is-terminal {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(20, 24, 32, 0.88), rgba(25, 30, 40, 0.76)),
+    rgba(40, 46, 58, 0.62);
+}
+
+.stats-upload-panel.is-terminal {
+  --card-titlebar-x: -8px;
+  padding: 38px 16px 16px !important;
+}
+
+.stats-analysis-panel.is-terminal,
+.score-table-panel.is-terminal,
+.score-edit-card.is-terminal,
+.impact-panel.is-terminal,
+.report-card.is-terminal {
+  --card-titlebar-x: -8px;
+  padding-top: 38px !important;
+}
+
+.command-rail.is-terminal {
+  --card-titlebar-x: -6px;
+  padding: 42px 14px 14px !important;
+}
+
+.command-rail.is-terminal > .eyebrow {
+  display: none;
+}
+
+.readiness-panel.is-terminal {
+  --card-titlebar-x: -8px;
+  padding: 42px 16px 16px !important;
+}
+
+.readiness-panel.is-terminal .readiness-head .eyebrow {
+  display: none;
+}
+
+.score-table-tabs .score-table-panel.is-terminal {
+  --card-titlebar-x: -8px;
+  padding: 44px 16px 16px !important;
+}
+
+.score-table-tabs .score-table-panel.is-terminal > .card-titlebar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  top: 4px;
+  left: var(--card-titlebar-x, 8px);
+  right: var(--card-titlebar-x, 8px);
+  height: 28px;
+  min-height: 28px;
+  overflow: visible;
+}
+
+.score-table-tabs .score-table-panel.is-terminal > .card-titlebar .card-title {
+  flex: 0 1 auto;
+  width: auto;
+  height: 22px;
+  min-height: 22px;
+  line-height: 22px;
+  max-width: calc(100% - 52px);
+}
+
+.score-table-tabs .score-table-panel.is-terminal > .card-titlebar .card-spacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}
+
+.score-table-tabs .score-table-panel.is-terminal > .card-titlebar .card-min,
+.score-table-tabs .score-table-panel.is-terminal > .card-titlebar .card-close {
+  display: inline-grid;
+  flex: 0 0 18px;
+  width: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  max-height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  line-height: 18px;
+  transform: none;
+  box-shadow: none;
+}
+
+.score-table-tabs .score-table-panel.is-terminal .score-table-wrap {
+  margin-top: 0;
+}
+
+.score-table-tabs .impact-panel.is-terminal .impact-summary {
+  padding-top: 0;
+}
+
+.score-mix-card.is-terminal,
+.score-leader-card.is-terminal,
+.score-trend-card.is-terminal {
+  --card-titlebar-x: -6px;
+  padding: 34px 14px 14px !important;
+}
+
+.card-titlebar {
+  top: 10px;
+  left: var(--card-titlebar-x, 8px);
+  right: var(--card-titlebar-x, 8px);
+  height: 22px;
+  min-height: 22px;
+  overflow: visible;
+}
+
+.card-titlebar .card-title {
+  height: 18px;
+  min-height: 18px;
+  padding-inline: 6px;
+  padding-block: 0;
+  font-size: 0.68rem;
+  line-height: 18px;
+  max-width: min(58%, 260px);
+}
+
+.card-titlebar .card-min,
+.card-titlebar .card-close {
+  flex-basis: 18px;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+}
+
+.card-titlebar .card-min::before,
+.card-titlebar .card-close::before {
+  width: 18px;
+  height: 18px;
+  font-size: 0.66rem;
+  line-height: 18px;
+}
+
+/* Unified terminal card chrome.
+   Keep every JS-wrapped terminal card on one titlebar layout so individual
+   card padding cannot shift or clip the title/control row. */
+.is-terminal {
+  padding-top: 40px !important;
+}
+
+.is-terminal > .card-titlebar {
+  top: 0 !important;
+  right: 0 !important;
+  left: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 8px !important;
+  overflow: hidden !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: rgba(20, 24, 32, 0.72) !important;
+}
+
+.is-terminal > .card-titlebar .card-title {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  max-width: calc(100% - 58px) !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  padding: 0 7px !important;
+  font-size: 0.68rem !important;
+  line-height: 20px !important;
+}
+
+.is-terminal > .card-titlebar .card-spacer {
+  flex: 1 1 8px !important;
+  min-width: 8px !important;
+}
+
+.is-terminal > .card-titlebar .card-min,
+.is-terminal > .card-titlebar .card-close {
+  flex: 0 0 18px !important;
+  display: inline-grid !important;
+  width: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  max-height: 18px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  line-height: 18px !important;
+  transform: none !important;
+}
+
+.is-terminal > .card-titlebar .card-min::before,
+.is-terminal > .card-titlebar .card-close::before {
+  width: 18px !important;
+  height: 18px !important;
+  font-size: 0.66rem !important;
+  line-height: 18px !important;
+}
+
+.stats-row.is-terminal {
+  padding-top: 40px !important;
+}
+
+.score-table-tabs .score-table-panel.is-terminal,
+.score-table-tabs .impact-panel.is-terminal {
+  padding-top: 40px !important;
+}
+
+.score-mix-card.is-terminal,
+.score-leader-card.is-terminal,
+.score-trend-card.is-terminal {
+  padding-top: 40px !important;
+}
+
+.is-terminal::before {
+  top: 30px !important;
+}
+
+.score-graphics .is-terminal,
+.stats-row.is-terminal,
+.stats-upload-panel.is-terminal,
+.stats-analysis-panel.is-terminal,
+.command-rail.is-terminal,
+.readiness-panel.is-terminal,
+.score-table-tabs .score-table-panel.is-terminal {
+  border-radius: 6px !important;
+  box-shadow: var(--shadow-soft) !important;
+  transform: none !important;
+}
+
+.score-graphics .is-terminal:hover,
+.stats-row.is-terminal:hover,
+.stats-upload-panel.is-terminal:hover,
+.stats-analysis-panel.is-terminal:hover,
+.command-rail.is-terminal:hover,
+.readiness-panel.is-terminal:hover,
+.score-table-tabs .score-table-panel.is-terminal:hover {
+  border-color: var(--line) !important;
+  background:
+    linear-gradient(180deg, rgba(20, 24, 32, 0.88), rgba(25, 30, 40, 0.76)),
+    rgba(40, 46, 58, 0.62) !important;
+  box-shadow: var(--shadow-soft) !important;
+  transform: none !important;
+}
+
+/* Stats page Linux terminal rebuild.
+   Everything inside the stats shell uses one terminal frame and no card-specific
+   chrome offsets, hover lifts, or titlebar variants. */
+.stats-shell {
+  --stats-terminal-bg:
+    linear-gradient(180deg, rgba(18, 24, 34, 0.74), rgba(26, 33, 45, 0.62)),
+    rgba(59, 66, 82, 0.34);
+  --stats-terminal-line: rgba(99, 111, 132, 0.58);
+  --stats-terminal-titlebar: rgba(24, 31, 43, 0.72);
+}
+
+.stats-shell .stats-workspace,
+.stats-shell .score-graphics,
+.stats-shell .score-table-tabs,
+.stats-shell .report-terminal-shell {
+  gap: 12px;
+}
+
+.stats-shell .guild-heading h1 {
+  color: #89aee6 !important;
+}
+
+.stats-shell .guild-heading .eyebrow {
+  color: #6f97d7 !important;
+}
+
+.stats-shell .guild-heading > div > p:not(.eyebrow) {
+  color: #9eb7dd !important;
+  opacity: 1 !important;
+}
+
+.stats-shell .dashboard-head .button-secondary {
+  border-color: rgba(137, 174, 230, 0.58) !important;
+  background: rgba(42, 56, 79, 0.78) !important;
+  color: #d8e6ff !important;
+}
+
+.stats-shell .dashboard-head .button-secondary:hover {
+  border-color: #89aee6 !important;
+  background: rgba(55, 74, 104, 0.92) !important;
+  color: #f1f6ff !important;
+}
+
+.stats-shell .is-terminal {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  padding: 42px 14px 14px !important;
+  border: 1px solid var(--stats-terminal-line) !important;
+  border-radius: 6px !important;
+  background: var(--stats-terminal-bg) !important;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24) !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+.stats-shell .is-terminal:hover {
+  border-color: var(--stats-terminal-line) !important;
+  background: var(--stats-terminal-bg) !important;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24) !important;
+  transform: none !important;
+}
+
+.stats-shell .is-terminal::before {
+  display: none !important;
+}
+
+.stats-shell .is-terminal > .card-titlebar {
+  position: absolute !important;
+  inset: 0 0 auto 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 8px !important;
+  border-bottom: 1px solid var(--stats-terminal-line) !important;
+  background: var(--stats-terminal-titlebar) !important;
+  overflow: hidden !important;
+}
+
+.stats-shell .is-terminal > .card-titlebar .card-title {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  max-width: calc(100% - 58px) !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  padding: 0 8px !important;
+  border-radius: 3px !important;
+  font-size: 0.68rem !important;
+  font-weight: 800 !important;
+  line-height: 20px !important;
+}
+
+.stats-shell .is-terminal > .card-titlebar .card-spacer {
+  flex: 1 1 8px !important;
+  min-width: 8px !important;
+}
+
+.stats-shell .is-terminal > .card-titlebar .card-min,
+.stats-shell .is-terminal > .card-titlebar .card-close {
+  flex: 0 0 18px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  max-height: 18px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  line-height: 18px !important;
+  transform: none !important;
+}
+
+.stats-shell .is-terminal > .card-titlebar .card-min::before,
+.stats-shell .is-terminal > .card-titlebar .card-close::before {
+  width: 18px !important;
+  height: 18px !important;
+  font-size: 0.66rem !important;
+  line-height: 18px !important;
+}
+
+.stats-shell .stats-row.is-terminal,
+.stats-shell .stats-upload-panel.is-terminal,
+.stats-shell .stats-analysis-panel.is-terminal,
+.stats-shell .score-table-panel.is-terminal,
+.stats-shell .impact-panel.is-terminal,
+.stats-shell .score-mix-card.is-terminal,
+.stats-shell .score-leader-card.is-terminal,
+.stats-shell .score-trend-card.is-terminal {
+  padding-top: 42px !important;
+}
+
+.stats-shell .stats-row.is-terminal {
+  min-height: 150px !important;
+  padding-right: 16px !important;
+  padding-left: 16px !important;
+}
+
+.stats-shell .stats-terminal-output {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.stats-shell .stats-terminal-line {
+  grid-template-columns: minmax(128px, max-content) auto minmax(0, 1fr);
+}
+
+.stats-shell .stats-upload-panel.is-terminal {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+}
+
+.stats-shell .stats-upload-panel.is-terminal > input[type="hidden"],
+.stats-shell .stats-upload-panel.is-terminal > .card-titlebar {
+  grid-column: auto;
+}
+
+.stats-shell .stats-upload-panel.is-terminal label:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+.stats-shell .stats-upload-panel.is-terminal label:nth-of-type(2) { grid-column: 2; grid-row: 1; }
+.stats-shell .stats-upload-panel.is-terminal label:nth-of-type(3) { grid-column: 3; grid-row: 1; }
+.stats-shell .stats-upload-panel.is-terminal label:nth-of-type(4) { grid-column: 4; grid-row: 1; }
+.stats-shell .stats-upload-panel.is-terminal button[type="submit"] {
+  grid-column: 5;
+  grid-row: 1;
+  align-self: stretch;
+  min-height: 48px;
+  margin-top: 0;
+}
+
+.stats-shell .stats-upload-panel.is-terminal label,
+.stats-shell .stats-upload-panel.is-terminal button[type="submit"] {
+  min-width: 0;
+}
+
+.stats-shell .score-graphics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  align-items: stretch;
+}
+
+.stats-shell .score-mix-card.is-terminal {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  align-content: start;
+  max-width: none;
+}
+
+.stats-shell .score-mix-card.is-terminal > header {
+  grid-column: 1 / -1;
+}
+
+.stats-shell .score-mix-card.is-terminal .score-mix-body {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.9fr) minmax(220px, 1.1fr);
+  align-items: start;
+  gap: 0;
+  width: 100%;
+}
+
+.stats-shell .score-leader-card.is-terminal,
+.stats-shell .score-trend-card.is-terminal {
+  min-height: 210px;
+}
+
+.stats-shell .score-mix-card.is-terminal,
+.stats-shell .score-leader-card.is-terminal,
+.stats-shell .score-trend-card.is-terminal {
+  gap: 12px !important;
+}
+
+.stats-shell .score-mix-card.is-terminal .score-ring {
+  width: 110px;
+  justify-self: center;
+  align-self: start;
+}
+
+.stats-shell .score-mix-card.is-terminal .mix-bars,
+.stats-shell .score-mix-card.is-terminal .mix-stats {
+  align-content: start;
+  width: 100%;
+}
+
+.stats-shell .score-mix-card.is-terminal .mix-stats {
+  padding-left: 20px;
+  border-left: 1px solid rgba(99, 111, 132, 0.36);
+  min-height: 100%;
+}
+
+.stats-shell .mix-bars,
+.stats-shell .leader-bars {
+  gap: 10px;
+}
+
+.stats-shell .mix-stats,
+.stats-shell .leader-stats {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.stats-shell .mix-stat,
+.stats-shell .leader-stat {
+  display: grid;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(99, 111, 132, 0.28);
+}
+
+.stats-shell .mix-stat {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.stats-shell .leader-stat {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.stats-shell .mix-stat:last-child,
+.stats-shell .leader-stat:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.stats-shell .mix-stat b,
+.stats-shell .leader-stat b {
+  color: #f2f5fb;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.stats-shell .rank-badge {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid rgba(99, 111, 132, 0.4);
+  background: rgba(20, 28, 39, 0.74);
+  color: #9fb4d7;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.stats-shell .rank-badge.rank-top {
+  color: #f6d37a;
+  border-color: rgba(246, 211, 122, 0.5);
+  background: rgba(86, 64, 18, 0.34);
+}
+
+.stats-shell .mix-stat small,
+.stats-shell .leader-stat small {
+  color: #9fb4d7;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  opacity: 1;
+}
+
+.stats-shell .kill-chart {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.stats-shell .kill-chart svg {
+  width: 100%;
+  height: 170px;
+  overflow: visible;
+}
+
+.stats-shell .kill-chart-area {
+  fill: url(#kill-chart-fill);
+}
+
+.stats-shell .kill-chart-line {
+  fill: none;
+  stroke: #74a6ff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.stats-shell .kill-chart-point {
+  fill: #f05aa6;
+  stroke: #111823;
+  stroke-width: 2;
+}
+
+.stats-shell .kill-chart-labels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  gap: 8px;
+}
+
+.stats-shell .kill-chart-labels span {
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+.stats-shell .kill-chart-labels b {
+  color: #f2f5fb;
+  font-size: 0.75rem;
+}
+
+.stats-shell .kill-chart-labels small,
+.stats-shell .kill-chart-empty {
+  color: #9fb4d7;
+  font-size: 0.68rem;
+}
+
+.stats-shell .score-table-tabs {
+  border: 1px solid var(--stats-terminal-line);
+  border-radius: 6px;
+  background: var(--stats-terminal-bg);
+  overflow: hidden;
+}
+
+.stats-shell .score-table-tabs .score-table-panel.is-terminal {
+  border-width: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  position: relative !important;
+  top: auto !important;
+  min-height: 0 !important;
+}
+
+.stats-shell .score-table-tabs .score-table-panel.is-terminal > .card-titlebar {
+  inset: 0 0 auto 0 !important;
+}
+
+.stats-shell .score-table-tabs .impact-panel.is-terminal {
+  position: relative !important;
+  top: auto !important;
+  background: transparent !important;
+}
+
+.stats-shell .score-table-tabs .impact-panel.is-terminal .impact-summary {
+  padding-top: 4px !important;
+}
+
+.stats-shell .report-terminal-panel,
+.stats-shell .report-terminal-rail {
+  border-radius: 6px;
+  background: var(--stats-terminal-bg);
+}
+
+@media (max-width: 860px) {
+  .stats-shell .stats-upload-panel.is-terminal {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-shell .score-mix-card.is-terminal {
+    grid-column: span 1;
+  }
+
+  .stats-shell .score-mix-card.is-terminal .score-mix-body {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .stats-shell .score-mix-card.is-terminal .mix-stats {
+    padding-left: 0;
+    padding-top: 14px;
+    border-left: 0;
+    border-top: 1px solid rgba(99, 111, 132, 0.36);
+  }
+
+  .stats-shell .score-ring {
+    justify-self: start;
+  }
 }
 
 /* Form sections */
@@ -5897,9 +6695,10 @@ dl.member-telemetry dd {
 /* Fetch panel - completely new PinkNord neofetch look */
 .fetch-panel {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 12px;
+  grid-template-columns: auto max-content auto max-content;
+  gap: 14px;
   align-items: start;
+  justify-content: start;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -5931,7 +6730,7 @@ dl.member-telemetry dd {
 
 .fetch-panel .fetch-info {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: max-content;
   gap: 1px;
   margin: 0;
 }
@@ -5963,8 +6762,10 @@ dl.member-telemetry dd {
 .fetch-panel .fetch-divider {
   width: 1px;
   align-self: stretch;
-  background: linear-gradient(180deg, transparent, var(--line) 12%, var(--line) 88%, transparent);
-  opacity: 0.7;
+  background: linear-gradient(180deg, transparent, rgba(250, 90, 164, 0.55) 10%, rgba(99, 197, 234, 0.55) 50%, rgba(99, 197, 234, 0.55) 90%, transparent);
+  box-shadow: 0 0 8px rgba(99, 197, 234, 0.25);
+  border-radius: 1px;
+  margin: 0 2px;
 }
 
 .fetch-panel .fetch-telemetry {
