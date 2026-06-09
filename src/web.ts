@@ -3019,8 +3019,8 @@ function renderReportsTerminalScript(): string {
             showReport(targetIdx);
             return;
           }
-          if (cmd === "preview") { window.location.href = "/stats/reports/" + r.id + "/preview"; return; }
-          if (cmd === "edit") { window.location.href = "/stats/reports/" + r.id + "/edit"; return; }
+          if (cmd === "preview") { window.location.href = "/stats/reports/" + encodeURIComponent(r.id) + "/preview?guild=" + encodeURIComponent(r.guildId || ""); return; }
+          if (cmd === "edit") { window.location.href = "/stats/reports/" + encodeURIComponent(r.id) + "/edit?guild=" + encodeURIComponent(r.guildId || ""); return; }
           if (cmd === "delete") {
             if (!confirm("Delete scoreboard " + r.title + "?")) { line("delete cancelled", "muted"); return; }
             var formEl = document.createElement("form");
