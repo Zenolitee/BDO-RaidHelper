@@ -174,6 +174,9 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
           <label class="label" for="upload-screenshot">Screenshot</label>
           <input class="input" type="file" id="upload-screenshot" name="screenshot" accept="image/png,image/jpeg,image/webp" required>
         </div>
+        <div style="grid-column:1/-1;padding:var(--space-3);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:var(--text-xs);color:var(--text-muted);line-height:1.5;">
+          <strong style="color:var(--text-secondary);">Disclaimer:</strong> OCR and AI image extraction may produce incorrect values. Player names, kills, damage, and other stats should be verified after upload. Use the Edit page to correct any mismatches.
+        </div>
         <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
           <button type="button" class="button button-ghost" onclick="document.getElementById('upload-modal').classList.remove('open')">Cancel</button>
           <button type="submit" class="button button-primary">Upload and scan</button>
@@ -449,9 +452,18 @@ function renderCompactScoreTable(
     const kd = player.deaths ? player.kills / player.deaths : player.kills;
     const kdTone = player.deaths ? (kd >= 2 ? "badge-active" : kd >= 1 ? "badge-warning" : "badge-danger") : "badge-inactive";
     const rank = index + 1;
-    const rankStyle = rank <= 3 ? `font-weight:700;color:var(--color-${rank === 1 ? "amber" : rank === 2 ? "sky" : "rose"});` : "color:var(--text-muted);";
+    const crownSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>`;
+    const rankBadge = rank === 1
+      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05));color:var(--color-amber);border:1.5px solid rgba(245,158,11,0.3);font-weight:800;font-size:var(--text-xs);">${crownSvg}</span>`
+      : rank === 2
+        ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(56,189,248,0.08);color:var(--color-sky);border:1.5px solid rgba(56,189,248,0.2);font-weight:700;font-size:var(--text-xs);">${rank}</span>`
+        : rank === 3
+          ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(244,63,94,0.08);color:var(--color-rose);border:1.5px solid rgba(244,63,94,0.2);font-weight:700;font-size:var(--text-xs);">${rank}</span>`
+          : rank <= 5
+            ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(99,102,241,0.06);color:var(--color-indigo);border:1.5px solid rgba(99,102,241,0.12);font-weight:600;font-size:var(--text-xs);">${rank}</span>`
+            : `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">${rank}</span>`;
     return `<tr data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}">
-      <td style="text-align:center;"><span style="${rankStyle}font-size:var(--text-sm);">${rank}</span></td>
+      <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
           <span style="font-weight:600;color:var(--text-primary);font-size:var(--text-sm);">${esc(player.familyName)}</span>
@@ -844,14 +856,17 @@ function renderScoreSortScript(): string {
       for (let index = 0; index < tbody.rows.length; index += 1) {
         const row = tbody.rows[index];
         const nextRow = tbody.rows[index + 1];
-        if (nextRow && nextRow.classList.contains("impact-breakdown")) {
-          groups.push([row, nextRow]);
-          index += 1;
-        } else {
-          groups.push([row]);
-        }
-      }
-      return groups;
+    const crownSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>';
+    const rankBadgeHtml = (rank) => {
+      if (rank === 1) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05));color:var(--color-amber);border:1.5px solid rgba(245,158,11,0.3);font-weight:800;font-size:var(--text-xs);">' + crownSvg + '</span>';
+      if (rank === 2) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(56,189,248,0.08);color:var(--color-sky);border:1.5px solid rgba(56,189,248,0.2);font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
+      if (rank === 3) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(244,63,94,0.08);color:var(--color-rose);border:1.5px solid rgba(244,63,94,0.2);font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
+      if (rank <= 5) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(99,102,241,0.06);color:var(--color-indigo);border:1.5px solid rgba(99,102,241,0.12);font-weight:600;font-size:var(--text-xs);">' + rank + '</span>';
+      return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">' + rank + '</span>';
+    };
+    const rerank = () => {
+      const cells = tbody.querySelectorAll("[data-rank-cell]");
+      cells.forEach((cell, i) => { cell.innerHTML = rankBadgeHtml(i + 1); });
     };
     const applySort = (key, nextDirection) => {
       const groups = rowGroups();
@@ -864,6 +879,7 @@ function renderScoreSortScript(): string {
         return nextDirection === "asc" ? compared : -compared;
       });
       groups.flat().forEach((row) => tbody.appendChild(row));
+      rerank();
       activeKey = key;
       direction = nextDirection;
       buttons.forEach((button) => {
