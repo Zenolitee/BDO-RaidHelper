@@ -650,6 +650,7 @@ export function renderScoreReportEditorPage(
   report: ScoreReport
 ): string {
   const rows = [...report.rows, ...Array.from({ length: 3 }, () => undefined)];
+  const isManual = report.ocrEngine === "manual";
 
   const headerActions = `<a class="button button-secondary" href="/stats?guild=${enc(guild.id)}">Back to Stats</a>`;
 
@@ -661,7 +662,7 @@ export function renderScoreReportEditorPage(
     ),
 
     `<div class="page-content">
-      <form method="post" action="/stats/reports/${enc(report.id)}/edit">
+      <form method="post" action="/stats/reports/${enc(report.id)}/edit" ${isManual ? 'enctype="multipart/form-data"' : ""}>
         <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
         <input type="hidden" name="guildId" value="${esc(guild.id)}">
 
@@ -685,8 +686,13 @@ export function renderScoreReportEditorPage(
               <label class="label" for="edit-title">Title</label>
               <input class="input" type="text" id="edit-title" name="title" maxlength="120" value="${esc(report.title ?? "")}">
             </div>
+            ${isManual ? `
+            <div class="form-group" style="grid-column:1/-1;">
+              <label class="label" for="edit-screenshot">Attach screenshot <span style="color:var(--text-muted);">(optional)</span></label>
+              <input class="input" type="file" id="edit-screenshot" name="newScreenshot" accept="image/png,image/jpeg,image/webp">
+              <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1);">Attach the original scoreboard screenshot to this manually-entered report.</p>
+            </div>` : ""}
           </div>
-        </div>
 
         <div class="card" style="margin-bottom:var(--space-6);">
           <div class="card-header">

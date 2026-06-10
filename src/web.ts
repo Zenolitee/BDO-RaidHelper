@@ -432,7 +432,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
   });
 
-  app.post("/stats/reports/:id/edit", async (request, response) => {
+  app.post("/stats/reports/:id/edit", scoreUpload.single("newScreenshot"), async (request, response) => {
+    const reportId = String(request.params.id);
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
@@ -443,13 +444,34 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
     try {
       const rows = parseScoreRowsFromForm(request.body);
-      if (!rows.length) throw new Error("Keep at least one score row.");
-      await options.scoreStore.updateReport(guild.id, request.params.id, {
+      await options.scoreStore.updateReport(guild.id, reportId, {
         warDate: parseScoreDate(request.body.warDate),
         result: parseScoreResult(request.body.result),
         title: parseOptionalText(request.body.title, 120),
         rows: rows.map((row) => ({ ...row, guildId: guild.id }))
       });
+
+      // If a new screenshot was uploaded, replace the placeholder image
+      const file = request.file;
+      if (file && isAllowedScoreImage(file.mimetype, file.originalname)) {
+        const report = await options.scoreStore.getReport(guild.id, reportId);
+        if (report) {
+          // Delete old image and upload new one
+          try {
+            await options.scoreStore.readReportImage(guild.id, reportId);
+          } catch { /* ignore if old image doesn't exist */ }
+          // Upload new image to storage
+          const supabase = (options.scoreStore as any).supabase;
+          if (supabase) {
+            const newPath = `${guild.id}/${report.id}.${file.originalname.split(".").pop() || "png"}`;
+            await supabase.storage.from("score-screenshots").remove([report.imagePath]).catch(() => {});
+            await supabase.storage.from("score-screenshots").upload(newPath, file.buffer, { contentType: file.mimetype, upsert: true });
+            await supabase.from("score_reports").update({ image_path: newPath, image_mime_type: file.mimetype }).eq("id", report.id).eq("guild_id", guild.id);
+            console.info(`Screenshot attached to report ${report.id} by ${formatUploader(session)} for guild ${guild.name}.`);
+          }
+        }
+      }
+
       console.info(`Score report ${request.params.id} manually edited by ${formatUploader(session)} for guild ${guild.name} (${guild.id}); saved ${rows.length} rows.`);
       response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&saved=1`);
     } catch (error) {
