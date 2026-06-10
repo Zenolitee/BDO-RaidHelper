@@ -647,12 +647,25 @@ function renderReportCard(report: ScoreReport, csrfToken: string, canManage: boo
 export function renderScoreReportEditorPage(
   guild: DiscordGuild,
   session: WebSession,
-  report: ScoreReport
+  report: ScoreReport,
+  allReports: ScoreReport[] = []
 ): string {
   const rows = [...report.rows, ...Array.from({ length: 3 }, () => undefined)];
-  const isManual = report.ocrEngine === "manual";
+  const sorted = [...allReports].sort((a, b) => b.warDate.localeCompare(a.warDate));
 
-  const headerActions = `<a class="button button-secondary" href="/stats?guild=${enc(guild.id)}">Back to Stats</a>`;
+  const headerActions = `<a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">← Score History</a><a class="button button-secondary button-sm" href="/stats?guild=${enc(guild.id)}">Back to Stats</a>`;
+
+  // Sidebar: list of war dates
+  const sidebarItems = sorted.map((r) => {
+    const isActive = r.id === report.id;
+    const tone = r.result === "win" ? "var(--color-emerald)" : r.result === "loss" ? "var(--color-rose)" : "var(--text-muted)";
+    return `<a href="/stats/reports/${enc(r.id)}/edit?guild=${enc(guild.id)}"
+      style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);text-decoration:none;font-size:var(--text-sm);${isActive ? "background:var(--bg-surface-hover);color:var(--text-primary);font-weight:600;" : "color:var(--text-secondary);"}"
+      title="${esc(r.title || formatDateLabel(r.warDate))}">
+      <span style="width:6px;height:6px;border-radius:50%;background:${tone};flex-shrink:0;"></span>
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(formatDateLabel(r.warDate))}</span>
+    </a>`;
+  }).join("");
 
   const content = [
     renderPageHeader(
@@ -661,8 +674,15 @@ export function renderScoreReportEditorPage(
       headerActions
     ),
 
-    `<div class="page-content">
-      <form method="post" action="/stats/reports/${enc(report.id)}/edit" enctype="multipart/form-data">
+    `<div class="page-content" style="display:flex;gap:var(--space-4);align-items:flex-start;">
+      <div style="flex:0 0 180px;position:sticky;top:var(--space-4);max-height:calc(100vh - 120px);overflow-y:auto;border-right:1px solid var(--border-default);padding-right:var(--space-3);">
+        <p style="font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;margin-bottom:var(--space-2);padding-left:var(--space-3);">War dates</p>
+        <nav style="display:flex;flex-direction:column;gap:2px;">
+          ${sidebarItems}
+        </nav>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <form method="post" action="/stats/reports/${enc(report.id)}/edit" enctype="multipart/form-data">
         <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
         <input type="hidden" name="guildId" value="${esc(guild.id)}">
 
@@ -740,6 +760,7 @@ export function renderScoreReportEditorPage(
           Re-evaluate with OCR
         </button>
       </form>` : ""}
+      </div>
     </div>`,
   ].join("\n");
 

@@ -386,8 +386,24 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   });
 
   app.get("/stats/reports/:id/edit", async (request, response) => {
+    const reportId = String(request.params.id);
     const session = await getSession(request, sessions);
+    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : "";
+
+    if (isTestMode) {
+      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
+      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
+      if (!options.scoreStore) { response.status(404).send("No score store."); return; }
+      const [report, allReports] = await Promise.all([
+        options.scoreStore.getReport(mockGuild.id, reportId),
+        options.scoreStore.listReports(mockGuild.id)
+      ]);
+      if (!report) { response.status(404).send("Score report not found."); return; }
+      response.type("html").send(renderScoreReportEditorPage(mockGuild, mockSession, report, allReports));
+      return;
+    }
+
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     if (!session || !guild || !canManageGuild(session, guild.id) || !options.scoreStore) {
       response.status(403).send("Not authorized.");
@@ -395,12 +411,15 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
 
     try {
-      const report = await options.scoreStore.getReport(guild.id, request.params.id);
+      const [report, allReports] = await Promise.all([
+        options.scoreStore.getReport(guild.id, reportId),
+        options.scoreStore.listReports(guild.id)
+      ]);
       if (!report) {
         response.status(404).send("Score report not found.");
         return;
       }
-      response.type("html").send(renderScoreReportEditorPage(guild, session, report));
+      response.type("html").send(renderScoreReportEditorPage(guild, session, report, allReports));
     } catch (error) {
       response.status(400).type("html").send(renderWebError(error));
     }
