@@ -1180,7 +1180,8 @@ function renderScoreSortScript(): string {
         applySort(key, nextDirection);
       });
     });
-  })();
+  });
+})();
 </script>`;
 }
 function renderChartsScript(players: PlayerScoreAggregate[], reports: ScoreReport[], impactScores: PlayerImpactScore[]): string {

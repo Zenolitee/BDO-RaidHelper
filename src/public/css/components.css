@@ -491,8 +491,8 @@ a.card:focus-visible {
 .dashboard {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow-y: auto;
   padding: var(--space-2) var(--space-4);
   gap: var(--space-3);
 }
@@ -516,7 +516,6 @@ a.card:focus-visible {
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: var(--space-3);
-  flex: 1;
   min-height: 0;
 }
 
@@ -535,8 +534,6 @@ a.card:focus-visible {
 
 .dashboard-split-main .dashboard-table-scroll {
   flex: 1;
-  min-height: 0;
-  max-height: none;
 }
 
 .dashboard-split-side {
