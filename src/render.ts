@@ -31,10 +31,6 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): Em
   return embed;
 }
 
-/** Returns event message attachments. Kept as an extension point for future artwork. */
-export function renderEventAttachments(): AttachmentBuilder[] {
-  return [];
-}
 
 /** Renders member signup, response-status, and sign-off buttons. */
 export function renderEventComponents(event: WarEvent): Array<ActionRowBuilder<ButtonBuilder>> {

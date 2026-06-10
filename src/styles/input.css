@@ -2591,14 +2591,16 @@ h1 {
   background: var(--board);
 }
 
-.score-edit-card header {
+.score-edit-card header,
+.score-edit-player-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   align-items: end;
 }
 
-.score-edit-card header span {
+.score-edit-card header span,
+.score-edit-row-number {
   display: grid;
   place-items: center;
   width: 34px;
@@ -2649,6 +2651,10 @@ h1 {
   color: var(--text);
   padding: 0 8px;
   font-size: 0.8rem;
+  text-transform: none;
+}
+
+.score-edit-card.is-terminal > .card-titlebar .card-title {
   text-transform: none;
 }
 

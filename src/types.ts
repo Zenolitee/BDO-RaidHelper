@@ -4,8 +4,7 @@ export const WEEKDAYS = [
   "tuesday",
   "wednesday",
   "thursday",
-  "friday",
-  "saturday"
+  "friday"
 ] as const;
 
 export type GroupKey = string;

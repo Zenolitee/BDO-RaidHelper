@@ -8,7 +8,6 @@ export interface NodeWarPreset {
   maxParticipantsByDay: Record<WarDay, number>;
 }
 
-export const WAR_DAYS: WarDay[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday"];
 
 export const OPTIONAL_ROLE_PRESETS: GroupConfig[] = [
   { key: "cannon", label: getGroupLabel("cannon"), capacity: 1, editable: true },
@@ -29,8 +28,7 @@ export const NODE_WAR_PRESETS: Record<NodeWarTier, NodeWarPreset> = {
       tuesday: 30,
       wednesday: 25,
       thursday: 30,
-      friday: 25,
-      saturday: 25
+      friday: 25
     }
   },
   tier2: {
@@ -43,8 +41,7 @@ export const NODE_WAR_PRESETS: Record<NodeWarTier, NodeWarPreset> = {
       tuesday: 40,
       wednesday: 40,
       thursday: 40,
-      friday: 50,
-      saturday: 40
+      friday: 50
     }
   },
   tier3: {
@@ -57,8 +54,7 @@ export const NODE_WAR_PRESETS: Record<NodeWarTier, NodeWarPreset> = {
       tuesday: 55,
       wednesday: 75,
       thursday: 55,
-      friday: 75,
-      saturday: 55
+      friday: 75
     }
   }
 };
