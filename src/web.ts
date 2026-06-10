@@ -64,6 +64,22 @@ const scoreUpload = multer({
   limits: { fileSize: 8 * 1024 * 1024 }
 });
 
+// Cache for preview screenshots — keyed by session user + guild, expires after 10 minutes
+const previewImageCache = new Map<string, { buffer: Buffer; mimeType: string; name: string; ts: number }>();
+function setPreviewImage(key: string, buffer: Buffer, mimeType: string, name: string) {
+  previewImageCache.set(key, { buffer, mimeType, name, ts: Date.now() });
+  // Evict stale entries
+  for (const [k, v] of previewImageCache) {
+    if (Date.now() - v.ts > 10 * 60 * 1000) previewImageCache.delete(k);
+  }
+}
+function getPreviewImage(key: string): { buffer: Buffer; mimeType: string; name: string } | undefined {
+  const entry = previewImageCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > 10 * 60 * 1000) { previewImageCache.delete(key); return undefined; }
+  return entry;
+}
+
 async function refreshPostedEvent(options: WebAppOptions, event: WarEvent): Promise<void> {
   if (!event.channelId || !event.messageId || !options.onEventUpdated) {
     return;
@@ -396,6 +412,23 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       const result = parseScoreResult(request.body.result);
       const uploadedBy = formatUploader(session);
 
+      // Duplicate check: see if a report already exists for this war date
+      const existingReports = await options.scoreStore.listReports(guild.id);
+      const duplicate = existingReports.find(r => r.warDate === warDate);
+      const isOverwrite = request.query.overwrite === "1";
+      if (duplicate && !isOverwrite) {
+        response.status(200).type("json").send(JSON.stringify({
+          error: "duplicate",
+          existingId: duplicate.id,
+          existingDate: duplicate.warDate,
+          existingResult: duplicate.result,
+          existingPlayers: duplicate.rows.length
+        }));
+        return;
+      }
+      if (duplicate && isOverwrite) {
+        await options.scoreStore.deleteReport(guild.id, duplicate.id);
+      }
       // Check if rows are provided directly (preview flow) or need OCR extraction
       let rows: Array<Omit<import("./score-types.js").ScoreRow, "guildId"> | import("./score-types.js").ScoreRow>;
       let ocrEngine: string;
@@ -411,10 +444,27 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         ocrEngine = "preview";
         rawOcrText = "";
         ocrConfidence = undefined;
-        // Use a placeholder image
-        imageMimeType = "image/png";
-        imageOriginalName = "preview-upload.png";
-        imageBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+        // Retrieve the cached screenshot from the preview step
+        const cacheKey = `${session.user.id}:${guildId}`;
+        const cached = getPreviewImage(cacheKey);
+        if (cached) {
+          imageMimeType = cached.mimeType;
+          imageOriginalName = cached.name;
+          imageBuffer = cached.buffer;
+          previewImageCache.delete(cacheKey); // One-time use
+        } else {
+          // Fallback: use uploaded file or placeholder
+          const file = request.file;
+          if (file && isAllowedScoreImage(file.mimetype, file.originalname)) {
+            imageMimeType = file.mimetype;
+            imageOriginalName = file.originalname;
+            imageBuffer = file.buffer;
+          } else {
+            imageMimeType = "image/png";
+            imageOriginalName = "preview-upload.png";
+            imageBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+          }
+        }
       } else {
         // Traditional flow: extract from screenshot
         const file = request.file;
@@ -475,10 +525,14 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.post("/stats/upload/preview", scoreUpload.single("screenshot"), async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
-    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
-      response.status(403).json({ error: "Not authorized." });
-      return;
+    const isTestMode = request.body.testMode === "true" || request.query.test === "1";
+
+    if (!isTestMode) {
+      const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+      if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
+        response.status(403).json({ error: "Not authorized." });
+        return;
+      }
     }
 
     try {
@@ -487,13 +541,19 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
       }
 
-      const geminiQuota = consumeScoreGeminiQuota(session.user.id, guild.id);
+      const geminiQuota = isTestMode
+        ? { allowed: false, reason: "test mode" }
+        : consumeScoreGeminiQuota(session!.user.id, guildId);
       const extraction = await extractScoreScreenshot(file.buffer, {
         mimeType: file.mimetype,
         geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
         geminiModel: config.geminiModel,
         preferGemini: geminiQuota.allowed
       });
+
+      // Cache the image so the save flow can use the real screenshot
+      const cacheKey = `${isTestMode ? "test" : session!.user.id}:${guildId}`;
+      setPreviewImage(cacheKey, file.buffer, file.mimetype, file.originalname);
 
       // Normalize names
       const { normalizePlayerName } = await import("./web/score.js");

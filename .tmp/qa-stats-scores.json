@@ -1,0 +1,25 @@
+{
+  "reports": [
+    {
+      "id": "qa-report-1",
+      "guildId": "qa-guild",
+      "warDate": "2026-06-05",
+      "result": "win",
+      "title": "Node War 1",
+      "imageBucket": "local",
+      "imagePath": "qa-guild/qa-report-1/score.png",
+      "imageMimeType": "image/png",
+      "ocrEngine": "tesseract.js",
+      "ocrConfidence": 0.95,
+      "rawOcrText": "",
+      "uploadedBy": "qa-user",
+      "createdAt": "2026-06-05T22:00:00.000Z",
+      "rows": [
+        { "id": "r1", "reportId": "qa-report-1", "guildId": "qa-guild", "familyName": "DynastyRedSuns", "kills": 12, "deaths": 3, "assists": 4, "damageDealt": 4200000, "damageTaken": 1100000, "allySupport": 800000, "crowdControls": 6, "structureDamage": 320000, "participations": 6 },
+        { "id": "r2", "reportId": "qa-report-1", "guildId": "qa-guild", "familyName": "Umihotaru", "kills": 9, "deaths": 2, "assists": 5, "damageDealt": 3300000, "damageTaken": 800000, "allySupport": 900000, "crowdControls": 3, "structureDamage": 280000, "participations": 5 },
+        { "id": "r3", "reportId": "qa-report-1", "guildId": "qa-guild", "familyName": "Edgy", "kills": 7, "deaths": 4, "assists": 2, "damageDealt": 3100000, "damageTaken": 950000, "allySupport": 200000, "crowdControls": 5, "structureDamage": 240000, "participations": 5 },
+        { "id": "r4", "reportId": "qa-report-1", "guildId": "qa-guild", "familyName": "Gahdehs", "kills": 6, "deaths": 5, "assists": 3, "damageDealt": 2700000, "damageTaken": 1300000, "allySupport": 100000, "crowdControls": 2, "structureDamage": 200000, "participations": 4 }
+      ]
+    }
+  ]
+}

@@ -223,6 +223,40 @@ function detectDuplicatePlayers(rows: ScoreRow[]): Map<string, string[]> {
   }
   return dupes;
 }
+/**
+ * Detect outlier stat values across a set of rows using z-score analysis.
+ * Returns a map of playerName → list of warning messages for stats > 2.5σ from mean.
+ */
+function detectOutliers(rows: ScoreRow[]): Map<string, string[]> {
+  const fields: Array<{ key: keyof ScoreRow; label: string }> = [
+    { key: 'kills', label: 'Kills' },
+    { key: 'deaths', label: 'Deaths' },
+    { key: 'damageDealt', label: 'Damage' },
+    { key: 'crowdControls', label: 'CC' },
+    { key: 'structureDamage', label: 'Structure' },
+    { key: 'allySupport', label: 'Support' }
+  ];
+  const warnings = new Map<string, string[]>();
+  for (const { key, label } of fields) {
+    const values = rows.map(r => Number(r[key]) || 0);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+    const stddev = Math.sqrt(variance);
+    if (stddev === 0) continue;
+    for (const row of rows) {
+      const val = Number(row[key]) || 0;
+      const z = (val - mean) / stddev;
+      if (Math.abs(z) > 2.5) {
+        const dir = z > 0 ? 'unusually high' : 'unusually low';
+        const list = warnings.get(row.familyName) || [];
+        list.push(`${label} is ${dir} (${Math.round(val)} vs avg ${Math.round(mean)})`);
+        warnings.set(row.familyName, list);
+      }
+    }
+  }
+  return warnings;
+}
+
 
 export {
   type ScoreGeminiQuotaResult,
@@ -237,5 +271,6 @@ export {
   parseScoreSortKey,
   validateScoreRows,
   normalizePlayerName,
-  detectDuplicatePlayers
+  detectDuplicatePlayers,
+  detectOutliers
 };

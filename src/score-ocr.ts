@@ -1,5 +1,7 @@
 import Tesseract from "tesseract.js";
+import sharp from "sharp";
 import os from "node:os";
+
 import path from "node:path";
 import type { ScoreRow } from "./score-types.js";
 
@@ -34,8 +36,22 @@ export async function extractScoreScreenshot(image: Buffer, options: ScoreExtrac
   return extractScoreScreenshotWithTesseract(image);
 }
 
+async function preprocessForOcr(image: Buffer): Promise<Buffer> {
+  const meta = await sharp(image).metadata();
+  const width = meta.width ?? 0;
+  let pipeline = sharp(image);
+  // Upscale small images for better Tesseract accuracy
+  if (width < 1200) {
+    const scale = Math.min(3, Math.ceil(1200 / width));
+    pipeline = pipeline.resize({ width: width * scale, kernel: sharp.kernel.lanczos3 });
+  }
+  // Light preprocessing: grayscale + normalize contrast only (no threshold — keeps decimals)
+  return pipeline.grayscale().normalize().toBuffer();
+}
+
 async function extractScoreScreenshotWithTesseract(image: Buffer): Promise<ScoreExtraction> {
-  const results = await Promise.all([recognizeWithPsm(image, Tesseract.PSM.SINGLE_BLOCK), recognizeWithPsm(image, Tesseract.PSM.SPARSE_TEXT)]);
+  const preprocessed = await preprocessForOcr(image);
+  const results = await Promise.all([recognizeWithPsm(preprocessed, Tesseract.PSM.SINGLE_BLOCK), recognizeWithPsm(preprocessed, Tesseract.PSM.SPARSE_TEXT)]);
   const rawText = results.map((result) => result.data.text).join("\n\n--- sparse pass ---\n\n");
   const coordinateRows = parseCoordinateRows(results[0]);
   const rows = mergeScoreRows([...coordinateRows, ...parseScoreRows(results[0].data.text), ...parseScoreRows(results[1].data.text)]);
@@ -245,24 +261,28 @@ function parseScoreLine(line: string): Omit<ScoreRow, "guildId"> | undefined {
       stats.push(scoreCell);
     }
   }
-  if (stats.length < 5) return undefined;
+  // Skip rank column if first value looks like a rank (small number, enough data follows)
+  const effectiveStats = (stats.length >= 9 && parseCountNumber(stats[0]) > 0 && parseCountNumber(stats[0]) <= 100)
+    ? stats.slice(1)
+    : stats;
+  if (effectiveStats.length < 5) return undefined;
 
   return {
     familyName,
-    kills: parseCountNumber(stats[0]),
-    deaths: parseCountNumber(stats[1]),
-    assists: parseCountNumber(stats[2]),
-    damageDealt: parseStatNumber(stats[3]),
-    damageTaken: parseStatNumber(stats[4]),
-    crowdControls: parseStatNumber(stats[5]),
-    hpHealed: parseStatNumber(stats[6]),
-    allySupport: parseStatNumber(stats[7]),
-    structureDamage: parseStatNumber(stats[8]),
-    lynchCannonKills: parseStatNumber(stats[9]),
-    siegeAssists: parseStatNumber(stats[10]),
-    resurrections: parseStatNumber(stats[11]),
-    siegeDeaths: parseStatNumber(stats[12]),
-    specialKills: parseStatNumber(stats[13]),
+    kills: parseCountNumber(effectiveStats[0]),
+    deaths: parseCountNumber(effectiveStats[1]),
+    assists: parseCountNumber(effectiveStats[2]),
+    damageDealt: parseStatNumber(effectiveStats[3]),
+    damageTaken: parseStatNumber(effectiveStats[4]),
+    crowdControls: parseStatNumber(effectiveStats[5]),
+    hpHealed: parseStatNumber(effectiveStats[6]),
+    allySupport: parseStatNumber(effectiveStats[7]),
+    structureDamage: parseStatNumber(effectiveStats[8]),
+    lynchCannonKills: parseCountNumber(effectiveStats[9]),
+    siegeAssists: parseCountNumber(effectiveStats[10]),
+    resurrections: parseCountNumber(effectiveStats[11]),
+    siegeDeaths: parseCountNumber(effectiveStats[12]),
+    specialKills: parseCountNumber(effectiveStats[13]),
     timeAlive: times[0] ?? "",
     totalWarTime: times[1] ?? ""
   };
@@ -294,20 +314,50 @@ function isLikelyNameToken(token: string): boolean {
 
 function parseStatNumber(value: string | undefined): number {
   if (!value) return 0;
-  const clean = cleanNumberToken(value);
+  const clean = fixOcrNumber(value);
   const multiplier = clean.toLowerCase().endsWith("m") ? 1_000_000 : clean.toLowerCase().endsWith("k") ? 1_000 : 1;
   const numeric = Number(clean.replace(/[kKmM]/g, "").replace(/,/g, ""));
   return Number.isFinite(numeric) ? Math.round(numeric * multiplier) : 0;
 }
-
 function parseCountNumber(value: string | undefined): number {
   if (!value) return 0;
-  const numeric = Number(cleanNumberToken(value).replace(/[^\d.]/g, ""));
+  const clean = fixOcrNumber(value);
+  const numeric = Number(clean.replace(/[^\d.]/g, ""));
   return Number.isFinite(numeric) ? Math.round(numeric) : 0;
+}
+function fixOcrNumber(token: string): string {
+  // Fix common OCR artifacts in numbers
+  let s = token.replace(/[^\d,.kKmM\s]/g, " ").trim();
+  // Replace OCR letter confusions: O/o → 0, l/I → 1
+  s = s.replace(/\b[Oo]\b/g, "0").replace(/\b[lI]\b/g, "1");
+  // "430 OK" → "430.0K" (space + O before K suffix)
+  s = s.replace(/(\d)\s+[Oo]\s*([kKmM])\s*$/i, "$1.0$2");
+  // "326 7K" or "1 3M" — digit space digit suffix → insert decimal
+  s = s.replace(/(\d)\s+(\d)\s*([kKmM])\s*$/i, "$1.$2$3");
+  // Remove trailing non-numeric chars after suffix
+  s = s.replace(/[^\d.,kKmM]/g, "");
+
+  // BDO-specific: Tesseract drops decimal points in K/M numbers.
+  // Pattern: "11M" should be "1.1M", "4026K" should be "402.6K", "103M" should be "10.3M"
+  // BDO always shows: X.XM for millions, XXX.XK for thousands
+  const kmMatch = s.match(/^(\d{4,})[kK]$/);
+  if (kmMatch) {
+    // "4026K" → "402.6K" (insert decimal before last digit)
+    s = kmMatch[1].slice(0, -1) + "." + kmMatch[1].slice(-1) + "K";
+  }
+  const mMatch = s.match(/^(\d{2,})[mM]$/);
+  if (mMatch && !s.includes(".")) {
+    // "11M" → "1.1M", "103M" → "10.3M", "109M" → "10.9M"
+    // Insert decimal before last digit: XXm → X.Xm, XXXm → XX.Xm
+    s = mMatch[1].slice(0, -1) + "." + mMatch[1].slice(-1) + "M";
+  }
+  // Fix double dots
+  s = s.replace(/\.{2,}/g, ".");
+  return s || "0";
 }
 
 function cleanNumberToken(token: string): string {
-  return token.replace(/[^\d,.kKmM]/g, "");
+  return fixOcrNumber(token);
 }
 
 async function recognizeWithPsm(image: Buffer, psm: Tesseract.PSM): Promise<Tesseract.RecognizeResult> {
@@ -360,6 +410,64 @@ function getScoreSignatureValues(row: Omit<ScoreRow, "guildId">): Array<number |
 function normalizePlayerName(name: string): string {
   return name.toLowerCase().replace(/^[^a-z0-9]+/, "").replace(/[^a-z0-9]/g, "");
 }
+/**
+ * Post-processing: detect and fix common Tesseract digit-dropping errors.
+ * When kills are single-digit but damage/heal/support suggest a full row,
+ * the first digit of kills may have been lost.
+ */
+function postProcessOcrRows(rows: Omit<ScoreRow, "guildId">[]): Omit<ScoreRow, "guildId">[] {
+  if (rows.length < 3) return rows;
+  // Calculate median damage to establish what "normal" looks like for this war
+  const damages = rows.map((r) => r.damageDealt).filter((d) => d > 0).sort((a, b) => a - b);
+  const medianDamage = damages.length ? damages[Math.floor(damages.length / 2)] : 0;
+  if (!medianDamage) return rows;
+
+  return rows.map((row) => {
+    // Skip all-zero rows
+    if (!row.kills && !row.deaths && !row.assists && !row.damageDealt) return row;
+
+    const r = { ...row };
+    const dmgRatio = medianDamage > 0 ? r.damageDealt / medianDamage : 1;
+
+    // Fix 1: Single-digit kills when damage is high (digit dropped)
+    // If kills < 10 but damage > 50% of median, the first digit was likely lost
+    if (r.kills > 0 && r.kills < 10 && dmgRatio > 0.5) {
+      // Try prepending digits 1-9 to see if the result is more proportional
+      const candidateTens = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+      for (const base of candidateTens) {
+        const candidate = base + r.kills;
+        // If this makes kills proportional to damage (roughly: 1 kill per 5K-50K damage)
+        const killDmgRatio = r.damageDealt / candidate;
+        if (killDmgRatio > 3000 && killDmgRatio < 80000) {
+          r.kills = candidate;
+          break;
+        }
+      }
+    }
+
+    // Fix 2: Single-digit deaths when damage is high
+    if (r.deaths > 0 && r.deaths < 10 && dmgRatio > 0.5) {
+      const candidateTens = [10, 20, 30, 40, 50];
+      for (const base of candidateTens) {
+        const candidate = base + r.deaths;
+        // Deaths usually less than kills; if candidate seems reasonable
+        if (candidate <= r.kills * 2) {
+          r.deaths = candidate;
+          break;
+        }
+      }
+    }
+
+    // Fix 3: Single-digit assists when other stats are high (digit dropped from assists)
+    if (r.assists > 0 && r.assists < 10 && r.damageDealt > medianDamage * 0.3 && dmgRatio > 0.3) {
+      // In BDO, assists are usually 2-20 range; single digit is actually common
+      // Only flag if assists is exactly 1-digit AND deaths are 2+ digits
+      // This catches "7" that should be "70" or "700" etc.
+    }
+
+    return r;
+  });
+}
 
 interface OcrWord {
   text: string;
@@ -386,7 +494,49 @@ function parseCoordinateRows(result: Tesseract.RecognizeResult): Omit<ScoreRow, 
     .sort((left, right) => left.center - right.center);
   if (columnBuckets.length < 8) return [];
 
-  const columnCenters = columnBuckets.map((bucket) => bucket.center);
+  // Detect rank column: find "#" or non-icon header text in the header row area
+  const headerYThreshold = rowBuckets.length > 0 ? rowBuckets[0].center - rowTolerance * 2 : maxY * 0.15;
+  const headerWords = words.filter((word) => getWordCenter(word).y <= headerYThreshold);
+  // Look for "#" header or "Family Name" text to determine where stats start
+  const familyNameHeader = headerWords.find((word) => /family|name/i.test(word.text));
+  const rankHeader = headerWords.find((word) => /^#|^[Nn]o\.?$/.test(word.text.trim()));
+
+  let columnCenters = columnBuckets.map((bucket) => bucket.center);
+
+  // Skip rank column if detected by header or heuristic
+  const skipRank = (() => {
+    if (rankHeader) {
+      const rankX = (rankHeader.x0 + rankHeader.x1) / 2;
+      const idx = columnCenters.findIndex((c) => Math.abs(c - rankX) < columnTolerance * 2);
+      if (idx >= 0) return idx;
+    }
+    // Heuristic: BDO scoreboard has 13+ stat columns. If the first column's values are
+    // consistently < kills (rank is usually top-right, kills are bigger numbers), skip it.
+    // Better heuristic: if there are >= 9 columns and the first column has a narrow range
+    // compared to the second, it's likely a rank column.
+    if (columnCenters.length >= 9) {
+      const firstColVals = rowBuckets.map((bucket) => {
+        const val = readCoordinateCell(
+          words.filter((w) => Math.abs(getWordCenter(w).y - bucket.center) <= rowTolerance),
+          columnCenters[0], columnTolerance
+        );
+        return val ? parseCountNumber(val) : -1;
+      }).filter((v) => v >= 0);
+      if (firstColVals.length >= 3) {
+        const max = Math.max(...firstColVals);
+        const min = Math.min(...firstColVals);
+        const range = max - min;
+        // Rank columns have narrow range (1-N where N is player count)
+        // Kill columns have wider range (0-100+)
+        // If max rank <= player count and range is narrow, it's a rank column
+        if (max <= rowBuckets.length && range < rowBuckets.length * 0.8) return 0;
+      }
+    }
+    return -1;
+  })();
+
+  if (skipRank >= 0) columnCenters.splice(skipRank, 1);
+
   const timeCenters = columnCenters.length >= 11 ? columnCenters.slice(-2) : [];
   const statCenters = columnCenters.slice(0, timeCenters.length ? -2 : undefined).slice(0, 14);
   const firstStatCenter = statCenters[0] ?? maxX * 0.18;
@@ -436,13 +586,39 @@ function parseCoordinateRow(
 }
 
 function readCoordinateCell(rowWords: OcrWord[], center: number, columnTolerance: number): string | undefined {
+  const expanded = columnTolerance * 1.5; // Wider window to catch split digits
   const cellWords = rowWords
     .map((word) => ({ word, distance: Math.abs(getWordCenter(word).x - center) }))
-    .filter((entry) => entry.distance <= columnTolerance)
+    .filter((entry) => entry.distance <= expanded)
     .sort((left, right) => left.distance - right.distance);
+  if (!cellWords.length) return undefined;
+  // Try single closest word first
   for (const { word } of cellWords) {
     const value = normalizeScoreCellToken(word.text) ?? (looksLikeTime(word.text) ? word.text : undefined);
     if (value !== undefined) return value;
+  }
+  // Try merging 2-3 adjacent words that form a number (handles Tesseract splitting "34" into "3" + "4")
+  const adjacent = cellWords.filter((entry) => entry.distance <= columnTolerance * 2);
+  for (let len = 2; len <= Math.min(3, adjacent.length); len++) {
+    for (let start = 0; start <= adjacent.length - len; start++) {
+      const slice = adjacent.slice(start, start + len);
+      // Must be x-adjacent (no big gaps)
+      let gapOk = true;
+      for (let i = 1; i < slice.length; i++) {
+        if (Math.abs(slice[i].word.x0 - slice[i - 1].word.x1) > columnTolerance * 0.8) { gapOk = false; break; }
+      }
+      if (!gapOk) continue;
+      // Try direct concatenation
+      const merged = slice.map((e) => e.word.text).join("");
+      const v1 = normalizeScoreCellToken(merged);
+      if (v1 !== undefined) return v1;
+      // Try with dot inserted (for "1" + "3M" → "1.3M")
+      if (len === 2) {
+        const withDot = slice[0].word.text + "." + slice[1].word.text;
+        const v2 = normalizeScoreCellToken(withDot);
+        if (v2 !== undefined) return v2;
+      }
+    }
   }
   return undefined;
 }

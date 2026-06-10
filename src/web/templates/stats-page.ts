@@ -1,6 +1,6 @@
 import { escapeHtml, formatDateLabel, formatStatNumber } from '../utils.js';
 import { renderApp, renderPageHeader, renderStatGrid, renderEmptyState } from './layout.js';
-import { aggregateScoreRows, calculateImpactScores, sortScoreAggregates, parseScoreSortKey } from '../score.js';
+import { aggregateScoreRows, calculateImpactScores, sortScoreAggregates, parseScoreSortKey, detectOutliers } from '../score.js';
 import { formatClockTime } from '../../time-format.js';
 import type { WebSession, GuildDashboardSummary, DiscordGuild, PlayerScoreAggregate, PlayerImpactScore, ScoreSortKey } from '../types.js';
 import type { ScoreReport, ScoreRow, ScoreReportResult } from '../../score-types.js';
@@ -141,7 +141,7 @@ function renderNoticeBanner(notice: "uploaded" | "rescanned" | "saved" | "delete
 function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
   const today = new Date().toISOString().slice(0, 10);
   return `<div class="upload-modal-overlay" id="upload-modal">
-    <div class="upload-modal" style="max-width:680px;">
+    <div id="upload-modal-inner" class="upload-modal" style="max-width:680px;">
       <div class="upload-modal-header">
         <div>
           <span class="badge badge-accent" style="margin-bottom:var(--space-2);display:inline-block;">SCREENSHOT OCR</span>
@@ -180,19 +180,32 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
           </div>
           <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
             <button type="button" class="button button-ghost" onclick="document.getElementById('upload-modal').classList.remove('open')">Cancel</button>
-            <button type="button" class="button button-secondary button-sm" id="extract-json-btn" onclick="window.__extractJson()">Scan → Copy JSON</button>
             <button type="button" class="button button-primary" id="upload-preview-btn" onclick="window.__uploadPreview()">Scan screenshot</button>
           </div>
         </div>
       </div>
 
-      <!-- Step 2: Preview extracted rows -->
+      <!-- Step 2: Image + JSON split pane -->
       <div id="upload-step-2" style="display:none;">
         <div id="upload-preview-status" style="margin-bottom:var(--space-3);font-size:var(--text-sm);color:var(--text-muted);"></div>
-        <div id="upload-preview-table" style="max-height:350px;overflow-y:auto;margin-bottom:var(--space-4);"></div>
-        <div style="display:flex;gap:var(--space-3);justify-content:flex-end;">
-          <button type="button" class="button button-ghost" onclick="document.getElementById('upload-step-1').style.display='';document.getElementById('upload-step-2').style.display='none';">← Back</button>
+        <div style="display:flex;gap:var(--space-4);flex:1;min-height:0;">
+          <!-- Left: Screenshot reference (scrollable) -->
+          <div style="flex:1;background:var(--bg-base);border:1px solid var(--border-default);border-radius:var(--radius-sm);overflow:auto;padding:var(--space-2);">
+            <img id="upload-preview-image" src="" alt="Uploaded scoreboard" style="width:100%;height:auto;display:block;">
+          </div>
+          <!-- Right: JSON editor (fixed width sidebar) -->
+          <div style="flex:0 0 300px;display:flex;flex-direction:column;min-width:0;">
+            <label class="label" for="upload-json-editor" style="margin-bottom:var(--space-2);font-size:var(--text-xs);">JSON — edit then save</label>
+            <textarea id="upload-json-editor" class="input" style="flex:1;font-family:var(--font-mono);font-size:10px;line-height:1.4;resize:none;background:var(--bg-base);" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:var(--space-3);justify-content:flex-end;margin-top:var(--space-3);">
+          <button type="button" class="button button-ghost" onclick="document.getElementById('upload-step-1').style.display='';document.getElementById('upload-step-2').style.display='none';var m=document.getElementById('upload-modal-inner');if(m){m.style.width='';m.style.maxWidth='';m.style.maxHeight='';m.style.height='';}">← Back</button>
           <button type="button" class="button button-primary" id="upload-confirm-btn" onclick="window.__uploadConfirm()">Save scores</button>
+        </div>
+        <!-- Drag resize handle -->
+        <div id="modal-resize-handle" style="position:absolute;bottom:0;right:0;width:20px;height:20px;cursor:nwse-resize;opacity:0.4;" onmousedown="window.__startResize(event)" ontouchstart="window.__startResize(event)">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;position:absolute;bottom:3px;right:3px;color:var(--text-muted);"><path d="M14 16h4v-4h-1.5v2.5h-2.5zM14 10h4V6h-4v4zM10 16h4v-4h-1.5v2.5h-2.5z"/></svg>
         </div>
       </div>
     </div>
@@ -201,102 +214,167 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
     (function() {
       var csrfToken = ${JSON.stringify(session.csrfToken)};
       var guildId = ${JSON.stringify(guild.id)};
-      var extractedRows = [];
 
       window.__uploadPreview = function() {
         var fileInput = document.getElementById('upload-screenshot');
         if (!fileInput.files.length) { alert('Select a screenshot first.'); return; }
         var btn = document.getElementById('upload-preview-btn');
-        btn.disabled = true; btn.textContent = 'Scanning...';
-        var fd = new FormData();
-        fd.append('screenshot', fileInput.files[0]);
-        fd.append('csrfToken', csrfToken);
-        fd.append('guildId', guildId);
-        fetch('/stats/upload/preview', { method: 'POST', body: fd })
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = 'Scan screenshot'; return; }
-            extractedRows = data.rows || [];
-            document.getElementById('upload-preview-status').innerHTML =
-              '<span class="badge badge-active">' + extractedRows.length + ' players</span> ' +
-              '<span style="margin-left:var(--space-2);">Engine: ' + (data.engine || 'unknown') + '</span>' +
-              (data.confidence ? ' · Confidence: ' + Math.round(data.confidence) + '%' : '');
-            var html = '<table class="table" style="min-width:500px;"><thead><tr>' +
-              '<th>Player</th><th>K</th><th>D</th><th>A</th><th>DMG</th><th>CC</th><th>Fort</th>' +
-              '</tr></thead><tbody>';
-            extractedRows.forEach(function(row, i) {
-              html += '<tr>' +
-                '<td><input class="input" style="width:120px;padding:2px 6px;font-size:12px;" data-field="familyName" data-idx="' + i + '" value="' + (row.familyName||'').replace(/"/g,'&quot;') + '"></td>' +
-                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="kills" data-idx="' + i + '" type="number" value="' + (row.kills||0) + '"></td>' +
-                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="deaths" data-idx="' + i + '" type="number" value="' + (row.deaths||0) + '"></td>' +
-                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="assists" data-idx="' + i + '" type="number" value="' + (row.assists||0) + '"></td>' +
-                '<td><input class="input" style="width:70px;padding:2px 6px;font-size:12px;text-align:right;" data-field="damageDealt" data-idx="' + i + '" type="number" value="' + (row.damageDealt||0) + '"></td>' +
-                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="crowdControls" data-idx="' + i + '" type="number" value="' + (row.crowdControls||0) + '"></td>' +
-                '<td><input class="input" style="width:70px;padding:2px 6px;font-size:12px;text-align:right;" data-field="structureDamage" data-idx="' + i + '" type="number" value="' + (row.structureDamage||0) + '"></td>' +
-                '</tr>';
-            });
-            html += '</tbody></table>';
-            document.getElementById('upload-preview-table').innerHTML = html;
-            document.getElementById('upload-step-1').style.display = 'none';
-            document.getElementById('upload-step-2').style.display = '';
-            btn.disabled = false; btn.textContent = 'Scan screenshot';
-          })
-          .catch(function(e) { alert('Scan failed: ' + e.message); btn.disabled = false; btn.textContent = 'Scan screenshot'; });
+        btn.disabled = true; btn.textContent = 'Reading image...';
+        var file = fileInput.files[0];
+        // Step 1: Read file as data URL first (guarantees image is ready)
+        var reader = new FileReader();
+        reader.onerror = function() { alert('Failed to read image file.'); btn.disabled = false; btn.textContent = 'Scan screenshot'; };
+        reader.onload = function() {
+          var imageDataUrl = reader.result;
+          btn.textContent = 'Scanning...';
+          // Step 2: Send to extraction endpoint
+          var fd = new FormData();
+          fd.append('screenshot', file);
+          fd.append('csrfToken', csrfToken);
+          fd.append('guildId', guildId);
+          var previewUrl = '/stats/upload/preview' + (window.location.search.indexOf('test=') > -1 ? '?test=1' : '');
+          fetch(previewUrl, { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = 'Scan screenshot'; return; }
+              var rows = data.rows || [];
+              var players = rows.map(function(row) {
+                return {
+                  name: row.familyName || '', kills: row.kills || 0, deaths: row.deaths || 0,
+                  assists: row.assists || 0, damage: row.damageDealt || 0, taken: row.damageTaken || 0,
+                  cc: row.crowdControls || 0, healed: row.hpHealed || 0, support: row.allySupport || 0,
+                  fort: row.structureDamage || 0
+                };
+              });
+              var warDate = document.getElementById('upload-war-date').value || new Date().toISOString().slice(0,10);
+              var result = document.getElementById('upload-result').value || 'unknown';
+              var jsonPayload = JSON.stringify({ warDate: warDate, result: result, title: document.getElementById('upload-title').value || '', players: players }, null, 2);
+              // Set JSON editor
+              document.getElementById('upload-json-editor').value = jsonPayload;
+              // Set status
+              document.getElementById('upload-preview-status').innerHTML =
+                '<span class="badge badge-active">' + rows.length + ' players</span> ' +
+                '<span style="margin-left:var(--space-2);">Engine: ' + (data.engine || 'unknown') + '</span>' +
+                (data.confidence ? ' · Confidence: ' + Math.round(data.confidence) + '%' : '');
+              // Switch to step 2
+              document.getElementById('upload-step-1').style.display = 'none';
+              document.getElementById('upload-step-2').style.display = '';
+              // Widen modal
+              var modalInner = document.getElementById('upload-modal-inner');
+              if (modalInner) {
+                modalInner.style.width = '90vw';
+                modalInner.style.maxWidth = '1400px';
+                modalInner.style.height = '85vh';
+                modalInner.style.maxHeight = '900px';
+                modalInner.style.position = 'relative';
+              }
+              // Set image (guaranteed ready since we waited for FileReader)
+              var img = document.getElementById('upload-preview-image');
+              if (img) img.src = imageDataUrl;
+              btn.disabled = false; btn.textContent = 'Scan screenshot';
+            })
+            .catch(function(e) { alert('Scan failed: ' + e.message); btn.disabled = false; btn.textContent = 'Scan screenshot'; });
+        };
+        reader.readAsDataURL(file);
       };
 
       window.__uploadConfirm = function() {
-        // Read edited values from inputs
-        document.querySelectorAll('#upload-preview-table input[data-idx]').forEach(function(input) {
-          var idx = parseInt(input.dataset.idx);
-          var field = input.dataset.field;
-          if (extractedRows[idx]) {
-            if (field === 'familyName') extractedRows[idx][field] = input.value;
-            else extractedRows[idx][field] = parseInt(input.value) || 0;
-          }
+        var jsonText = document.getElementById('upload-json-editor').value.trim();
+        if (!jsonText) { alert('No JSON data to save.'); return; }
+        var parsed;
+        try { parsed = JSON.parse(jsonText); } catch(e) { alert('Invalid JSON: ' + e.message); return; }
+        if (!parsed.players || !Array.isArray(parsed.players) || !parsed.players.length) {
+          alert('JSON must include a "players" array with at least one entry.');
+          return;
+        }
+        // Convert to ScoreRow format for the upload endpoint
+        var rows = parsed.players.map(function(p) {
+          return {
+            familyName: p.name || p.familyName || '',
+            kills: parseInt(p.kills) || 0,
+            deaths: parseInt(p.deaths) || 0,
+            assists: parseInt(p.assists) || 0,
+            damageDealt: parseInt(p.damage) || 0,
+            damageTaken: parseInt(p.taken) || 0,
+            crowdControls: parseInt(p.cc) || 0,
+            hpHealed: parseInt(p.healed) || 0,
+            allySupport: parseInt(p.support) || 0,
+            structureDamage: parseInt(p.fort) || 0,
+            lynchCannonKills: 0, siegeAssists: 0, resurrections: 0,
+            siegeDeaths: 0, specialKills: 0, timeAlive: '', totalWarTime: ''
+          };
         });
-        // Build form data
         var fd = new FormData();
         fd.append('csrfToken', csrfToken);
         fd.append('guildId', guildId);
-        fd.append('warDate', document.getElementById('upload-war-date').value);
-        fd.append('result', document.getElementById('upload-result').value);
-        fd.append('title', document.getElementById('upload-title').value);
-        fd.append('rows', JSON.stringify(extractedRows));
+        fd.append('warDate', parsed.warDate || document.getElementById('upload-war-date').value);
+        fd.append('result', parsed.result || document.getElementById('upload-result').value);
+        fd.append('title', parsed.title || document.getElementById('upload-title').value);
+        fd.append('rows', JSON.stringify(rows));
         var btn = document.getElementById('upload-confirm-btn');
         btn.disabled = true; btn.textContent = 'Saving...';
         fetch('/stats/upload', { method: 'POST', body: fd })
-          .then(function(r) { if (r.redirected) window.location.href = r.url; else return r.text(); })
-          .then(function() { window.location.reload(); })
-          .catch(function(e) { alert('Save failed: ' + e.message); btn.disabled = false; btn.textContent = 'Save'; });
-      };
-      window.__extractJson = function() {
-        var fileInput = document.getElementById('upload-screenshot');
-        if (!fileInput.files.length) { alert('Select a screenshot first.'); return; }
-        var btn = document.getElementById('extract-json-btn');
-        btn.disabled = true; btn.textContent = 'Extracting...';
-        var fd = new FormData();
-        fd.append('screenshot', fileInput.files[0]);
-        fd.append('csrfToken', csrfToken);
-        fd.append('guildId', guildId);
-        fetch('/stats/extract-json', { method: 'POST', body: fd })
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = 'Scan \\u2192 Copy JSON'; return; }
-            var json = data.json || '';
-            navigator.clipboard.writeText(json).then(function() {
-              btn.textContent = '\\u2713 Copied to clipboard!';
-              setTimeout(function() { btn.textContent = 'Scan \\u2192 Copy JSON'; btn.disabled = false; }, 2500);
-              // Also open manual entry modal with the JSON pre-filled
-              document.getElementById('upload-modal').classList.remove('open');
-              setTimeout(function() {
-                var manualModal = document.getElementById('manual-modal');
-                manualModal.classList.add('open');
-                var textarea = manualModal.querySelector('textarea');
-                if (textarea) textarea.value = json;
-              }, 200);
+          .then(function(r) {
+            if (r.redirected) { window.location.href = r.url; return; }
+            return r.text().then(function(text) {
+              try {
+                var data = JSON.parse(text);
+                if (data.error === 'duplicate') {
+                  var msg = 'A war for ' + data.existingDate + ' already exists with ' +
+                    data.existingPlayers + ' players (' + data.existingResult + '). Overwrite it?';
+                  if (confirm(msg)) {
+                    var fd2 = new FormData();
+                    fd2.append('csrfToken', csrfToken);
+                    fd2.append('guildId', guildId);
+                    fd2.append('warDate', parsed.warDate || document.getElementById('upload-war-date').value);
+                    fd2.append('result', parsed.result || document.getElementById('upload-result').value);
+                    fd2.append('title', parsed.title || document.getElementById('upload-title').value);
+                    fd2.append('rows', JSON.stringify(rows));
+                    fetch('/stats/upload?overwrite=1', { method: 'POST', body: fd2 })
+                      .then(function(r2) {
+                        if (r2.redirected) window.location.href = r2.url;
+                        else window.location.reload();
+                      })
+                      .catch(function(e2) { alert('Overwrite failed: ' + e2.message); btn.disabled = false; btn.textContent = 'Save scores'; });
+                    return;
+                  }
+                  btn.disabled = false; btn.textContent = 'Save scores';
+                  return;
+                }
+              } catch(e) {}
+              window.location.reload();
             });
           })
-          .catch(function(e) { alert('Extraction failed: ' + e.message); btn.disabled = false; btn.textContent = 'Scan \\u2192 Copy JSON'; });
+          .catch(function(e) { alert('Save failed: ' + e.message); btn.disabled = false; btn.textContent = 'Save scores'; });
+      };
+      // __extractJson removed — Scan screenshot handles everything
+      // Modal resize handler
+      window.__startResize = function(e) {
+        e.preventDefault();
+        var modal = document.getElementById('upload-modal-inner');
+        if (!modal) return;
+        var startX = e.clientX || (e.touches && e.touches[0].clientX);
+        var startY = e.clientY || (e.touches && e.touches[0].clientY);
+        var startW = modal.offsetWidth;
+        var startH = modal.offsetHeight;
+        function onMove(ev) {
+          var cx = ev.clientX || (ev.touches && ev.touches[0].clientX);
+          var cy = ev.clientY || (ev.touches && ev.touches[0].clientY);
+          modal.style.width = Math.max(600, startW + cx - startX) + 'px';
+          modal.style.height = Math.max(400, startH + cy - startY) + 'px';
+          modal.style.maxWidth = 'none';
+          modal.style.maxHeight = 'none';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.removeEventListener('touchmove', onMove);
+          document.removeEventListener('touchend', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove);
+        document.addEventListener('touchend', onUp);
       };
     })();
     </script>
@@ -384,6 +462,7 @@ function renderScoreSection(
   canManage: boolean
 ): string {
   const impactScores = calculateImpactScores(players);
+  const outlierWarnings = detectOutliers(reports.flatMap(r => r.rows));
   const wins = reports.filter(r => r.result === 'win').length;
   const losses = reports.filter(r => r.result === 'loss').length;
   const unknowns = reports.filter(r => r.result === 'unknown').length;
@@ -395,7 +474,7 @@ function renderScoreSection(
 
     <div class="dashboard-split">
       <div class="dashboard-split-main">
-        ${renderCompactScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage, impactScores)}
+        ${renderCompactScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage, impactScores, outlierWarnings)}
       </div>
       <div class="dashboard-split-side">
         <div class="chart-card">
@@ -471,7 +550,8 @@ function renderScoreTableTabs(
   guildId: string,
   csrfToken: string,
   canManage: boolean,
-  impactScores: PlayerImpactScore[]
+  impactScores: PlayerImpactScore[],
+  outlierWarnings: Map<string, string[]> = new Map()
 ): string {
   return `<div data-score-tabs class="card" style="padding:0;overflow:hidden;">
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);background:var(--bg-elevated);">
@@ -487,7 +567,7 @@ function renderScoreTableTabs(
     </div>
     <div style="padding:var(--space-5);">
       <div class="score-tab-panel is-active" data-tab-panel="scoreboard-totals">
-        ${renderScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage)}
+        ${renderScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage, outlierWarnings)}
       </div>
       <div class="score-tab-panel" data-tab-panel="impact-formula" hidden>
         ${renderImpactSection(impactScores)}
@@ -505,7 +585,8 @@ function renderScoreTable(
   sortKey: ScoreSortKey,
   guildId: string,
   csrfToken: string,
-  canManage: boolean
+  canManage: boolean,
+  outlierWarnings: Map<string, string[]> = new Map()
 ): string {
   const sortColumns: Array<{ label: string; key: string }> = [
     { label: "Player", key: "player" },
@@ -531,7 +612,7 @@ function renderScoreTable(
     return `<tr data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${healed}" data-structure="${player.structureDamage}">
       <td>
         <div style="display:flex;flex-direction:column;gap:var(--space-1);">
-          <span style="font-weight:600;color:var(--text-primary);">${esc(player.familyName)}</span>
+          <div style="display:flex;align-items:center;gap:var(--space-1);"><span style="font-weight:600;color:var(--text-primary);">${esc(player.familyName)}</span>${outlierWarnings.has(player.familyName) ? `<span class="outlier-warn" style="color:var(--color-amber,#f59e0b);cursor:help;font-size:0.85em;">⚠<span class="outlier-tip">${outlierWarnings.get(player.familyName)!.join('<br>')}</span></span>` : ''}</div>
           <div style="width:100%;height:4px;background:var(--border-subtle);border-radius:2px;overflow:hidden;">
             <div style="height:100%;width:${Math.max(4, Math.round((player.damageDealt / topDamage) * 100))}%;background:var(--accent);border-radius:2px;"></div>
           </div>
@@ -564,7 +645,8 @@ function renderCompactScoreTable(
   guildId: string,
   csrfToken: string,
   canManage: boolean,
-  impactScores: PlayerImpactScore[]
+  impactScores: PlayerImpactScore[],
+  outlierWarnings: Map<string, string[]> = new Map()
 ): string {
   const sortColumns: Array<{ label: string; key: string }> = [
     { label: "", key: "" },
@@ -614,6 +696,7 @@ function renderCompactScoreTable(
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
           <a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>
+          ${outlierWarnings.has(player.familyName) ? `<span class="outlier-warn" style="color:var(--color-amber,#f59e0b);cursor:help;font-size:0.85em;">⚠<span class="outlier-tip">${outlierWarnings.get(player.familyName)!.join('<br>')}</span></span>` : ''}
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}
         </div>
       </td>
@@ -870,6 +953,17 @@ export function renderScoreReportEditorPage(
               <input class="input" type="file" id="edit-screenshot" name="newScreenshot" accept="image/png,image/jpeg,image/webp">
               <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1);">Upload a new screenshot to replace the existing one.</p>
             </div>
+          </div>
+
+          ${report.imagePath ? `
+          <div style="margin-top:var(--space-4);">
+            <label class="label" style="margin-bottom:var(--space-2);">Screenshot reference</label>
+            <div style="border:1px solid var(--border-default);border-radius:var(--radius-sm);overflow:hidden;max-height:400px;cursor:pointer;" onclick="var img=this.querySelector('img');if(img){img.style.maxHeight=img.style.maxHeight==='none'?'400px':'none';img.style.width=img.style.width==='100%'?'auto':'100%';}">
+              <img src="/stats/reports/${enc(report.id)}/preview?guild=${enc(guild.id)}" alt="Scoreboard screenshot" style="width:100%;height:auto;max-height:400px;object-fit:contain;display:block;background:var(--bg-base);" loading="lazy">
+            </div>
+            <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1);">Click image to toggle full size</p>
+          </div>
+          ` : ""}
           </div>
 
         <div class="card" style="margin-bottom:var(--space-6);">

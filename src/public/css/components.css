@@ -771,6 +771,7 @@ a.card:focus-visible {
   overflow-y: auto;
   box-shadow: var(--shadow-xl);
   animation: scaleIn 0.25s ease;
+  position: relative;
 }
 
 .upload-modal-header {
@@ -930,4 +931,48 @@ a.card:focus-visible {
   .score-history-card-body {
     padding: var(--space-3);
   }
+}
+/* ── Outlier Warning Tooltip ────────────────────────────────── */
+.outlier-warn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  min-height: 1.4em;
+}
+.outlier-warn:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+.outlier-tip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 24, 27, 0.97);
+  color: #e4e4e7;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  max-width: 400px;
+  white-space: normal;
+}
+.outlier-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(24, 24, 27, 0.97);
+}
+.outlier-warn:hover .outlier-tip {
+  display: block;
 }

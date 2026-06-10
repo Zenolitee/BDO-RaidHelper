@@ -1,0 +1,127 @@
+{
+  "events": [
+    {
+      "id": "qa-event",
+      "title": "Sunday T1 Balenos/Serendia 30 Man",
+      "kind": "nodewar",
+      "tier": "tier1",
+      "day": "sunday",
+      "repeatDays": [
+        "sunday"
+      ],
+      "date": "2026-05-31",
+      "time": "21:00",
+      "timezone": "Asia/Singapore",
+      "recurrence": "once",
+      "totalCapacity": 30,
+      "groups": [
+        {
+          "key": "mainball",
+          "label": "Mainball/FFA",
+          "capacity": 21
+        },
+        {
+          "key": "defense",
+          "label": "Defense",
+          "capacity": 5
+        },
+        {
+          "key": "zerker",
+          "label": "Zerker",
+          "capacity": 2
+        },
+        {
+          "key": "shai",
+          "label": "Shai",
+          "capacity": 2
+        },
+        {
+          "key": "bench",
+          "label": "Benched",
+          "capacity": 0
+        },
+        {
+          "key": "tentative",
+          "label": "Tentative",
+          "capacity": 0,
+          "editable": false
+        },
+        {
+          "key": "absence",
+          "label": "Absence",
+          "capacity": 0,
+          "editable": false
+        }
+      ],
+      "guildId": "qa-guild",
+      "createdBy": "qa",
+      "createdAt": "2026-06-07T14:51:08.414Z",
+      "signups": [],
+      "closed": false,
+      "active": true,
+      "autoRepost": false
+    },
+    {
+      "id": "qa-event",
+      "title": "Sunday T1 Balenos/Serendia 30 Man",
+      "kind": "nodewar",
+      "tier": "tier1",
+      "day": "sunday",
+      "repeatDays": [
+        "sunday"
+      ],
+      "date": "2026-05-31",
+      "time": "21:00",
+      "timezone": "Asia/Singapore",
+      "recurrence": "once",
+      "totalCapacity": 30,
+      "groups": [
+        {
+          "key": "mainball",
+          "label": "Mainball/FFA",
+          "capacity": 21
+        },
+        {
+          "key": "defense",
+          "label": "Defense",
+          "capacity": 5
+        },
+        {
+          "key": "zerker",
+          "label": "Zerker",
+          "capacity": 2
+        },
+        {
+          "key": "shai",
+          "label": "Shai",
+          "capacity": 2
+        },
+        {
+          "key": "bench",
+          "label": "Benched",
+          "capacity": 0
+        },
+        {
+          "key": "tentative",
+          "label": "Tentative",
+          "capacity": 0,
+          "editable": false
+        },
+        {
+          "key": "absence",
+          "label": "Absence",
+          "capacity": 0,
+          "editable": false
+        }
+      ],
+      "guildId": "qa-guild",
+      "createdBy": "qa",
+      "createdAt": "2026-06-07T14:51:08.414Z",
+      "signups": [],
+      "closed": false,
+      "active": true,
+      "autoRepost": false
+    }
+  ],
+  "settings": {}
+}

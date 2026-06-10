@@ -1,5 +1,6 @@
 import { escapeHtml, formatDateLabel, formatStatNumber } from '../utils.js';
 import { renderApp, renderPageHeader, renderStatGrid } from './layout.js';
+import { calculateImpactScores } from '../score.js';
 import type { WebSession, GuildDashboardSummary, PlayerScoreAggregate } from '../types.js';
 import type { ScoreReport, ScoreRow } from '../../score-types.js';
 import type { DiscordGuild } from '../types.js';
@@ -59,6 +60,39 @@ export function renderPlayerDetailPage(
   const chartDeaths = sorted.map((pr) => pr.row.deaths);
   const chartDamage = sorted.map((pr) => Math.round(pr.row.damageDealt / 1_000_000 * 10) / 10);
 
+  // Win/loss point colors
+  const chartPointColors = sorted.map((pr) =>
+    pr.report.result === "win" ? "#22c55e" : pr.report.result === "loss" ? "#ef4444" : "#71717a"
+  );
+
+  // Per-war impact scores (normalize within this player's own wars)
+  const perWarAggs: PlayerScoreAggregate[] = sorted.map((pr) => ({
+    familyName: playerName,
+    participations: 1,
+    kills: pr.row.kills,
+    deaths: pr.row.deaths,
+    assists: pr.row.assists,
+    damageDealt: pr.row.damageDealt,
+    damageTaken: pr.row.damageTaken,
+    crowdControls: pr.row.crowdControls,
+    hpHealed: pr.row.hpHealed,
+    allySupport: pr.row.allySupport,
+    structureDamage: pr.row.structureDamage,
+    resurrections: pr.row.resurrections,
+  }));
+  const impactResults = calculateImpactScores(perWarAggs);
+  const impactScoreByRef = new Map(impactResults.map((ir) => [ir.player, Math.round(ir.score * 10) / 10]));
+  const chartImpact = perWarAggs.map((agg) => impactScoreByRef.get(agg) ?? 0);
+
+  // 3-point moving average for kills
+  const chartKillsMA: (number | null)[] = chartKills.map((_, i) =>
+    i < 2 ? null : Math.round((chartKills[i - 2] + chartKills[i - 1] + chartKills[i]) / 3 * 10) / 10
+  );
+
+  // Tooltip data (war dates and results for custom tooltip)
+  const chartWarDates = sorted.map((pr) => pr.report.warDate);
+  const chartResults = sorted.map((pr) => pr.report.result);
+
   // Per-war history table rows
   const historyRows = [...playerRows]
     .sort((a, b) => b.report.warDate.localeCompare(a.report.warDate))
@@ -86,6 +120,16 @@ export function renderPlayerDetailPage(
 (function() {
   var ctx = document.getElementById('player-trend-chart');
   if (!ctx) return;
+
+  var warDates = ${JSON.stringify(chartWarDates)};
+  var results = ${JSON.stringify(chartResults)};
+  var kills = ${JSON.stringify(chartKills)};
+  var deaths = ${JSON.stringify(chartDeaths)};
+  var damage = ${JSON.stringify(chartDamage)};
+  var impact = ${JSON.stringify(chartImpact)};
+  var killsMA = ${JSON.stringify(chartKillsMA)};
+  var pointColors = ${JSON.stringify(chartPointColors)};
+
   new Chart(ctx, {
     type: 'line',
     data: {
@@ -93,35 +137,128 @@ export function renderPlayerDetailPage(
       datasets: [
         {
           label: 'Kills',
-          data: ${JSON.stringify(chartKills)},
+          data: kills,
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59,130,246,0.1)',
           fill: true,
           tension: 0.3,
-          pointRadius: 4,
-          pointHoverRadius: 6
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          pointBackgroundColor: pointColors,
+          pointBorderColor: pointColors,
+          pointBorderWidth: 2,
+          yAxisID: 'y'
         },
         {
           label: 'Deaths',
-          data: ${JSON.stringify(chartDeaths)},
+          data: deaths,
           borderColor: '#ef4444',
           backgroundColor: 'rgba(239,68,68,0.1)',
           fill: true,
           tension: 0.3,
           pointRadius: 4,
-          pointHoverRadius: 6
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#ef4444',
+          yAxisID: 'y'
+        },
+        {
+          label: 'Damage (M)',
+          data: damage,
+          borderColor: '#f97316',
+          backgroundColor: 'rgba(249,115,22,0.1)',
+          fill: false,
+          tension: 0.3,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#f97316',
+          yAxisID: 'y1'
+        },
+        {
+          label: 'Impact Score',
+          data: impact,
+          borderColor: '#22c55e',
+          borderDash: [6, 3],
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#22c55e',
+          yAxisID: 'y'
+        },
+        {
+          label: 'Kills MA (3)',
+          data: killsMA,
+          borderColor: 'rgba(59,130,246,0.5)',
+          borderDash: [5, 5],
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          borderWidth: 2,
+          yAxisID: 'y'
         }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'top', labels: { color: '#a1a1aa', font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } }
+        legend: {
+          position: 'top',
+          labels: { color: '#a1a1aa', font: { size: 10 }, usePointStyle: true, pointStyle: 'circle', boxWidth: 8 }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(24,24,27,0.95)',
+          titleColor: '#e4e4e7',
+          bodyColor: '#a1a1aa',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            title: function(items) {
+              var idx = items[0].dataIndex;
+              return warDates[idx] + ' (' + results[idx].toUpperCase() + ')';
+            },
+            afterTitle: function(items) {
+              var idx = items[0].dataIndex;
+              var r = results[idx];
+              return r === 'win' ? '✅ Victory' : r === 'loss' ? '❌ Defeat' : '➖ Unknown';
+            },
+            label: function(item) {
+              var idx = item.dataIndex;
+              var labels = ['Kills', 'Deaths', 'Damage (M)', 'Impact Score', 'Kills MA (3)'];
+              var vals = [kills[idx], deaths[idx], damage[idx], impact[idx], killsMA[idx]];
+              var val = vals[item.datasetIndex];
+              if (val === null || val === undefined) return null;
+              return labels[item.datasetIndex] + ': ' + val;
+            }
+          }
+        }
       },
       scales: {
-        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#71717a', font: { size: 10 } } },
-        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#71717a', font: { size: 10 } }, beginAtZero: true }
+        x: {
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: '#71717a', font: { size: 10 }, maxRotation: 45 }
+        },
+        y: {
+          type: 'linear',
+          position: 'left',
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: '#71717a', font: { size: 10 } },
+          beginAtZero: true,
+          title: { display: true, text: 'Kills / Deaths / Impact', color: '#71717a', font: { size: 10 } }
+        },
+        y1: {
+          type: 'linear',
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#f97316', font: { size: 10 } },
+          beginAtZero: true,
+          title: { display: true, text: 'Damage (Millions)', color: '#f97316', font: { size: 10 } }
+        }
       }
     }
   });
@@ -202,7 +339,7 @@ export function renderPlayerDetailPage(
   </div>
   ${chartScript}`;
 
-  return renderApp(`${playerName} — Stats`, content, { session, summaries, activeNav: "stats" });
+  return renderApp(`${playerName} — Stats`, content, { session, summaries, activeNav: "stats", headExtra: '<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>' });
 }
 
 /* ── Helpers ────────────────────────────────────────────────── */
