@@ -525,38 +525,84 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       const scoreData = String(request.body.scoreData ?? "");
       if (!scoreData.trim()) throw new Error("Score data is required.");
 
-      const lines = scoreData.trim().split("\n").filter((l) => l.trim());
-      const rows: Omit<import("./score-types.js").ScoreRow, "guildId">[] = [];
+      const isJson = request.body.format === "json";
+      let rows: Omit<import("./score-types.js").ScoreRow, "guildId">[] = [];
+      let warDate: string;
+      let result: import("./score-types.js").ScoreReportResult;
+      let title: string | undefined;
 
-      for (const line of lines) {
-        const cols = line.split("\t").map((c) => c.trim());
-        if (cols.length < 6) throw new Error(`Each line needs at least 6 tab-separated columns (Name, K, D, A, DMG, CC). Got ${cols.length} on: "${line.slice(0, 60)}"`);
-        const num = (i: number) => { const v = (cols[i] ?? "").replace(/,/g, ""); const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0; };
-        rows.push({
-          familyName: normalizePlayerName(cols[0].slice(0, 80)),
-          kills: num(1),
-          deaths: num(2),
-          assists: num(3),
-          damageDealt: num(4),
-          damageTaken: num(5),
-          crowdControls: num(6),
-          hpHealed: num(7),
-          allySupport: num(8),
-          structureDamage: num(9),
-          lynchCannonKills: 0,
-          siegeAssists: 0,
-          resurrections: 0,
-          siegeDeaths: 0,
-          specialKills: 0,
-          timeAlive: "",
-          totalWarTime: ""
-        });
+      if (isJson) {
+        // JSON format
+        let parsed: unknown;
+        try { parsed = JSON.parse(scoreData); } catch { throw new Error("Invalid JSON. Please paste valid JSON data."); }
+        const data = parsed as Record<string, unknown>;
+        if (!data.warDate || typeof data.warDate !== "string") throw new Error("JSON must include a \"warDate\" field (YYYY-MM-DD).");
+        if (!data.players || !Array.isArray(data.players)) throw new Error("JSON must include a \"players\" array.");
+        warDate = data.warDate as string;
+        result = (data.result === "win" || data.result === "loss" || data.result === "unknown") ? data.result as import("./score-types.js").ScoreReportResult : "unknown";
+        title = typeof data.title === "string" ? data.title : undefined;
+        for (const p of data.players as Record<string, unknown>[]) {
+          const name = typeof p.name === "string" ? p.name.trim() : "";
+          if (!name) continue;
+          const num = (field: string) => { const v = Number(p[field]); return Number.isFinite(v) && v >= 0 ? Math.round(v) : 0; };
+          rows.push({
+            familyName: normalizePlayerName(name.slice(0, 80)),
+            kills: num("kills"),
+            deaths: num("deaths"),
+            assists: num("assists"),
+            damageDealt: num("damage"),
+            damageTaken: num("taken"),
+            crowdControls: num("cc"),
+            hpHealed: num("healed"),
+            allySupport: num("support"),
+            structureDamage: num("fort"),
+            lynchCannonKills: 0,
+            siegeAssists: 0,
+            resurrections: 0,
+            siegeDeaths: 0,
+            specialKills: 0,
+            timeAlive: "",
+            totalWarTime: ""
+          });
+        }
+      } else {
+        // Legacy tab-separated format
+        const lines = scoreData.trim().split("\n").filter((l) => l.trim());
+        for (const line of lines) {
+          const cols = line.split("\t").map((c) => c.trim());
+          if (cols.length < 6) throw new Error(`Each line needs at least 6 tab-separated columns (Name, K, D, A, DMG, CC). Got ${cols.length} on: "${line.slice(0, 60)}"`);
+          const num = (i: number) => { const v = (cols[i] ?? "").replace(/,/g, ""); const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0; };
+          rows.push({
+            familyName: normalizePlayerName(cols[0].slice(0, 80)),
+            kills: num(1),
+            deaths: num(2),
+            assists: num(3),
+            damageDealt: num(4),
+            damageTaken: num(5),
+            crowdControls: num(6),
+            hpHealed: num(7),
+            allySupport: num(8),
+            structureDamage: num(9),
+            lynchCannonKills: 0,
+            siegeAssists: 0,
+            resurrections: 0,
+            siegeDeaths: 0,
+            specialKills: 0,
+            timeAlive: "",
+            totalWarTime: ""
+          });
+        }
+        warDate = parseScoreDate(request.body.warDate);
+        result = parseScoreResult(request.body.result);
+        title = parseOptionalText(request.body.title, 120);
       }
 
       if (!rows.length) throw new Error("No valid score rows found.");
 
-      const warDate = parseScoreDate(request.body.warDate);
-      const result = parseScoreResult(request.body.result);
+      if (!isJson) {
+        warDate = parseScoreDate(request.body.warDate);
+        result = parseScoreResult(request.body.result);
+      }
       const uploadedBy = formatUploader(session);
 
       // Create a placeholder 1x1 PNG for the image requirement
@@ -565,8 +611,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       await options.scoreStore.createReport({
         guildId: guild.id,
         warDate,
+        title: title ?? (isJson ? undefined : parseOptionalText(request.body.title, 120)),
         result,
-        title: parseOptionalText(request.body.title, 120),
         imageMimeType: "image/png",
         imageOriginalName: "manual-entry.png",
         imageBuffer: placeholderPng,

@@ -276,16 +276,24 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
 
 function renderManualEntryForm(guild: DiscordGuild, session: WebSession, lastWarPlayers?: string[]): string {
   const today = new Date().toISOString().slice(0, 10);
-  const prefillTemplate = lastWarPlayers?.length
-    ? lastWarPlayers.map((name) => `${name}\t0\t0\t0\t0\t0\t0\t0\t0\t0`).join("\n")
-    : "";
-  const placeholder = "Flavour\t34\t10\t4\t400600\t291600\t100\t226900\t22805\t252500\nGahdehm\t44\t5\t5\t482200\t263700\t84\t231000\t21684\t4600000";
+  const templatePlayers = lastWarPlayers?.length
+    ? lastWarPlayers.map((name) => `    { "name": "${esc(name)}", "kills": 0, "deaths": 0, "assists": 0, "damage": 0, "taken": 0, "cc": 0, "healed": 0, "support": 0, "fort": 0 }`).join(",\n")
+    : `    { "name": "PlayerName", "kills": 0, "deaths": 0, "assists": 0, "damage": 0, "taken": 0, "cc": 0, "healed": 0, "support": 0, "fort": 0 }`;
+  const templateJson = JSON.stringify({
+    warDate: today,
+    result: "loss",
+    title: "Node War",
+    players: lastWarPlayers?.length
+      ? lastWarPlayers.map((name) => ({ name, kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }))
+      : [{ name: "PlayerName", kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }]
+  }, null, 2);
+
   return `<div class="upload-modal-overlay" id="manual-modal">
     <div class="upload-modal" style="max-width:720px;">
       <div class="upload-modal-header">
         <div>
           <span class="badge badge-accent" style="margin-bottom:var(--space-2);display:inline-block;">MANUAL ENTRY</span>
-          <h3 style="margin-top:var(--space-1);">Enter Score Data</h3>
+          <h3 style="margin-top:var(--space-1);">Enter Score Data (JSON)</h3>
         </div>
         <button type="button" class="upload-modal-close" onclick="document.getElementById('manual-modal').classList.remove('open')">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -294,39 +302,31 @@ function renderManualEntryForm(guild: DiscordGuild, session: WebSession, lastWar
       <form method="post" action="/stats/manual" class="form-grid">
         <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
         <input type="hidden" name="guildId" value="${esc(guild.id)}">
-        <div class="form-group">
-          <label class="label" for="manual-war-date">War date</label>
-          <input class="input" type="date" id="manual-war-date" name="warDate" value="${today}" required>
-        </div>
-        <div class="form-group">
-          <label class="label" for="manual-result">Result</label>
-          <select class="select" id="manual-result" name="result">
-            <option value="unknown">Unknown</option>
-            <option value="win">Win</option>
-            <option value="loss">Loss</option>
-          </select>
+        <input type="hidden" name="format" value="json">
+        <div style="grid-column:1/-1;padding:var(--space-3);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:var(--text-xs);color:var(--text-muted);line-height:1.6;">
+          <strong style="color:var(--text-secondary);">How it works:</strong> Click <strong>Copy JSON Template</strong> to get the format with pre-filled player names, fill in the stats, then paste the entire JSON below and submit.
+          <br><br>
+          <strong>Fields:</strong> kills, deaths, assists, damage, taken, cc, healed, support, fort
         </div>
         <div class="form-group" style="grid-column:1/-1;">
-          <label class="label" for="manual-title">Title</label>
-          <input class="input" type="text" id="manual-title" name="title" maxlength="120" placeholder="Optional war label">
-        </div>
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="label">Columns</label>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);background:var(--bg-base);border:1px solid var(--border-default);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);overflow-x:auto;white-space:nowrap;">
-            Name&#9;K&#9;D&#9;A&#9;DMG&#9;Taken&#9;CC&#9;Healed&#9;Support&#9;Fort
-          </div>
-        </div>
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="label" for="manual-data">Score data <span style="color:var(--text-muted);">(tab-separated, one player per line)</span></label>
-          <textarea class="input" id="manual-data" name="scoreData" rows="12" style="font-family:var(--font-mono);font-size:12px;resize:vertical;" placeholder="${placeholder}" required></textarea>
+          <label class="label" for="manual-data">JSON data</label>
+          <textarea class="input" id="manual-data" name="scoreData" rows="18" style="font-family:var(--font-mono);font-size:11px;resize:vertical;line-height:1.5;" placeholder='{"warDate":"2026-06-07","result":"loss","players":[{"name":"Player","kills":0,"deaths":0,"assists":0,"damage":0,"taken":0,"cc":0,"healed":0,"support":0,"fort":0}]}' required></textarea>
         </div>
         <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;align-items:center;">
-          ${prefillTemplate ? `<button type="button" class="button button-ghost button-sm" onclick="document.getElementById('manual-data').value=${JSON.stringify(prefillTemplate).replace(/"/g, '&quot;')}">Pre-fill from last war</button>` : ""}
+          <button type="button" class="button button-ghost button-sm" onclick="navigator.clipboard.writeText(document.getElementById('json-template').textContent).then(function(){var b=event.target;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy JSON Template'},1500)})">Copy JSON Template</button>
           <div style="flex:1;"></div>
           <button type="button" class="button button-ghost" onclick="document.getElementById('manual-modal').classList.remove('open')">Cancel</button>
           <button type="submit" class="button button-primary">Save scores</button>
         </div>
       </form>
+      <pre id="json-template" style="display:none;">${esc(JSON.stringify({
+    warDate: today,
+    result: "loss",
+    title: "Node War",
+    players: lastWarPlayers?.length
+      ? lastWarPlayers.map((name) => ({ name, kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }))
+      : [{ name: "PlayerName", kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }]
+  }, null, 2))}</pre>
     </div>
   </div>`;
 }
