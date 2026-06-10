@@ -101,7 +101,7 @@ export function renderStatsPage(
       ])}
 
       ${canManage ? renderUploadForm(guild, session) : ""}
-      ${canManage ? renderManualEntryForm(guild, session, reports.length ? [...new Set(reports.sort((a, b) => b.warDate.localeCompare(a.warDate))[0].rows.map((r) => r.familyName))] : undefined) : ""}
+      ${canManage ? renderManualEntryForm(guild, session) : ""}
 
       ${players.length
         ? renderScoreSection(players, reports, topDamage, sortKey, guild.id, session.csrfToken, canManage)
@@ -180,6 +180,7 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
           </div>
           <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
             <button type="button" class="button button-ghost" onclick="document.getElementById('upload-modal').classList.remove('open')">Cancel</button>
+            <button type="button" class="button button-secondary button-sm" id="extract-json-btn" onclick="window.__extractJson()">Scan → Copy JSON</button>
             <button type="button" class="button button-primary" id="upload-preview-btn" onclick="window.__uploadPreview()">Scan screenshot</button>
           </div>
         </div>
@@ -268,24 +269,50 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
           .then(function() { window.location.reload(); })
           .catch(function(e) { alert('Save failed: ' + e.message); btn.disabled = false; btn.textContent = 'Save'; });
       };
+      window.__extractJson = function() {
+        var fileInput = document.getElementById('upload-screenshot');
+        if (!fileInput.files.length) { alert('Select a screenshot first.'); return; }
+        var btn = document.getElementById('extract-json-btn');
+        btn.disabled = true; btn.textContent = 'Extracting...';
+        var fd = new FormData();
+        fd.append('screenshot', fileInput.files[0]);
+        fd.append('csrfToken', csrfToken);
+        fd.append('guildId', guildId);
+        fetch('/stats/extract-json', { method: 'POST', body: fd })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = 'Scan \\u2192 Copy JSON'; return; }
+            var json = data.json || '';
+            navigator.clipboard.writeText(json).then(function() {
+              btn.textContent = '\\u2713 Copied to clipboard!';
+              setTimeout(function() { btn.textContent = 'Scan \\u2192 Copy JSON'; btn.disabled = false; }, 2500);
+              // Also open manual entry modal with the JSON pre-filled
+              document.getElementById('upload-modal').classList.remove('open');
+              setTimeout(function() {
+                var manualModal = document.getElementById('manual-modal');
+                manualModal.classList.add('open');
+                var textarea = manualModal.querySelector('textarea');
+                if (textarea) textarea.value = json;
+              }, 200);
+            });
+          })
+          .catch(function(e) { alert('Extraction failed: ' + e.message); btn.disabled = false; btn.textContent = 'Scan \\u2192 Copy JSON'; });
+      };
     })();
     </script>
   </div>`;
 }
 /* ── Manual entry form ──────────────────────────────────────── */
 
-function renderManualEntryForm(guild: DiscordGuild, session: WebSession, lastWarPlayers?: string[]): string {
+function renderManualEntryForm(guild: DiscordGuild, session: WebSession): string {
   const today = new Date().toISOString().slice(0, 10);
-  const templatePlayers = lastWarPlayers?.length
-    ? lastWarPlayers.map((name) => `    { "name": "${esc(name)}", "kills": 0, "deaths": 0, "assists": 0, "damage": 0, "taken": 0, "cc": 0, "healed": 0, "support": 0, "fort": 0 }`).join(",\n")
-    : `    { "name": "PlayerName", "kills": 0, "deaths": 0, "assists": 0, "damage": 0, "taken": 0, "cc": 0, "healed": 0, "support": 0, "fort": 0 }`;
   const templateJson = JSON.stringify({
     warDate: today,
     result: "loss",
     title: "Node War",
-    players: lastWarPlayers?.length
-      ? lastWarPlayers.map((name) => ({ name, kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }))
-      : [{ name: "PlayerName", kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }]
+    players: [
+      { name: "PlayerName", kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }
+    ]
   }, null, 2);
 
   return `<div class="upload-modal-overlay" id="manual-modal">
@@ -299,35 +326,49 @@ function renderManualEntryForm(guild: DiscordGuild, session: WebSession, lastWar
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <form method="post" action="/stats/manual" class="form-grid">
-        <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
-        <input type="hidden" name="guildId" value="${esc(guild.id)}">
-        <input type="hidden" name="format" value="json">
-        <div style="grid-column:1/-1;padding:var(--space-3);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:var(--text-xs);color:var(--text-muted);line-height:1.6;">
-          <strong style="color:var(--text-secondary);">How it works:</strong> Click <strong>Copy JSON Template</strong> to get the format with pre-filled player names, fill in the stats, then paste the entire JSON below and submit.
-          <br><br>
-          <strong>Fields:</strong> kills, deaths, assists, damage, taken, cc, healed, support, fort
-        </div>
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="label" for="manual-data">JSON data</label>
-          <textarea class="input" id="manual-data" name="scoreData" rows="18" style="font-family:var(--font-mono);font-size:11px;resize:vertical;line-height:1.5;" placeholder='{"warDate":"2026-06-07","result":"loss","players":[{"name":"Player","kills":0,"deaths":0,"assists":0,"damage":0,"taken":0,"cc":0,"healed":0,"support":0,"fort":0}]}' required></textarea>
-        </div>
-        <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;align-items:center;">
-          <button type="button" class="button button-ghost button-sm" onclick="navigator.clipboard.writeText(document.getElementById('json-template').textContent).then(function(){var b=event.target;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy JSON Template'},1500)})">Copy JSON Template</button>
-          <div style="flex:1;"></div>
-          <button type="button" class="button button-ghost" onclick="document.getElementById('manual-modal').classList.remove('open')">Cancel</button>
-          <button type="submit" class="button button-primary">Save scores</button>
-        </div>
-      </form>
-      <pre id="json-template" style="display:none;">${esc(JSON.stringify({
-    warDate: today,
-    result: "loss",
-    title: "Node War",
-    players: lastWarPlayers?.length
-      ? lastWarPlayers.map((name) => ({ name, kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }))
-      : [{ name: "PlayerName", kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }]
-  }, null, 2))}</pre>
+      <div style="grid-column:1/-1;padding:var(--space-3);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:var(--text-xs);color:var(--text-muted);line-height:1.6;margin-bottom:var(--space-3);">
+        <strong style="color:var(--text-secondary);">How to use:</strong><br>
+        1. Click <strong>Copy JSON Template</strong> below to copy the format.<br>
+        2. Open a text editor (Notepad, VS Code, etc.) and paste the template.<br>
+        3. Fill in player names and stats, duplicate the player object for each player.<br>
+        4. Paste the entire JSON into the textarea and click Save.<br><br>
+        <strong>Fields:</strong> kills, deaths, assists, damage, taken, cc, healed, support, fort
+      </div>
+      <div style="grid-column:1/-1;display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-3);">
+        <button type="button" class="button button-secondary button-sm" id="copy-template-btn" onclick="navigator.clipboard.writeText(document.getElementById('json-template').textContent).then(function(){var b=document.getElementById('copy-template-btn');b.textContent='✓ Copied!';setTimeout(function(){b.textContent='Copy JSON Template'},2000)})">Copy JSON Template</button>
+        <span style="font-size:var(--text-xs);color:var(--text-muted);">Template copied to clipboard — edit in a text editor, then paste below</span>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label class="label" for="manual-data">Paste JSON data</label>
+        <textarea class="input" id="manual-data" rows="20" style="font-family:var(--font-mono);font-size:11px;resize:vertical;line-height:1.5;background:var(--bg-base);" placeholder="Paste your JSON here..." required></textarea>
+      </div>
+      <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;align-items:center;margin-top:var(--space-3);">
+        <button type="button" class="button button-ghost" onclick="document.getElementById('manual-modal').classList.remove('open')">Cancel</button>
+        <button type="button" class="button button-primary" onclick="window.__submitJsonManual()">Save scores</button>
+      </div>
+      <pre id="json-template" style="display:none;">${esc(templateJson)}</pre>
+      <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
+      <input type="hidden" name="guildId" value="${esc(guild.id)}">
     </div>
+    <script>
+    (function() {
+      window.__submitJsonManual = function() {
+        var data = document.getElementById('manual-data').value.trim();
+        if (!data) { alert('Paste JSON data first.'); return; }
+        // Validate JSON
+        try { JSON.parse(data); } catch(e) { alert('Invalid JSON: ' + e.message); return; }
+        var fd = new FormData();
+        fd.append('csrfToken', '${esc(session.csrfToken)}');
+        fd.append('guildId', '${esc(guild.id)}');
+        fd.append('format', 'json');
+        fd.append('scoreData', data);
+        fetch('/stats/manual', { method: 'POST', body: fd })
+          .then(function(r) { if (r.redirected) window.location.href = r.url; else return r.text(); })
+          .then(function() { window.location.reload(); })
+          .catch(function(e) { alert('Save failed: ' + e.message); });
+      };
+    })();
+    </script>
   </div>`;
 }
 

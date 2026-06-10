@@ -512,6 +512,69 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.status(400).json({ error: error instanceof Error ? error.message : "Extraction failed." });
     }
   });
+  // Extract screenshot → JSON in manual entry format
+  app.post("/stats/extract-json", scoreUpload.single("screenshot"), async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = typeof request.body.guildId === "string" ? request.body.guildId : undefined;
+    const isTestMode = request.body.testMode === "true";
+
+    if (!isTestMode) {
+      const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+      if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
+        response.status(403).json({ error: "Not authorized." });
+        return;
+      }
+    }
+
+    try {
+      const file = request.file;
+      if (!file || !isAllowedScoreImage(file.mimetype, file.originalname)) {
+        throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
+      }
+
+      const geminiQuota = isTestMode
+        ? { allowed: false, reason: "test mode" }
+        : consumeScoreGeminiQuota(session!.user.id, guildId!);
+      const extraction = await extractScoreScreenshot(file.buffer, {
+        mimeType: file.mimetype,
+        geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
+        geminiModel: config.geminiModel,
+        preferGemini: geminiQuota.allowed
+      });
+
+      // Convert to manual entry JSON format
+      const { normalizePlayerName } = await import("./web/score.js");
+      const players = extraction.rows.map((row) => ({
+        name: normalizePlayerName(row.familyName),
+        kills: row.kills,
+        deaths: row.deaths,
+        assists: row.assists,
+        damage: row.damageDealt,
+        taken: row.damageTaken,
+        cc: row.crowdControls,
+        healed: row.hpHealed,
+        support: row.allySupport,
+        fort: row.structureDamage
+      }));
+
+      const warDate = new Date().toISOString().slice(0, 10);
+      const resultJson = JSON.stringify({
+        warDate,
+        result: "unknown",
+        title: "",
+        players
+      }, null, 2);
+
+      response.json({
+        engine: extraction.engine,
+        confidence: extraction.confidence,
+        rowCount: players.length,
+        json: resultJson
+      });
+    } catch (error) {
+      response.status(400).json({ error: error instanceof Error ? error.message : "Extraction failed." });
+    }
+  });
   app.post("/stats/manual", async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
