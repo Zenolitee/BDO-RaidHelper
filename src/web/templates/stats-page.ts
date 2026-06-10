@@ -74,6 +74,10 @@ export function renderStatsPage(
     ? `<button type="button" class="button button-primary button-sm" onclick="document.getElementById('upload-modal').classList.add('open')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Upload
+      </button>
+      <button type="button" class="button button-secondary button-sm" onclick="document.getElementById('manual-modal').classList.add('open')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Manual Entry
       </button>`
     : "";
 
@@ -97,6 +101,7 @@ export function renderStatsPage(
       ])}
 
       ${canManage ? renderUploadForm(guild, session) : ""}
+      ${canManage ? renderManualEntryForm(guild, session) : ""}
 
       ${players.length
         ? renderScoreSection(players, reports, topDamage, sortKey, guild.id, session.csrfToken, canManage)
@@ -172,6 +177,59 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
         <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
           <button type="button" class="button button-ghost" onclick="document.getElementById('upload-modal').classList.remove('open')">Cancel</button>
           <button type="submit" class="button button-primary">Upload and scan</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+}
+/* ── Manual entry form ──────────────────────────────────────── */
+
+function renderManualEntryForm(guild: DiscordGuild, session: WebSession): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const placeholder = "Flavour\t34\t10\t4\t400600\t291600\t100\t226900\t22805\t252500\nGahdehm\t44\t5\t5\t482200\t263700\t84\t231000\t21684\t4600000";
+  return `<div class="upload-modal-overlay" id="manual-modal">
+    <div class="upload-modal" style="max-width:720px;">
+      <div class="upload-modal-header">
+        <div>
+          <span class="badge badge-accent" style="margin-bottom:var(--space-2);display:inline-block;">MANUAL ENTRY</span>
+          <h3 style="margin-top:var(--space-1);">Enter Score Data</h3>
+        </div>
+        <button type="button" class="upload-modal-close" onclick="document.getElementById('manual-modal').classList.remove('open')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form method="post" action="/stats/manual" class="form-grid">
+        <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
+        <input type="hidden" name="guildId" value="${esc(guild.id)}">
+        <div class="form-group">
+          <label class="label" for="manual-war-date">War date</label>
+          <input class="input" type="date" id="manual-war-date" name="warDate" value="${today}" required>
+        </div>
+        <div class="form-group">
+          <label class="label" for="manual-result">Result</label>
+          <select class="select" id="manual-result" name="result">
+            <option value="unknown">Unknown</option>
+            <option value="win">Win</option>
+            <option value="loss">Loss</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="label" for="manual-title">Title</label>
+          <input class="input" type="text" id="manual-title" name="title" maxlength="120" placeholder="Optional war label">
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="label">Columns</label>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);background:var(--bg-base);border:1px solid var(--border-default);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);overflow-x:auto;white-space:nowrap;">
+            Name&#9;K&#9;D&#9;A&#9;DMG&#9;Taken&#9;CC&#9;Healed&#9;Support&#9;Fort
+          </div>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="label" for="manual-data">Score data <span style="color:var(--text-muted);">(tab-separated, one player per line)</span></label>
+          <textarea class="input" id="manual-data" name="scoreData" rows="12" style="font-family:var(--font-mono);font-size:12px;resize:vertical;" placeholder="${placeholder}" required></textarea>
+        </div>
+        <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
+          <button type="button" class="button button-ghost" onclick="document.getElementById('manual-modal').classList.remove('open')">Cancel</button>
+          <button type="submit" class="button button-primary">Save scores</button>
         </div>
       </form>
     </div>

@@ -313,6 +313,77 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.status(400).type("html").send(renderWebError(error));
     }
   });
+  app.post("/stats/manual", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session) || !options.scoreStore) {
+      response.status(403).send("Not authorized.");
+      return;
+    }
+
+    try {
+      const scoreData = String(request.body.scoreData ?? "");
+      if (!scoreData.trim()) throw new Error("Score data is required.");
+
+      const lines = scoreData.trim().split("\n").filter((l) => l.trim());
+      const rows: Omit<import("./score-types.js").ScoreRow, "guildId">[] = [];
+
+      for (const line of lines) {
+        const cols = line.split("\t").map((c) => c.trim());
+        if (cols.length < 6) throw new Error(`Each line needs at least 6 tab-separated columns (Name, K, D, A, DMG, CC). Got ${cols.length} on: "${line.slice(0, 60)}"`);
+        const num = (i: number) => { const v = (cols[i] ?? "").replace(/,/g, ""); const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0; };
+        rows.push({
+          familyName: cols[0].slice(0, 80),
+          kills: num(1),
+          deaths: num(2),
+          assists: num(3),
+          damageDealt: num(4),
+          damageTaken: num(5),
+          crowdControls: num(6),
+          hpHealed: num(7),
+          allySupport: num(8),
+          structureDamage: num(9),
+          lynchCannonKills: 0,
+          siegeAssists: 0,
+          resurrections: 0,
+          siegeDeaths: 0,
+          specialKills: 0,
+          timeAlive: "",
+          totalWarTime: ""
+        });
+      }
+
+      if (!rows.length) throw new Error("No valid score rows found.");
+
+      const warDate = parseScoreDate(request.body.warDate);
+      const result = parseScoreResult(request.body.result);
+      const uploadedBy = formatUploader(session);
+
+      // Create a placeholder 1x1 PNG for the image requirement
+      const placeholderPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+
+      await options.scoreStore.createReport({
+        guildId: guild.id,
+        warDate,
+        result,
+        title: parseOptionalText(request.body.title, 120),
+        imageMimeType: "image/png",
+        imageOriginalName: "manual-entry.png",
+        imageBuffer: placeholderPng,
+        ocrEngine: "manual",
+        rawOcrText: scoreData,
+        ocrConfidence: 100,
+        uploadedBy,
+        rows: rows.map((row) => ({ ...row, guildId: guild.id }))
+      });
+
+      console.info(`Manual score entry by ${uploadedBy} for guild ${guild.name} (${guild.id}): ${rows.length} rows.`);
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderWebError(error));
+    }
+  });
 
   app.get("/stats/reports/:id/edit", async (request, response) => {
     const session = await getSession(request, sessions);
