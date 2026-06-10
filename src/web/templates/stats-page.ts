@@ -476,13 +476,13 @@ function renderCompactScoreTable(
     const rowBg = rank <= 5 ? rc.bg : "transparent";
     const rowBorder = rank <= 5 ? `border-left:2.5px solid ${rc.border}33;` : "";
 
-    return `<tr data-rank="${rank}" data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
+    return `<tr data-table="scoreboard" data-rank="${rank}" data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
           <div style="position:relative;">
             <div style="width:32px;height:32px;border-radius:var(--radius-md);background:linear-gradient(135deg,${rc.border}18,${rc.border}08);border:1px solid ${rc.border}22;display:flex;align-items:center;justify-content:center;">
-              ${rank === 1 ? crownSvg : `<span style="font-size:11px;font-weight:700;color:${nameAccent};">${rank}</span>`}
+              ${rank === 1 ? crownSvg : `<span style="font-size:13px;font-weight:700;color:${nameAccent};">${esc(player.familyName.charAt(0).toUpperCase())}</span>`}
             </div>
             ${rank <= 3 ? `<div style="position:absolute;bottom:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:${rc.border};border:2px solid var(--bg-base);"></div>` : ""}
           </div>
@@ -900,8 +900,9 @@ function renderScoreSortScript(): string {
       if (rc) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:' + rc.bg + ';color:' + rc.text + ';border:1.5px solid ' + rc.border + '22;font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
       return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">' + rank + '</span>';
     };
+    var crownSvgInner = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>';
     var rerank = function () {
-      var rows = Array.from(tbody.querySelectorAll("tr[data-player]"));
+      var rows = Array.from(tbody.querySelectorAll(":scope > tr[data-table='scoreboard'][data-player]"));
       rows.forEach(function (row, i) {
         var rank = i + 1;
         row.setAttribute("data-rank", String(rank));
@@ -912,9 +913,23 @@ function renderScoreSortScript(): string {
         // Row background and left border
         row.style.background = rc ? rc.bg : "transparent";
         row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "2.5px solid transparent";
-        // Player name color — find the name span (first span with font-weight 600+ in 2nd td)
+        // Avatar box: crown for #1, initial letter for others
         var nameTd = row.querySelectorAll("td")[1];
         if (nameTd) {
+          var avatarBox = nameTd.querySelector("div > div:first-child > div");
+          if (avatarBox) {
+            avatarBox.style.background = "linear-gradient(135deg," + (rc ? rc.border : "#555") + "18," + (rc ? rc.border : "#555") + "08)";
+            avatarBox.style.borderColor = (rc ? rc.border : "#555") + "22";
+            var inner = avatarBox.querySelector("span") || avatarBox.querySelector("svg");
+            if (rank === 1) {
+              avatarBox.innerHTML = crownSvgInner;
+            } else {
+              var playerName = row.getAttribute("data-player") || "";
+              var initial = playerName.charAt(0).toUpperCase();
+              avatarBox.innerHTML = '<span style="font-size:13px;font-weight:700;color:' + (rc ? rc.text : "var(--text-primary)") + ';">' + initial + '</span>';
+            }
+          }
+          // Player name color
           var spans = nameTd.querySelectorAll("span");
           for (var s = 0; s < spans.length; s++) {
             var fw = spans[s].style.fontWeight || "";
