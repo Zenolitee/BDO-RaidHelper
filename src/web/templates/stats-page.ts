@@ -81,7 +81,7 @@ export function renderStatsPage(
       </button>`
     : "";
 
-  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a>${uploadButton}`;
+  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a><a class="button button-ghost button-sm" href="/stats/compare?guild=${enc(guild.id)}">Compare</a><a class="button button-ghost button-sm" href="/stats/export.csv?guild=${enc(guild.id)}">Export CSV</a>${uploadButton}`;
 
   const content = [
     `<div class="dashboard">
@@ -101,7 +101,7 @@ export function renderStatsPage(
       ])}
 
       ${canManage ? renderUploadForm(guild, session) : ""}
-      ${canManage ? renderManualEntryForm(guild, session) : ""}
+      ${canManage ? renderManualEntryForm(guild, session, reports.length ? [...new Set(reports.sort((a, b) => b.warDate.localeCompare(a.warDate))[0].rows.map((r) => r.familyName))] : undefined) : ""}
 
       ${players.length
         ? renderScoreSection(players, reports, topDamage, sortKey, guild.id, session.csrfToken, canManage)
@@ -141,54 +141,144 @@ function renderNoticeBanner(notice: "uploaded" | "rescanned" | "saved" | "delete
 function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
   const today = new Date().toISOString().slice(0, 10);
   return `<div class="upload-modal-overlay" id="upload-modal">
-    <div class="upload-modal">
+    <div class="upload-modal" style="max-width:680px;">
       <div class="upload-modal-header">
         <div>
           <span class="badge badge-accent" style="margin-bottom:var(--space-2);display:inline-block;">SCREENSHOT OCR</span>
           <h3 style="margin-top:var(--space-1);">Upload Scoreboard</h3>
         </div>
-        <button type="button" class="upload-modal-close" onclick="document.getElementById('upload-modal').classList.remove('open')">
+        <button type="button" class="upload-modal-close" onclick="document.getElementById('upload-modal').classList.remove('open');document.getElementById('upload-step-1').style.display='';document.getElementById('upload-step-2').style.display='none';">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <form method="post" action="/stats/upload" enctype="multipart/form-data" class="form-grid">
-        <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
-        <input type="hidden" name="guildId" value="${esc(guild.id)}">
-        <div class="form-group">
-          <label class="label" for="upload-war-date">War date</label>
-          <input class="input" type="date" id="upload-war-date" name="warDate" value="${today}" required>
+
+      <!-- Step 1: File input -->
+      <div id="upload-step-1">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="label" for="upload-war-date">War date</label>
+            <input class="input" type="date" id="upload-war-date" value="${today}" required>
+          </div>
+          <div class="form-group">
+            <label class="label" for="upload-result">Result</label>
+            <select class="select" id="upload-result">
+              <option value="unknown">Unknown</option>
+              <option value="win">Win</option>
+              <option value="loss">Loss</option>
+            </select>
+          </div>
+          <div class="form-group" style="grid-column:1/-1;">
+            <label class="label" for="upload-title">Title</label>
+            <input class="input" type="text" id="upload-title" maxlength="120" placeholder="Optional war label">
+          </div>
+          <div class="form-group" style="grid-column:1/-1;">
+            <label class="label" for="upload-screenshot">Screenshot</label>
+            <input class="input" type="file" id="upload-screenshot" accept="image/png,image/jpeg,image/webp" required>
+          </div>
+          <div style="grid-column:1/-1;padding:var(--space-3);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:var(--text-xs);color:var(--text-muted);line-height:1.5;">
+            <strong style="color:var(--text-secondary);">Disclaimer:</strong> OCR and AI image extraction may produce incorrect values. Review extracted rows before saving.
+          </div>
+          <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
+            <button type="button" class="button button-ghost" onclick="document.getElementById('upload-modal').classList.remove('open')">Cancel</button>
+            <button type="button" class="button button-primary" id="upload-preview-btn" onclick="window.__uploadPreview()">Scan screenshot</button>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="label" for="upload-result">Result</label>
-          <select class="select" id="upload-result" name="result">
-            <option value="unknown">Unknown</option>
-            <option value="win">Win</option>
-            <option value="loss">Loss</option>
-          </select>
+      </div>
+
+      <!-- Step 2: Preview extracted rows -->
+      <div id="upload-step-2" style="display:none;">
+        <div id="upload-preview-status" style="margin-bottom:var(--space-3);font-size:var(--text-sm);color:var(--text-muted);"></div>
+        <div id="upload-preview-table" style="max-height:350px;overflow-y:auto;margin-bottom:var(--space-4);"></div>
+        <div style="display:flex;gap:var(--space-3);justify-content:flex-end;">
+          <button type="button" class="button button-ghost" onclick="document.getElementById('upload-step-1').style.display='';document.getElementById('upload-step-2').style.display='none';">← Back</button>
+          <button type="button" class="button button-primary" id="upload-confirm-btn" onclick="window.__uploadConfirm()">Save scores</button>
         </div>
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="label" for="upload-title">Title</label>
-          <input class="input" type="text" id="upload-title" name="title" maxlength="120" placeholder="Optional war label">
-        </div>
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="label" for="upload-screenshot">Screenshot</label>
-          <input class="input" type="file" id="upload-screenshot" name="screenshot" accept="image/png,image/jpeg,image/webp" required>
-        </div>
-        <div style="grid-column:1/-1;padding:var(--space-3);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-sm);font-size:var(--text-xs);color:var(--text-muted);line-height:1.5;">
-          <strong style="color:var(--text-secondary);">Disclaimer:</strong> OCR and AI image extraction may produce incorrect values. Player names, kills, damage, and other stats should be verified after upload. Use the Edit page to correct any mismatches.
-        </div>
-        <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
-          <button type="button" class="button button-ghost" onclick="document.getElementById('upload-modal').classList.remove('open')">Cancel</button>
-          <button type="submit" class="button button-primary">Upload and scan</button>
-        </div>
-      </form>
+      </div>
     </div>
+
+    <script>
+    (function() {
+      var csrfToken = ${JSON.stringify(session.csrfToken)};
+      var guildId = ${JSON.stringify(guild.id)};
+      var extractedRows = [];
+
+      window.__uploadPreview = function() {
+        var fileInput = document.getElementById('upload-screenshot');
+        if (!fileInput.files.length) { alert('Select a screenshot first.'); return; }
+        var btn = document.getElementById('upload-preview-btn');
+        btn.disabled = true; btn.textContent = 'Scanning...';
+        var fd = new FormData();
+        fd.append('screenshot', fileInput.files[0]);
+        fd.append('csrfToken', csrfToken);
+        fd.append('guildId', guildId);
+        fetch('/stats/upload/preview', { method: 'POST', body: fd })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = 'Scan screenshot'; return; }
+            extractedRows = data.rows || [];
+            document.getElementById('upload-preview-status').innerHTML =
+              '<span class="badge badge-active">' + extractedRows.length + ' players</span> ' +
+              '<span style="margin-left:var(--space-2);">Engine: ' + (data.engine || 'unknown') + '</span>' +
+              (data.confidence ? ' · Confidence: ' + Math.round(data.confidence) + '%' : '');
+            var html = '<table class="table" style="min-width:500px;"><thead><tr>' +
+              '<th>Player</th><th>K</th><th>D</th><th>A</th><th>DMG</th><th>CC</th><th>Fort</th>' +
+              '</tr></thead><tbody>';
+            extractedRows.forEach(function(row, i) {
+              html += '<tr>' +
+                '<td><input class="input" style="width:120px;padding:2px 6px;font-size:12px;" data-field="familyName" data-idx="' + i + '" value="' + (row.familyName||'').replace(/"/g,'&quot;') + '"></td>' +
+                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="kills" data-idx="' + i + '" type="number" value="' + (row.kills||0) + '"></td>' +
+                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="deaths" data-idx="' + i + '" type="number" value="' + (row.deaths||0) + '"></td>' +
+                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="assists" data-idx="' + i + '" type="number" value="' + (row.assists||0) + '"></td>' +
+                '<td><input class="input" style="width:70px;padding:2px 6px;font-size:12px;text-align:right;" data-field="damageDealt" data-idx="' + i + '" type="number" value="' + (row.damageDealt||0) + '"></td>' +
+                '<td><input class="input" style="width:50px;padding:2px 6px;font-size:12px;text-align:right;" data-field="crowdControls" data-idx="' + i + '" type="number" value="' + (row.crowdControls||0) + '"></td>' +
+                '<td><input class="input" style="width:70px;padding:2px 6px;font-size:12px;text-align:right;" data-field="structureDamage" data-idx="' + i + '" type="number" value="' + (row.structureDamage||0) + '"></td>' +
+                '</tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('upload-preview-table').innerHTML = html;
+            document.getElementById('upload-step-1').style.display = 'none';
+            document.getElementById('upload-step-2').style.display = '';
+            btn.disabled = false; btn.textContent = 'Scan screenshot';
+          })
+          .catch(function(e) { alert('Scan failed: ' + e.message); btn.disabled = false; btn.textContent = 'Scan screenshot'; });
+      };
+
+      window.__uploadConfirm = function() {
+        // Read edited values from inputs
+        document.querySelectorAll('#upload-preview-table input[data-idx]').forEach(function(input) {
+          var idx = parseInt(input.dataset.idx);
+          var field = input.dataset.field;
+          if (extractedRows[idx]) {
+            if (field === 'familyName') extractedRows[idx][field] = input.value;
+            else extractedRows[idx][field] = parseInt(input.value) || 0;
+          }
+        });
+        // Build form data
+        var fd = new FormData();
+        fd.append('csrfToken', csrfToken);
+        fd.append('guildId', guildId);
+        fd.append('warDate', document.getElementById('upload-war-date').value);
+        fd.append('result', document.getElementById('upload-result').value);
+        fd.append('title', document.getElementById('upload-title').value);
+        fd.append('rows', JSON.stringify(extractedRows));
+        var btn = document.getElementById('upload-confirm-btn');
+        btn.disabled = true; btn.textContent = 'Saving...';
+        fetch('/stats/upload', { method: 'POST', body: fd })
+          .then(function(r) { if (r.redirected) window.location.href = r.url; else return r.text(); })
+          .then(function() { window.location.reload(); })
+          .catch(function(e) { alert('Save failed: ' + e.message); btn.disabled = false; btn.textContent = 'Save'; });
+      };
+    })();
+    </script>
   </div>`;
 }
 /* ── Manual entry form ──────────────────────────────────────── */
 
-function renderManualEntryForm(guild: DiscordGuild, session: WebSession): string {
+function renderManualEntryForm(guild: DiscordGuild, session: WebSession, lastWarPlayers?: string[]): string {
   const today = new Date().toISOString().slice(0, 10);
+  const prefillTemplate = lastWarPlayers?.length
+    ? lastWarPlayers.map((name) => `${name}\t0\t0\t0\t0\t0\t0\t0\t0\t0`).join("\n")
+    : "";
   const placeholder = "Flavour\t34\t10\t4\t400600\t291600\t100\t226900\t22805\t252500\nGahdehm\t44\t5\t5\t482200\t263700\t84\t231000\t21684\t4600000";
   return `<div class="upload-modal-overlay" id="manual-modal">
     <div class="upload-modal" style="max-width:720px;">
@@ -230,7 +320,9 @@ function renderManualEntryForm(guild: DiscordGuild, session: WebSession): string
           <label class="label" for="manual-data">Score data <span style="color:var(--text-muted);">(tab-separated, one player per line)</span></label>
           <textarea class="input" id="manual-data" name="scoreData" rows="12" style="font-family:var(--font-mono);font-size:12px;resize:vertical;" placeholder="${placeholder}" required></textarea>
         </div>
-        <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;">
+        <div style="grid-column:1/-1;display:flex;gap:var(--space-3);justify-content:flex-end;align-items:center;">
+          ${prefillTemplate ? `<button type="button" class="button button-ghost button-sm" onclick="document.getElementById('manual-data').value=${JSON.stringify(prefillTemplate).replace(/"/g, '&quot;')}">Pre-fill from last war</button>` : ""}
+          <div style="flex:1;"></div>
           <button type="button" class="button button-ghost" onclick="document.getElementById('manual-modal').classList.remove('open')">Cancel</button>
           <button type="submit" class="button button-primary">Save scores</button>
         </div>
@@ -480,7 +572,7 @@ function renderCompactScoreTable(
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
-          <span style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);">${esc(player.familyName)}</span>
+          <a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}
         </div>
       </td>

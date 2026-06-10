@@ -59,12 +59,12 @@ function renderScoreHistoryCard(report: ScoreReport, guildId: string, csrfToken:
   const imageUrl = `/stats/reports/${enc(report.id)}/preview?guild=${enc(guildId)}`;
   const editUrl = `/stats/reports/${enc(report.id)}/edit?guild=${enc(guildId)}`;
 
-  return `<div class="card" style="overflow:hidden;padding:0;">
-    <div style="display:flex;gap:0;">
-      <div style="flex:0 0 240px;position:relative;background:var(--bg-base);border-right:1px solid var(--border-default);">
-        <img src="${imageUrl}" alt="Scoreboard screenshot" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" />
+  return `<div class="card" style="padding:0;">
+    <div class="score-history-card">
+      <div class="score-history-card-image">
+        <img src="${imageUrl}" alt="Scoreboard screenshot" loading="lazy" />
       </div>
-      <div style="flex:1;padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);">
+      <div class="score-history-card-body">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div>
             <span class="badge ${resultTone}" style="margin-bottom:var(--space-1);display:inline-block;">${esc(report.result)}</span>
@@ -82,22 +82,22 @@ function renderScoreHistoryCard(report: ScoreReport, guildId: string, csrfToken:
           <span>OCR: ${confidence}</span>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-3);margin-top:auto;">
+        <div class="score-history-card-stats">
           <div>
-            <span style="font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;">K / D</span>
-            <p style="font-weight:600;margin-top:2px;">${formatStatNumber(kills)} / ${formatStatNumber(deaths)}</p>
+            <span class="score-history-card-stat-label">K / D</span>
+            <p class="score-history-card-stat-value">${formatStatNumber(kills)} / ${formatStatNumber(deaths)}</p>
           </div>
           <div>
-            <span style="font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;">Assists</span>
-            <p style="font-weight:600;margin-top:2px;">${formatStatNumber(assists)}</p>
+            <span class="score-history-card-stat-label">Assists</span>
+            <p class="score-history-card-stat-value">${formatStatNumber(assists)}</p>
           </div>
           <div>
-            <span style="font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;">Damage</span>
-            <p style="font-weight:600;margin-top:2px;">${formatStatNumber(damage)}</p>
+            <span class="score-history-card-stat-label">Damage</span>
+            <p class="score-history-card-stat-value">${formatStatNumber(damage)}</p>
           </div>
           <div>
-            <span style="font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;">Fort + CC</span>
-            <p style="font-weight:600;margin-top:2px;">${formatStatNumber(structure + cc)}</p>
+            <span class="score-history-card-stat-label">Fort + CC</span>
+            <p class="score-history-card-stat-value">${formatStatNumber(structure + cc)}</p>
           </div>
         </div>
       </div>

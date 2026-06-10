@@ -195,11 +195,11 @@ export function renderStatGrid(stats: Array<{ label: string; value: string; chan
 }
 
 export function renderEmptyState(title: string, description: string, action?: string): string {
-  return `<div class="empty-state">
+  return `<div class="empty-state-enhanced">
     <div class="empty-state-icon">${emptyIcon()}</div>
     <h3>${esc(title)}</h3>
     <p>${esc(description)}</p>
-    ${action ?? ""}
+    ${action ? `<div class="empty-state-action">${action}</div>` : ""}
   </div>`;
 }
 
@@ -234,7 +234,7 @@ function collapseIcon(): string {
 }
 
 function emptyIcon(): string {
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8M8 8h5M8 16h6"/></svg>`;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────── */

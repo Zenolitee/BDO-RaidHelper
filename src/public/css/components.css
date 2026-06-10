@@ -491,7 +491,8 @@ a.card:focus-visible {
 .dashboard {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   padding: var(--space-2) var(--space-4);
   gap: var(--space-3);
 }
@@ -562,6 +563,9 @@ a.card:focus-visible {
   .dashboard-split {
     grid-template-columns: 1fr 280px;
   }
+  .dashboard-table-scroll {
+    max-height: 450px;
+  }
 }
 
 @media (max-width: 1024px) {
@@ -575,11 +579,48 @@ a.card:focus-visible {
   .dashboard-split-side .chart-card {
     flex: 1;
   }
+  .dashboard-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .dashboard-table-scroll {
+    max-height: 400px;
+  }
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
 }
 
 @media (max-width: 768px) {
   .dashboard-split-side {
     flex-direction: column;
+  }
+  .dashboard-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .dashboard-table-scroll {
+    max-height: 350px;
+    overflow-x: auto;
+  }
+  .dashboard {
+    padding: var(--space-2) var(--space-3);
+  }
+  .dashboard-header > div:last-child {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+  }
+  .dashboard .stat-card {
+    padding: var(--space-2) var(--space-3);
+  }
+  .dashboard .stat-card-value {
+    font-size: var(--text-lg);
   }
 }
 .dashboard-charts {
@@ -770,38 +811,123 @@ a.card:focus-visible {
   to { opacity: 1; transform: scale(1); }
 }
 
-/* Responsive dashboard */
-@media (max-width: 1280px) {
-  .dashboard-charts {
-    grid-template-columns: 1fr 1fr;
-  }
+/* ── Score History Cards ────────────────────────────────────── */
+.score-history-card {
+  display: flex;
+  gap: 0;
+  overflow: hidden;
 }
 
-@media (max-width: 1024px) {
-  .dashboard-stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .dashboard-charts {
-    grid-template-columns: 1fr;
-  }
+.score-history-card-image {
+  flex: 0 0 240px;
+  position: relative;
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-default);
+  overflow: hidden;
 }
 
+.score-history-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.score-history-card-body {
+  flex: 1;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.score-history-card-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  margin-top: auto;
+}
+
+.score-history-card-stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.score-history-card-stat-value {
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* ── Table Responsive ───────────────────────────────────────── */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive .table {
+  min-width: 600px;
+}
+
+/* ── Empty State Enhanced ───────────────────────────────────── */
+.empty-state-enhanced {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-10) var(--space-6);
+  min-height: 300px;
+}
+
+.empty-state-enhanced .empty-state-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--space-4);
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.empty-state-enhanced h3 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.empty-state-enhanced p {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 360px;
+  line-height: var(--leading-normal);
+}
+
+.empty-state-enhanced .empty-state-action {
+  margin-top: var(--space-5);
+}
+
+/* ── Responsive Score History ───────────────────────────────── */
 @media (max-width: 768px) {
-  .dashboard {
-    height: auto;
-    overflow: auto;
+  .score-history-card {
+    flex-direction: column;
   }
-  .dashboard-stats {
+  .score-history-card-image {
+    flex: none;
+    height: 180px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-default);
+  }
+  .score-history-card-stats {
     grid-template-columns: repeat(2, 1fr);
   }
-  .dashboard-charts {
-    grid-template-columns: 1fr;
-    flex: none;
+}
+
+@media (max-width: 480px) {
+  .score-history-card-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
   }
-  .dashboard-table-wrap {
-    max-height: none;
-  }
-  .dashboard-table-scroll {
-    max-height: 400px;
+  .score-history-card-body {
+    padding: var(--space-3);
   }
 }

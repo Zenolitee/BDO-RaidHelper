@@ -56,6 +56,8 @@ import {
 import { renderStatsServerPickerPage, renderStatsPage, renderScoreReportEditorPage } from "./web/templates/stats-page.js";
 import { renderScoreHistoryPage } from "./web/templates/score-history.js";
 import { renderCreateServerPickerPage, renderCreateRaidPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
+import type { ScoreReport } from "./score-types.js";
+import { normalizePlayerName } from "./web/score.js";
 
 const scoreUpload = multer({
   storage: multer.memoryStorage(),
@@ -193,6 +195,121 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const reports = await options.scoreStore.listReports(guild.id);
     response.type("html").send(renderScoreHistoryPage(guild, session, reports, canManageGuild(session, guild.id), summaries));
   });
+  // Player detail page
+  app.get("/stats/players/:name", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const isTestMode = request.query.test === "1";
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const playerName = decodeURIComponent(request.params.name);
+
+    if (isTestMode) {
+      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
+      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
+      const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
+      const { renderPlayerDetailPage } = await import("./web/templates/player-detail.js");
+      response.type("html").send(renderPlayerDetailPage(mockGuild, mockSession, playerName, mockReports));
+      return;
+    }
+
+    if (!session) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
+    if (!guild || !options.scoreStore) {
+      response.status(404).type("html").send(renderWebError(new Error("Server not found or score store unavailable.")));
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    const reports = await options.scoreStore.listReports(guild.id);
+    const { renderPlayerDetailPage } = await import("./web/templates/player-detail.js");
+    response.type("html").send(renderPlayerDetailPage(guild, session, playerName, reports, summaries));
+  });
+
+  // War comparison page
+  app.get("/stats/compare", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const isTestMode = request.query.test === "1";
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const warAId = typeof request.query.warA === "string" ? request.query.warA : undefined;
+    const warBId = typeof request.query.warB === "string" ? request.query.warB : undefined;
+
+    if (isTestMode) {
+      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
+      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
+      const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
+      const { renderWarComparePage } = await import("./web/templates/war-compare.js");
+      response.type("html").send(renderWarComparePage(mockGuild, mockSession, mockReports, warAId, warBId));
+      return;
+    }
+
+    if (!session) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
+    if (!guild || !options.scoreStore) {
+      response.status(404).type("html").send(renderWebError(new Error("Server not found or score store unavailable.")));
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    const reports = await options.scoreStore.listReports(guild.id);
+    const { renderWarComparePage } = await import("./web/templates/war-compare.js");
+    response.type("html").send(renderWarComparePage(guild, session, reports, warAId, warBId, summaries));
+  });
+
+  // CSV export endpoint
+  app.get("/stats/export.csv", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const isTestMode = request.query.test === "1";
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+
+    let reports: ScoreReport[];
+    let guildName: string;
+
+    if (isTestMode) {
+      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
+      reports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
+      guildName = mockGuild.name;
+    } else {
+      if (!session) { response.status(403).send("Not authorized."); return; }
+      const guild = session.guilds.find((candidate) => candidate.id === guildId);
+      if (!guild || !options.scoreStore) { response.status(404).send("Server not found."); return; }
+      reports = await options.scoreStore.listReports(guild.id);
+      guildName = guild.name;
+    }
+
+    // Aggregate all player data
+    const { aggregateScoreRows } = await import("./web/score.js");
+    const allRows = reports.flatMap((r) => r.rows);
+    const players = aggregateScoreRows(allRows);
+
+    // Build CSV
+    const header = "Player,Wars,Kills,Deaths,K/D,Damage,CC,Fort,Assists,Healed,Resurrections";
+    const csvRows = players.map((p) => {
+      const kd = p.deaths ? (p.kills / p.deaths).toFixed(2) : String(p.kills);
+      return [
+        `"${p.familyName.replace(/"/g, '""')}"`,
+        p.participations,
+        p.kills,
+        p.deaths,
+        kd,
+        p.damageDealt,
+        p.crowdControls,
+        p.structureDamage,
+        p.assists,
+        p.hpHealed + p.allySupport,
+        p.resurrections,
+      ].join(",");
+    }).join("\n");
+
+    const csv = `${header}\n${csvRows}`;
+    response.setHeader("Content-Type", "text/csv");
+    response.setHeader("Content-Disposition", `attachment; filename="${guildName.replace(/[^a-zA-Z0-9]/g, "_")}_scoreboard.csv"`);
+    response.send(csv);
+  });
 
   async function sendStatsDashboard(request: Request, response: express.Response, guildId?: string): Promise<void> {
     const session = await getSession(request, sessions);
@@ -275,6 +392,96 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
 
     try {
+      const warDate = parseScoreDate(request.body.warDate);
+      const result = parseScoreResult(request.body.result);
+      const uploadedBy = formatUploader(session);
+
+      // Check if rows are provided directly (preview flow) or need OCR extraction
+      let rows: Array<Omit<import("./score-types.js").ScoreRow, "guildId"> | import("./score-types.js").ScoreRow>;
+      let ocrEngine: string;
+      let rawOcrText: string;
+      let ocrConfidence: number | undefined;
+      let imageMimeType: string;
+      let imageOriginalName: string;
+      let imageBuffer: Buffer;
+
+      if (request.body.rows) {
+        // Preview flow: rows already extracted and potentially edited by user
+        rows = JSON.parse(request.body.rows);
+        ocrEngine = "preview";
+        rawOcrText = "";
+        ocrConfidence = undefined;
+        // Use a placeholder image
+        imageMimeType = "image/png";
+        imageOriginalName = "preview-upload.png";
+        imageBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+      } else {
+        // Traditional flow: extract from screenshot
+        const file = request.file;
+        if (!file || !isAllowedScoreImage(file.mimetype, file.originalname)) {
+          throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
+        }
+        imageMimeType = file.mimetype;
+        imageOriginalName = file.originalname;
+        imageBuffer = file.buffer;
+        const geminiQuota = consumeScoreGeminiQuota(session.user.id, guild.id);
+        const extraction = await extractScoreScreenshot(file.buffer, {
+          mimeType: file.mimetype,
+          geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
+          geminiModel: config.geminiModel,
+          preferGemini: geminiQuota.allowed
+        });
+        rows = extraction.rows;
+        ocrEngine = extraction.engine;
+        rawOcrText = extraction.rawText;
+        ocrConfidence = extraction.confidence;
+      }
+
+      await options.scoreStore.createReport({
+        guildId: guild.id,
+        warDate,
+        result,
+        title: parseOptionalText(request.body.title, 120),
+        imageMimeType,
+        imageOriginalName,
+        imageBuffer,
+        ocrEngine,
+        rawOcrText,
+        ocrConfidence,
+        uploadedBy,
+        rows: rows.map((row) => ({ ...row, familyName: normalizePlayerName(row.familyName), guildId: guild.id }))
+      });
+      // Validate and warn about suspicious data
+      const { validateScoreRows, detectDuplicatePlayers } = await import("./web/score.js");
+      const validationWarnings = validateScoreRows(rows as import("./score-types.js").ScoreRow[]);
+      const duplicateGroups = detectDuplicatePlayers(rows as import("./score-types.js").ScoreRow[]);
+      if (validationWarnings.length || duplicateGroups.size) {
+        const warnMsg = [
+          ...validationWarnings.map((w) => `${w.player}: ${w.message}`),
+          ...[...duplicateGroups.entries()].map(([, names]) => `Possible duplicate: ${names.join(" / ")}`)
+        ].join("; ");
+        console.warn(`Score validation warnings for ${guild.name}: ${warnMsg}`);
+      }
+      console.info(
+        `Score uploaded by ${uploadedBy} for guild ${guild.name} (${guild.id}): ${rows.length} rows via ${ocrEngine}. ${ocrConfidence !== undefined ? `Confidence: ${ocrConfidence}%` : ""}`.trim()
+      );
+
+      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
+    } catch (error) {
+      response.status(400).type("html").send(renderWebError(error));
+    }
+  });
+  // Upload preview endpoint — returns extracted rows as JSON before saving
+  app.post("/stats/upload/preview", scoreUpload.single("screenshot"), async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guildId = String(request.body.guildId ?? "");
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
+      response.status(403).json({ error: "Not authorized." });
+      return;
+    }
+
+    try {
       const file = request.file;
       if (!file || !isAllowedScoreImage(file.mimetype, file.originalname)) {
         throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
@@ -287,30 +494,22 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         geminiModel: config.geminiModel,
         preferGemini: geminiQuota.allowed
       });
-      const warDate = parseScoreDate(request.body.warDate);
-      const result = parseScoreResult(request.body.result);
-      const uploadedBy = formatUploader(session);
-      await options.scoreStore.createReport({
-        guildId: guild.id,
-        warDate,
-        result,
-        title: parseOptionalText(request.body.title, 120),
-        imageMimeType: file.mimetype,
-        imageOriginalName: file.originalname,
-        imageBuffer: file.buffer,
-        ocrEngine: extraction.engine,
-        rawOcrText: extraction.rawText,
-        ocrConfidence: extraction.confidence,
-        uploadedBy,
-        rows: extraction.rows.map((row) => ({ ...row, guildId: guild.id }))
-      });
-      console.info(
-        `Score screenshot uploaded by ${uploadedBy} for guild ${guild.name} (${guild.id}); extracted ${extraction.rows.length} rows with ${extraction.engine}. ${geminiQuota.reason ?? ""}`.trim()
-      );
 
-      response.redirect(`/stats?guild=${encodeURIComponent(guild.id)}&uploaded=1`);
+      // Normalize names
+      const { normalizePlayerName } = await import("./web/score.js");
+      const rows = extraction.rows.map((row) => ({
+        ...row,
+        familyName: normalizePlayerName(row.familyName)
+      }));
+
+      response.json({
+        engine: extraction.engine,
+        confidence: extraction.confidence,
+        rowCount: rows.length,
+        rows
+      });
     } catch (error) {
-      response.status(400).type("html").send(renderWebError(error));
+      response.status(400).json({ error: error instanceof Error ? error.message : "Extraction failed." });
     }
   });
   app.post("/stats/manual", async (request, response) => {
@@ -334,7 +533,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         if (cols.length < 6) throw new Error(`Each line needs at least 6 tab-separated columns (Name, K, D, A, DMG, CC). Got ${cols.length} on: "${line.slice(0, 60)}"`);
         const num = (i: number) => { const v = (cols[i] ?? "").replace(/,/g, ""); const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0; };
         rows.push({
-          familyName: cols[0].slice(0, 80),
+          familyName: normalizePlayerName(cols[0].slice(0, 80)),
           kills: num(1),
           deaths: num(2),
           assists: num(3),

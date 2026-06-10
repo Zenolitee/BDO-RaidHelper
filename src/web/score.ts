@@ -160,15 +160,82 @@ function sortScoreAggregates(players: PlayerScoreAggregate[], sortKey: ScoreSort
 function parseScoreSortKey(value: unknown): ScoreSortKey {
   return value === "kills" || value === "damage" ? value : "wars";
 }
+/* ── Score Validation ─────────────────────────────────────────── */
+
+interface ScoreValidationWarning {
+  player: string;
+  field: string;
+  message: string;
+}
+
+/**
+ * Validate extracted score rows for common OCR/extraction errors.
+ * Returns warnings, not errors — rows are still saved but flagged.
+ */
+function validateScoreRows(rows: ScoreRow[]): ScoreValidationWarning[] {
+  const warnings: ScoreValidationWarning[] = [];
+  for (const row of rows) {
+    const name = row.familyName;
+    // Empty row (all zeros)
+    if (!row.kills && !row.deaths && !row.assists && !row.damageDealt) {
+      warnings.push({ player: name, field: "all", message: "All stats are zero — possibly an empty/invalid row" });
+      continue;
+    }
+    // Suspiciously high death ratio
+    if (row.deaths > row.kills * 3 && row.kills > 0) {
+      warnings.push({ player: name, field: "deaths", message: `High death ratio (${row.deaths} deaths vs ${row.kills} kills)` });
+    }
+    // Very high damage (100M+)
+    if (row.damageDealt > 100_000_000) {
+      warnings.push({ player: name, field: "damageDealt", message: `Very high damage: ${row.damageDealt.toLocaleString()}` });
+    }
+    // Zero time alive but has kills
+    if (row.timeAlive === "00:00" && row.kills > 5) {
+      warnings.push({ player: name, field: "timeAlive", message: "Zero time alive but has kills — possibly incomplete data" });
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Normalize a player name: trim whitespace, collapse multiple spaces.
+ * Does NOT change casing — that's handled by case-insensitive keys.
+ */
+function normalizePlayerName(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Detect potential duplicate players in a set of rows (case-insensitive).
+ * Returns groups of names that map to the same normalized key.
+ */
+function detectDuplicatePlayers(rows: ScoreRow[]): Map<string, string[]> {
+  const byKey = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const key = normalizePlayerName(row.familyName).toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, new Set());
+    byKey.get(key)!.add(row.familyName);
+  }
+  // Only return groups with >1 distinct name
+  const dupes = new Map<string, string[]>();
+  for (const [key, names] of byKey) {
+    if (names.size > 1) dupes.set(key, [...names]);
+  }
+  return dupes;
+}
 
 export {
   type ScoreGeminiQuotaResult,
   type ScoreGeminiQuota,
+  type ScoreValidationWarning,
   createScoreGeminiQuota,
   consumeScoreGeminiQuota,
   getPacificDateKey,
   aggregateScoreRows,
   calculateImpactScores,
   sortScoreAggregates,
-  parseScoreSortKey
+  parseScoreSortKey,
+  validateScoreRows,
+  normalizePlayerName,
+  detectDuplicatePlayers
 };
