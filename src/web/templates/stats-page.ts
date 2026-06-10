@@ -484,6 +484,7 @@ function renderCompactScoreTable(
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}
         </div>
       </td>
+      <td style="font-weight:500;">${player.participations}</td>
       <td style="font-weight:500;">${formatStatNumber(player.kills)}</td>
       <td style="color:var(--text-secondary);">${formatStatNumber(player.deaths)}</td>
       <td><span class="badge ${kdTone}" style="font-size:10px;">${player.deaths ? kd.toFixed(1) : formatStatNumber(player.kills)}</span></td>
