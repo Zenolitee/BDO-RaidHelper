@@ -10,3 +10,5 @@ debug/
 images/
 references/
 railway-variables*.txt
+.tmp/
+score/
