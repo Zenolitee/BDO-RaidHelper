@@ -476,7 +476,7 @@ function renderCompactScoreTable(
     const rowBg = rank <= 5 ? rc.bg : "transparent";
     const rowBorder = rank <= 5 ? `border-left:2.5px solid ${rc.border}33;` : "";
 
-    return `<tr data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
+    return `<tr data-rank="${rank}" data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
@@ -904,29 +904,25 @@ function renderScoreSortScript(): string {
       var rows = Array.from(tbody.querySelectorAll("tr[data-player]"));
       rows.forEach(function (row, i) {
         var rank = i + 1;
+        row.setAttribute("data-rank", String(rank));
         var rc = rankColors[rank];
+        // Rank badge
         var cell = row.querySelector("[data-rank-cell]");
         if (cell) cell.innerHTML = rankBadgeHtml(rank);
+        // Row background and left border
         row.style.background = rc ? rc.bg : "transparent";
-        row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "";
-        var nameEl = row.querySelector("td:nth-child(2) span[style*='font-weight:600']");
-        if (nameEl) nameEl.style.color = rc ? rc.text : "var(--text-primary)";
-        var avatarBox = row.querySelector("td:nth-child(2) div > div:first-child > div");
-        if (avatarBox && rc) {
-          avatarBox.style.background = "linear-gradient(135deg," + rc.border + "18," + rc.border + "08)";
-          avatarBox.style.borderColor = rc.border + "22";
-          var avatarInner = avatarBox.querySelector("span");
-          if (avatarInner && rank > 1) avatarInner.style.color = rc.text;
-        } else if (avatarBox) {
-          avatarBox.style.background = "";
-          avatarBox.style.borderColor = "";
-        }
-        var dot = row.querySelector("td:nth-child(2) div > div:first-child > div:last-child");
-        if (dot && rank <= 3 && rc) {
-          dot.style.display = "";
-          dot.style.background = rc.border;
-        } else if (dot && rank > 3) {
-          dot.style.display = "none";
+        row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "2.5px solid transparent";
+        // Player name color — find the name span (first span with font-weight 600+ in 2nd td)
+        var nameTd = row.querySelectorAll("td")[1];
+        if (nameTd) {
+          var spans = nameTd.querySelectorAll("span");
+          for (var s = 0; s < spans.length; s++) {
+            var fw = spans[s].style.fontWeight || "";
+            if (fw === "600" || fw === "700") {
+              spans[s].style.color = rc ? rc.text : "var(--text-primary)";
+              break;
+            }
+          }
         }
       });
     };
