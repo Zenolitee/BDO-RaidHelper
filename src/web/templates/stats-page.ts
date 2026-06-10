@@ -701,11 +701,14 @@ function renderCompactScoreTable(
     const rowBg = rank <= 5 ? rc.bg : "transparent";
     const rowBorder = rank <= 5 ? `border-left:2.5px solid ${rc.border}33;` : "";
 
+    const nameHtml = rank <= 5
+      ? `<a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:${rc.text};font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;background:${rc.bg};border:1px solid ${rc.border}22;padding:2px 8px;border-radius:var(--radius-sm);display:inline-block;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>`
+      : `<a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:var(--text-primary);font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>`;
     return `<tr data-table="scoreboard" data-rank="${rank}" data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
-          <a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>
+          ${nameHtml}
           ${outlierWarnings.has(player.familyName) ? `<span class="outlier-warn" style="color:var(--color-amber,#f59e0b);cursor:help;font-size:0.85em;">⚠<span class="outlier-tip">${outlierWarnings.get(player.familyName)!.join('<br>')}</span></span>` : ''}
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}
         </div>
@@ -1142,12 +1145,20 @@ function renderScoreSortScript(): string {
         row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "2.5px solid transparent";
         var nameTd = row.querySelectorAll("td")[1];
         if (nameTd) {
-          var spans = nameTd.querySelectorAll("span");
-          for (var s = 0; s < spans.length; s++) {
-            var fw = spans[s].style.fontWeight || "";
-            if (fw === "600" || fw === "700") {
-              spans[s].style.color = rc ? rc.text : "var(--text-primary)";
-              break;
+          var nameLink = nameTd.querySelector("a");
+          if (nameLink) {
+            if (rc) {
+              nameLink.style.color = rc.text;
+              nameLink.style.background = rc.bg;
+              nameLink.style.border = "1px solid " + rc.border + "22";
+              nameLink.style.padding = "2px 8px";
+              nameLink.style.borderRadius = "var(--radius-sm)";
+              nameLink.style.display = "inline-block";
+            } else {
+              nameLink.style.color = "var(--text-primary)";
+              nameLink.style.background = "transparent";
+              nameLink.style.border = "none";
+              nameLink.style.padding = "0";
             }
           }
         }
