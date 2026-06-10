@@ -21,12 +21,21 @@ export function renderStatsServerPickerPage(
 
   const cards = summaries.map((summary) => {
     const hasStats = summary.activeRaids > 0 || summary.weeklyRaids > 0;
+    const iconUrl = summary.guild.icon
+      ? `https://cdn.discordapp.com/icons/${summary.guild.id}/${summary.guild.icon}.png?size=64`
+      : null;
+    const fallback = summary.guild.name.charAt(0).toUpperCase();
     return `<a href="/stats?guild=${enc(summary.guild.id)}" class="card" style="text-decoration:none;color:inherit;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--space-3);">
+      <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);">
+        <div style="width:48px;height:48px;border-radius:var(--radius-lg);background:var(--bg-surface);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
+          ${iconUrl ? `<img src="${iconUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" />` : `<span style="font-size:var(--text-xl);font-weight:700;color:var(--text-muted);">${fallback}</span>`}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <h3 style="margin-bottom:var(--space-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(summary.guild.name)}</h3>
+          <p style="font-size:var(--text-xs);color:var(--text-muted);">${summary.activeRaids} active raids · ${summary.upcomingRaids} upcoming</p>
+        </div>
         <span class="badge ${hasStats ? "badge-active" : "badge-inactive"}">${hasStats ? "Active" : "No data"}</span>
       </div>
-      <h3 style="margin-bottom:var(--space-2);">${esc(summary.guild.name)}</h3>
-      <p style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:var(--space-3);">${summary.activeRaids} active raids · ${summary.upcomingRaids} upcoming</p>
       <div style="display:flex;gap:var(--space-2);">
         <span class="button button-secondary button-sm">View Stats</span>
       </div>

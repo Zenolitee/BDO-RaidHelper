@@ -81,7 +81,6 @@ function renderSidebar(session?: WebSession, summaries?: GuildDashboardSummary[]
 
       ${isLoggedIn ? renderNavSection("Tools", [
         { href: "/stats", icon: chartIcon(), label: "Stats", key: "stats" },
-        { href: "/servers", icon: stackIcon(), label: "Servers", key: "servers" },
       ]) : ""}
     </nav>
 
