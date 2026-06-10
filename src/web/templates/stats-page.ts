@@ -472,6 +472,16 @@ function renderScoreSection(
   return `
     ${renderLeaderboardGrid(players)}
 
+    <div class="chart-card" style="margin-bottom:var(--space-4);">
+      <div class="chart-card-header">
+        <span class="chart-card-title">Guild Performance Trend</span>
+        <span class="chart-card-subtitle">Per-war totals across all players</span>
+      </div>
+      <div class="chart-container" style="height:300px;">
+        <canvas id="guildTrendChart"></canvas>
+      </div>
+    </div>
+
     <div class="dashboard-split">
       <div class="dashboard-split-main">
         ${renderCompactScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage, impactScores, outlierWarnings)}
@@ -1170,13 +1180,9 @@ function renderScoreSortScript(): string {
         applySort(key, nextDirection);
       });
     });
-  });
-})();
+  })();
 </script>`;
 }
-
-/* ── Chart.js initialization script ─────────────────────────── */
-
 function renderChartsScript(players: PlayerScoreAggregate[], reports: ScoreReport[], impactScores: PlayerImpactScore[]): string {
   const wins = reports.filter(r => r.result === 'win').length;
   const losses = reports.filter(r => r.result === 'loss').length;
@@ -1184,6 +1190,20 @@ function renderChartsScript(players: PlayerScoreAggregate[], reports: ScoreRepor
 
   const top10 = [...players].sort((a, b) => b.kills - a.kills).slice(0, 10);
   const top5Impact = impactScores.slice(0, 5);
+
+  // Guild trend: per-war aggregate data, sorted by date ascending
+  const sortedReports = [...reports].sort((a, b) => a.warDate.localeCompare(b.warDate));
+  const guildTrendLabels = sortedReports.map(r => r.title || formatDateLabel(r.warDate));
+  const guildTrendKills = sortedReports.map(r => r.rows.reduce((s, row) => s + row.kills, 0));
+  const guildTrendDeaths = sortedReports.map(r => r.rows.reduce((s, row) => s + row.deaths, 0));
+  const guildTrendDamage = sortedReports.map(r => Math.round(r.rows.reduce((s, row) => s + row.damageDealt, 0) / 1_000_000 * 10) / 10);
+  const guildTrendKd = sortedReports.map(r => {
+    const totalDeaths = r.rows.reduce((s, row) => s + row.deaths, 0);
+    return totalDeaths ? Math.round(r.rows.reduce((s, row) => s + row.kills, 0) / totalDeaths * 100) / 100 : 0;
+  });
+  const guildTrendPlayers = sortedReports.map(r => r.rows.length);
+  const guildTrendResults = sortedReports.map(r => r.result);
+  const guildTrendPointColors = sortedReports.map(r => r.result === 'win' ? '#22c55e' : r.result === 'loss' ? '#ef4444' : '#71717a');
 
   return `<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script>
@@ -1265,6 +1285,155 @@ function renderChartsScript(players: PlayerScoreAggregate[], reports: ScoreRepor
           scales: {
             x: { ticks: { color: '#6b6b95', font: { size: 10 } }, grid: { color: 'rgba(37, 37, 80, 0.5)' } },
             y: { ticks: { color: '#a5a5c8', font: { size: 10 } }, grid: { display: false } }
+          }
+        }
+      });
+    }
+    // Guild Performance Trend (full-width line chart)
+    var guildCtx = document.getElementById('guildTrendChart');
+    if (guildCtx) {
+      var gLabels = ${JSON.stringify(guildTrendLabels)};
+      var gKills = ${JSON.stringify(guildTrendKills)};
+      var gDeaths = ${JSON.stringify(guildTrendDeaths)};
+      var gDamage = ${JSON.stringify(guildTrendDamage)};
+      var gKd = ${JSON.stringify(guildTrendKd)};
+      var gPlayers = ${JSON.stringify(guildTrendPlayers)};
+      var gResults = ${JSON.stringify(guildTrendResults)};
+      var gColors = ${JSON.stringify(guildTrendPointColors)};
+
+      new Chart(guildCtx, {
+        type: 'line',
+        data: {
+          labels: gLabels,
+          datasets: [
+            {
+              label: 'Kills',
+              data: gKills,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59,130,246,0.1)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: '#3b82f6',
+              pointBorderColor: '#3b82f6',
+              pointBorderWidth: 2,
+            },
+            {
+              label: 'Deaths',
+              data: gDeaths,
+              borderColor: '#ef4444',
+              backgroundColor: 'rgba(239,68,68,0.08)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              pointBackgroundColor: '#ef4444',
+              yAxisID: 'y'
+            },
+            {
+              label: 'Damage (M)',
+              data: gDamage,
+              borderColor: '#f97316',
+              backgroundColor: 'transparent',
+              fill: false,
+              tension: 0.3,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              pointBackgroundColor: '#f97316',
+              borderDash: [6, 3],
+              borderWidth: 2,
+              yAxisID: 'y1'
+            },
+            {
+              label: 'K/D',
+              data: gKd,
+              borderColor: '#a855f7',
+              backgroundColor: 'transparent',
+              fill: false,
+              tension: 0.3,
+              pointRadius: 3,
+              pointHoverRadius: 5,
+              pointBackgroundColor: '#a855f7',
+              borderDash: [3, 3],
+              borderWidth: 2,
+              yAxisID: 'y'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              position: 'top',
+              labels: {
+                color: '#a1a1aa',
+                font: { size: 11 },
+                usePointStyle: true,
+                pointStyle: 'circle',
+                boxWidth: 8,
+                padding: 16,
+                generateLabels: function(chart) {
+                  return chart.data.datasets.map(function(ds, i) {
+                    return {
+                      text: ds.label,
+                      fillStyle: ds.borderColor,
+                      strokeStyle: ds.borderColor,
+                      fontColor: '#a1a1aa',
+                      lineWidth: 0,
+                      hidden: !chart.isDatasetVisible(i),
+                      datasetIndex: i,
+                      pointStyle: 'circle'
+                    };
+                  });
+                }
+              }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(24,24,27,0.95)',
+              titleColor: '#e4e4e7',
+              bodyColor: '#a1a1aa',
+              borderColor: 'rgba(255,255,255,0.1)',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                title: function(items) {
+                  var idx = items[0].dataIndex;
+                  return gLabels[idx];
+                },
+                afterTitle: function(items) {
+                  var idx = items[0].dataIndex;
+                  var r = gResults[idx];
+                  return (r === 'win' ? '\u2705 Victory' : r === 'loss' ? '\u274C Defeat' : '\u2796 Unknown') + ' \u00B7 ' + gPlayers[idx] + ' players';
+                },
+                label: function(item) {
+                  var labels = ['Kills', 'Deaths', 'Damage (M)', 'K/D'];
+                  return labels[item.datasetIndex] + ': ' + item.formattedValue;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#71717a', font: { size: 10 }, maxRotation: 45 }
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              title: { display: true, text: 'Kills / Deaths / K/D', color: '#71717a', font: { size: 10 } }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#f97316', font: { size: 10 } },
+              beginAtZero: true,
+              title: { display: true, text: 'Damage (Millions)', color: '#f97316', font: { size: 10 } }
+            }
           }
         }
       });
