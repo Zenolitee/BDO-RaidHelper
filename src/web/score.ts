@@ -133,7 +133,7 @@ function calculateImpactScores(players: PlayerScoreAggregate[]): PlayerImpactSco
       const objectiveScore = normalized(rawObjective, maxObjective);
       const deathsPerWar = player.participations ? player.deaths / player.participations : player.deaths;
       const survivalScore = Math.max(0, Math.min(100, 100 - deathsPerWar * 12));
-      const score = killsScore * 0.2 + assistsScore * 0.1 + damageScore * 0.2 + structureScore * 0.3 + objectiveScore * 0.1 + survivalScore * 0.1;
+      const score = killsScore * 0.10 + assistsScore * 0.05 + damageScore * 0.25 + structureScore * 0.35 + objectiveScore * 0.20 + survivalScore * 0.05;
 
       return {
         player,

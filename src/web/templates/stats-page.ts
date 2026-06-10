@@ -68,7 +68,7 @@ export function renderStatsPage(
       </button>`
     : "";
 
-  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a>${uploadButton}`;
+  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a>${uploadButton}`;
 
   const content = [
     `<div class="dashboard">
@@ -364,6 +364,7 @@ function renderCompactScoreTable(
   impactScores: PlayerImpactScore[]
 ): string {
   const sortColumns: Array<{ label: string; key: string }> = [
+    { label: "", key: "" },
     { label: "Player", key: "player" },
     { label: "Wars", key: "wars" },
     { label: "K", key: "kills" },
@@ -374,13 +375,16 @@ function renderCompactScoreTable(
   ];
 
   const thead = `<thead><tr>${sortColumns.map((col) =>
-    `<th>${renderSortButton(col.label, col.key, sortKey)}</th>`
+    col.key ? `<th>${renderSortButton(col.label, col.key, sortKey)}</th>` : `<th style="width:40px;text-align:center;">#</th>`
   ).join("")}</tr></thead>`;
 
-  const tbody = `<tbody>${players.map((player) => {
+  const tbody = `<tbody>${players.map((player, index) => {
     const kd = player.deaths ? player.kills / player.deaths : player.kills;
     const kdTone = player.deaths ? (kd >= 2 ? "badge-active" : kd >= 1 ? "badge-warning" : "badge-danger") : "badge-inactive";
+    const rank = index + 1;
+    const rankStyle = rank <= 3 ? `font-weight:700;color:var(--color-${rank === 1 ? "amber" : rank === 2 ? "sky" : "rose"});` : "color:var(--text-muted);";
     return `<tr data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}">
+      <td style="text-align:center;"><span style="${rankStyle}font-size:var(--text-sm);">${rank}</span></td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
           <span style="font-weight:600;color:var(--text-primary);font-size:var(--text-sm);">${esc(player.familyName)}</span>
@@ -399,7 +403,7 @@ function renderCompactScoreTable(
   return `<div class="dashboard-table-wrap">
     <div class="dashboard-table-header">
       <span class="chart-card-title">Scoreboard Totals</span>
-      <span class="chart-card-subtitle">Kills 20% · Assists 10% · Damage 20% · Fort 30%</span>
+      <span class="chart-card-subtitle">Fort 35% · Damage 25% · Objective 20% · Kills 10% · Assist 5% · Surv 5%</span>
     </div>
     <div class="dashboard-table-scroll">
       <table class="table" data-score-table data-score-sort="${sortKey}">

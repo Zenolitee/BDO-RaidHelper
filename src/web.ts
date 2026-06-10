@@ -54,6 +54,7 @@ import {
   renderLoginPage,
 } from "./web/templates/raids-page.js";
 import { renderStatsServerPickerPage, renderStatsPage, renderScoreReportEditorPage } from "./web/templates/stats-page.js";
+import { renderScoreHistoryPage } from "./web/templates/score-history.js";
 import { renderCreateServerPickerPage, renderCreateRaidPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
 
 const scoreUpload = multer({
@@ -163,6 +164,34 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.get("/stats", async (request, response) => {
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     await sendStatsDashboard(request, response, guildId);
+  });
+
+  app.get("/stats/history", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const isTestMode = request.query.test === "1";
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+
+    if (isTestMode) {
+      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
+      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
+      const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
+      response.type("html").send(renderScoreHistoryPage(mockGuild, mockSession, mockReports));
+      return;
+    }
+
+    if (!session) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
+    if (!guild || !options.scoreStore) {
+      response.status(404).type("html").send(renderWebError(new Error("Server not found or score store unavailable.")));
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    const reports = await options.scoreStore.listReports(guild.id);
+    response.type("html").send(renderScoreHistoryPage(guild, session, reports, summaries));
   });
 
   async function sendStatsDashboard(request: Request, response: express.Response, guildId?: string): Promise<void> {
