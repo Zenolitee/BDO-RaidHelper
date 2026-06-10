@@ -452,30 +452,52 @@ function renderCompactScoreTable(
     const kd = player.deaths ? player.kills / player.deaths : player.kills;
     const kdTone = player.deaths ? (kd >= 2 ? "badge-active" : kd >= 1 ? "badge-warning" : "badge-danger") : "badge-inactive";
     const rank = index + 1;
+
+    // Rank colors
+    const rankColors: Record<number, { bg: string; border: string; text: string; glow: string }> = {
+      1: { bg: "linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.02))", border: "#f59e0b", text: "#f59e0b", glow: "rgba(245,158,11,0.06)" },
+      2: { bg: "linear-gradient(135deg,rgba(56,189,248,0.06),rgba(56,189,248,0.01))", border: "#38bdf8", text: "#38bdf8", glow: "rgba(56,189,248,0.04)" },
+      3: { bg: "linear-gradient(135deg,rgba(244,63,94,0.06),rgba(244,63,94,0.01))", border: "#f43f5e", text: "#f43f5e", glow: "rgba(244,63,94,0.04)" },
+      4: { bg: "linear-gradient(135deg,rgba(139,92,246,0.05),rgba(139,92,246,0.01))", border: "#8b5cf6", text: "#8b5cf6", glow: "rgba(139,92,246,0.03)" },
+      5: { bg: "linear-gradient(135deg,rgba(16,185,129,0.05),rgba(16,185,129,0.01))", border: "#10b981", text: "#10b981", glow: "rgba(16,185,129,0.03)" },
+    };
+    const rc = rankColors[rank] ?? { bg: "transparent", border: "transparent", text: "var(--text-muted)", glow: "transparent" };
+
+    // Rank badge with crown for #1
     const crownSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>`;
     const rankBadge = rank === 1
       ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05));color:var(--color-amber);border:1.5px solid rgba(245,158,11,0.3);font-weight:800;font-size:var(--text-xs);">${crownSvg}</span>`
-      : rank === 2
-        ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(56,189,248,0.08);color:var(--color-sky);border:1.5px solid rgba(56,189,248,0.2);font-weight:700;font-size:var(--text-xs);">${rank}</span>`
-        : rank === 3
-          ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(244,63,94,0.08);color:var(--color-rose);border:1.5px solid rgba(244,63,94,0.2);font-weight:700;font-size:var(--text-xs);">${rank}</span>`
-          : rank <= 5
-            ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(99,102,241,0.06);color:var(--color-indigo);border:1.5px solid rgba(99,102,241,0.12);font-weight:600;font-size:var(--text-xs);">${rank}</span>`
-            : `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">${rank}</span>`;
-    return `<tr data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}">
+      : rank <= 5
+        ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:${rc.bg};color:${rc.text};border:1.5px solid ${rc.border}22;font-weight:700;font-size:var(--text-xs);">${rank}</span>`
+        : `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">${rank}</span>`;
+
+    // Nameplate: Discord-style with rank color accent
+    const nameAccent = rank <= 5 ? rc.text : "var(--text-primary)";
+    const rowBg = rank <= 5 ? rc.bg : "transparent";
+    const rowBorder = rank <= 5 ? `border-left:2.5px solid ${rc.border}33;` : "";
+
+    return `<tr data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
-          <span style="font-weight:600;color:var(--text-primary);font-size:var(--text-sm);">${esc(player.familyName)}</span>
+          <div style="position:relative;">
+            <div style="width:32px;height:32px;border-radius:var(--radius-md);background:linear-gradient(135deg,${rc.border}18,${rc.border}08);border:1px solid ${rc.border}22;display:flex;align-items:center;justify-content:center;">
+              ${rank === 1 ? crownSvg : `<span style="font-size:11px;font-weight:700;color:${nameAccent};">${rank}</span>`}
+            </div>
+            ${rank <= 3 ? `<div style="position:absolute;bottom:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:${rc.border};border:2px solid var(--bg-base);"></div>` : ""}
+          </div>
+          <div style="display:flex;flex-direction:column;">
+            <span style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);line-height:1.2;">${esc(player.familyName)}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${player.participations} war${player.participations !== 1 ? "s" : ""}</span>
+          </div>
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}
         </div>
       </td>
-      <td>${player.participations}</td>
-      <td>${formatStatNumber(player.kills)}</td>
-      <td>${formatStatNumber(player.deaths)}</td>
+      <td style="font-weight:500;">${formatStatNumber(player.kills)}</td>
+      <td style="color:var(--text-secondary);">${formatStatNumber(player.deaths)}</td>
       <td><span class="badge ${kdTone}" style="font-size:10px;">${player.deaths ? kd.toFixed(1) : formatStatNumber(player.kills)}</span></td>
-      <td>${formatStatNumber(player.damageDealt)}</td>
-      <td>${formatStatNumber(player.crowdControls)}</td>
+      <td style="font-weight:500;">${formatStatNumber(player.damageDealt)}</td>
+      <td style="font-weight:500;">${formatStatNumber(player.crowdControls)}</td>
     </tr>`;
   }).join("")}</tbody>`;
 
@@ -856,17 +878,49 @@ function renderScoreSortScript(): string {
       for (let index = 0; index < tbody.rows.length; index += 1) {
         const row = tbody.rows[index];
         const nextRow = tbody.rows[index + 1];
+    const rankColors = {
+      1: { bg: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.02))', border: '#f59e0b', text: '#f59e0b' },
+      2: { bg: 'linear-gradient(135deg,rgba(56,189,248,0.06),rgba(56,189,248,0.01))', border: '#38bdf8', text: '#38bdf8' },
+      3: { bg: 'linear-gradient(135deg,rgba(244,63,94,0.06),rgba(244,63,94,0.01))', border: '#f43f5e', text: '#f43f5e' },
+      4: { bg: 'linear-gradient(135deg,rgba(139,92,246,0.05),rgba(139,92,246,0.01))', border: '#8b5cf6', text: '#8b5cf6' },
+      5: { bg: 'linear-gradient(135deg,rgba(16,185,129,0.05),rgba(16,185,129,0.01))', border: '#10b981', text: '#10b981' },
+    };
     const crownSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>';
     const rankBadgeHtml = (rank) => {
+      const rc = rankColors[rank];
       if (rank === 1) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05));color:var(--color-amber);border:1.5px solid rgba(245,158,11,0.3);font-weight:800;font-size:var(--text-xs);">' + crownSvg + '</span>';
-      if (rank === 2) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(56,189,248,0.08);color:var(--color-sky);border:1.5px solid rgba(56,189,248,0.2);font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
-      if (rank === 3) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(244,63,94,0.08);color:var(--color-rose);border:1.5px solid rgba(244,63,94,0.2);font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
-      if (rank <= 5) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:rgba(99,102,241,0.06);color:var(--color-indigo);border:1.5px solid rgba(99,102,241,0.12);font-weight:600;font-size:var(--text-xs);">' + rank + '</span>';
+      if (rc) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:' + rc.bg + ';color:' + rc.text + ';border:1.5px solid ' + rc.border + '22;font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
       return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">' + rank + '</span>';
     };
     const rerank = () => {
-      const cells = tbody.querySelectorAll("[data-rank-cell]");
-      cells.forEach((cell, i) => { cell.innerHTML = rankBadgeHtml(i + 1); });
+      const rows = [...tbody.querySelectorAll("tr[data-player]")];
+      rows.forEach((row, i) => {
+        const rank = i + 1;
+        const rc = rankColors[rank];
+        const cell = row.querySelector("[data-rank-cell]");
+        if (cell) cell.innerHTML = rankBadgeHtml(rank);
+        // Update row background and border
+        row.style.background = rc ? rc.bg : "transparent";
+        row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "";
+        // Update name color
+        const nameEl = row.querySelector("td:nth-child(2) span[style*='font-weight:600']");
+        if (nameEl) nameEl.style.color = rc ? rc.text : "var(--text-primary)";
+        // Update avatar box
+        const avatarBox = row.querySelector("td:nth-child(2) div > div:first-child > div");
+        if (avatarBox && rc) {
+          avatarBox.style.background = "linear-gradient(135deg," + rc.border + "18," + rc.border + "08)";
+          avatarBox.style.borderColor = rc.border + "22";
+          const avatarInner = avatarBox.querySelector("span");
+          if (avatarInner && rank > 1) avatarInner.style.color = rc.text;
+        }
+        // Update rank dot for top 3
+        const dot = row.querySelector("td:nth-child(2) div > div:first-child > div:last-child");
+        if (dot && dot.style.borderRadius === "50%" && rank <= 3 && rc) {
+          dot.style.background = rc.border;
+        } else if (dot && rank > 3) {
+          dot.style.display = "none";
+        }
+      });
     };
     const applySort = (key, nextDirection) => {
       const groups = rowGroups();
