@@ -480,16 +480,7 @@ function renderCompactScoreTable(
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
-          <div style="position:relative;">
-            <div style="width:32px;height:32px;border-radius:var(--radius-md);background:linear-gradient(135deg,${rc.border}18,${rc.border}08);border:1px solid ${rc.border}22;display:flex;align-items:center;justify-content:center;">
-              ${rank === 1 ? crownSvg : `<span style="font-size:13px;font-weight:700;color:${nameAccent};">${esc(player.familyName.charAt(0).toUpperCase())}</span>`}
-            </div>
-            ${rank <= 3 ? `<div style="position:absolute;bottom:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:${rc.border};border:2px solid var(--bg-base);"></div>` : ""}
-          </div>
-          <div style="display:flex;flex-direction:column;">
-            <span style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);line-height:1.2;">${esc(player.familyName)}</span>
-            <span style="font-size:10px;color:var(--text-muted);">${player.participations} war${player.participations !== 1 ? "s" : ""}</span>
-          </div>
+          <span style="font-weight:600;color:${nameAccent};font-size:var(--text-sm);">${esc(player.familyName)}</span>
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}
         </div>
       </td>
@@ -907,29 +898,12 @@ function renderScoreSortScript(): string {
         var rank = i + 1;
         row.setAttribute("data-rank", String(rank));
         var rc = rankColors[rank];
-        // Rank badge
         var cell = row.querySelector("[data-rank-cell]");
         if (cell) cell.innerHTML = rankBadgeHtml(rank);
-        // Row background and left border
         row.style.background = rc ? rc.bg : "transparent";
         row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "2.5px solid transparent";
-        // Avatar box: crown for #1, initial letter for others
         var nameTd = row.querySelectorAll("td")[1];
         if (nameTd) {
-          var avatarBox = nameTd.querySelector("div > div:first-child > div");
-          if (avatarBox) {
-            avatarBox.style.background = "linear-gradient(135deg," + (rc ? rc.border : "#555") + "18," + (rc ? rc.border : "#555") + "08)";
-            avatarBox.style.borderColor = (rc ? rc.border : "#555") + "22";
-            var inner = avatarBox.querySelector("span") || avatarBox.querySelector("svg");
-            if (rank === 1) {
-              avatarBox.innerHTML = crownSvgInner;
-            } else {
-              var playerName = row.getAttribute("data-player") || "";
-              var initial = playerName.charAt(0).toUpperCase();
-              avatarBox.innerHTML = '<span style="font-size:13px;font-weight:700;color:' + (rc ? rc.text : "var(--text-primary)") + ';">' + initial + '</span>';
-            }
-          }
-          // Player name color
           var spans = nameTd.querySelectorAll("span");
           for (var s = 0; s < spans.length; s++) {
             var fw = spans[s].style.fontWeight || "";
