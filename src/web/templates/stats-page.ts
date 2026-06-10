@@ -862,90 +862,98 @@ function renderScoreTabsScript(): string {
 })();
 </script>`;
 }
-
 function renderScoreSortScript(): string {
   return `<script>
-(() => {
-  document.querySelectorAll("[data-score-table]").forEach((table) => {
-    const tbody = table.tBodies[0];
+(function () {
+  document.querySelectorAll("[data-score-table]").forEach(function (table) {
+    var tbody = table.tBodies[0];
     if (!tbody) return;
-    const buttons = [...table.querySelectorAll("[data-score-sort-key]")];
-    let activeKey = table.dataset.scoreSort || "wars";
-    let direction = activeKey === "player" ? "asc" : "desc";
-    const readValue = (row, key) => key === "player" ? row.dataset.player || "" : Number(row.dataset[key] || 0);
-    const rowGroups = () => {
-      const groups = [];
-      for (let index = 0; index < tbody.rows.length; index += 1) {
-        const row = tbody.rows[index];
-        const nextRow = tbody.rows[index + 1];
-    const rankColors = {
+    var buttons = Array.from(table.querySelectorAll("[data-score-sort-key]"));
+    var activeKey = table.dataset.scoreSort || "wars";
+    var direction = activeKey === "player" ? "asc" : "desc";
+    var readValue = function (row, key) { return key === "player" ? (row.dataset.player || "") : Number(row.dataset[key] || 0); };
+    var rowGroups = function () {
+      var groups = [];
+      for (var index = 0; index < tbody.rows.length; index += 1) {
+        var row = tbody.rows[index];
+        var nextRow = tbody.rows[index + 1];
+        if (nextRow && nextRow.classList.contains("impact-breakdown")) {
+          groups.push([row, nextRow]);
+          index += 1;
+        } else {
+          groups.push([row]);
+        }
+      }
+      return groups;
+    };
+    var rankColors = {
       1: { bg: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.02))', border: '#f59e0b', text: '#f59e0b' },
       2: { bg: 'linear-gradient(135deg,rgba(56,189,248,0.06),rgba(56,189,248,0.01))', border: '#38bdf8', text: '#38bdf8' },
       3: { bg: 'linear-gradient(135deg,rgba(244,63,94,0.06),rgba(244,63,94,0.01))', border: '#f43f5e', text: '#f43f5e' },
       4: { bg: 'linear-gradient(135deg,rgba(139,92,246,0.05),rgba(139,92,246,0.01))', border: '#8b5cf6', text: '#8b5cf6' },
-      5: { bg: 'linear-gradient(135deg,rgba(16,185,129,0.05),rgba(16,185,129,0.01))', border: '#10b981', text: '#10b981' },
+      5: { bg: 'linear-gradient(135deg,rgba(16,185,129,0.05),rgba(16,185,129,0.01))', border: '#10b981', text: '#10b981' }
     };
-    const crownSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>';
-    const rankBadgeHtml = (rank) => {
-      const rc = rankColors[rank];
+    var crownSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4l3 12h14l3-12-6 4-4-5-4 5z"/><rect x="3" y="18" width="18" height="2" rx="1"/></svg>';
+    var rankBadgeHtml = function (rank) {
+      var rc = rankColors[rank];
       if (rank === 1) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05));color:var(--color-amber);border:1.5px solid rgba(245,158,11,0.3);font-weight:800;font-size:var(--text-xs);">' + crownSvg + '</span>';
       if (rc) return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);background:' + rc.bg + ';color:' + rc.text + ';border:1.5px solid ' + rc.border + '22;font-weight:700;font-size:var(--text-xs);">' + rank + '</span>';
       return '<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-full);color:var(--text-muted);font-weight:500;font-size:var(--text-xs);">' + rank + '</span>';
     };
-    const rerank = () => {
-      const rows = [...tbody.querySelectorAll("tr[data-player]")];
-      rows.forEach((row, i) => {
-        const rank = i + 1;
-        const rc = rankColors[rank];
-        const cell = row.querySelector("[data-rank-cell]");
+    var rerank = function () {
+      var rows = Array.from(tbody.querySelectorAll("tr[data-player]"));
+      rows.forEach(function (row, i) {
+        var rank = i + 1;
+        var rc = rankColors[rank];
+        var cell = row.querySelector("[data-rank-cell]");
         if (cell) cell.innerHTML = rankBadgeHtml(rank);
-        // Update row background and border
         row.style.background = rc ? rc.bg : "transparent";
         row.style.borderLeft = rc ? "2.5px solid " + rc.border + "33" : "";
-        // Update name color
-        const nameEl = row.querySelector("td:nth-child(2) span[style*='font-weight:600']");
+        var nameEl = row.querySelector("td:nth-child(2) span[style*='font-weight:600']");
         if (nameEl) nameEl.style.color = rc ? rc.text : "var(--text-primary)";
-        // Update avatar box
-        const avatarBox = row.querySelector("td:nth-child(2) div > div:first-child > div");
+        var avatarBox = row.querySelector("td:nth-child(2) div > div:first-child > div");
         if (avatarBox && rc) {
           avatarBox.style.background = "linear-gradient(135deg," + rc.border + "18," + rc.border + "08)";
           avatarBox.style.borderColor = rc.border + "22";
-          const avatarInner = avatarBox.querySelector("span");
+          var avatarInner = avatarBox.querySelector("span");
           if (avatarInner && rank > 1) avatarInner.style.color = rc.text;
+        } else if (avatarBox) {
+          avatarBox.style.background = "";
+          avatarBox.style.borderColor = "";
         }
-        // Update rank dot for top 3
-        const dot = row.querySelector("td:nth-child(2) div > div:first-child > div:last-child");
-        if (dot && dot.style.borderRadius === "50%" && rank <= 3 && rc) {
+        var dot = row.querySelector("td:nth-child(2) div > div:first-child > div:last-child");
+        if (dot && rank <= 3 && rc) {
+          dot.style.display = "";
           dot.style.background = rc.border;
         } else if (dot && rank > 3) {
           dot.style.display = "none";
         }
       });
     };
-    const applySort = (key, nextDirection) => {
-      const groups = rowGroups();
-      groups.sort((leftGroup, rightGroup) => {
-        const left = leftGroup[0];
-        const right = rightGroup[0];
-        const leftValue = readValue(left, key);
-        const rightValue = readValue(right, key);
-        const compared = typeof leftValue === "string" ? leftValue.localeCompare(String(rightValue)) : leftValue - Number(rightValue);
+    var applySort = function (key, nextDirection) {
+      var groups = rowGroups();
+      groups.sort(function (leftGroup, rightGroup) {
+        var left = leftGroup[0];
+        var right = rightGroup[0];
+        var leftValue = readValue(left, key);
+        var rightValue = readValue(right, key);
+        var compared = typeof leftValue === "string" ? leftValue.localeCompare(String(rightValue)) : leftValue - Number(rightValue);
         return nextDirection === "asc" ? compared : -compared;
       });
-      groups.flat().forEach((row) => tbody.appendChild(row));
+      groups.forEach(function (group) { group.forEach(function (row) { tbody.appendChild(row); }); });
       rerank();
       activeKey = key;
       direction = nextDirection;
-      buttons.forEach((button) => {
-        const active = button.dataset.scoreSortKey === activeKey;
+      buttons.forEach(function (button) {
+        var active = button.dataset.scoreSortKey === activeKey;
         button.classList.toggle("is-active", active);
         button.setAttribute("aria-sort", active ? direction : "none");
       });
     };
-    buttons.forEach((button) => {
-      button.addEventListener("click", () => {
-        const key = button.dataset.scoreSortKey || "wars";
-        const nextDirection = key === activeKey && direction === "desc" ? "asc" : key === "player" ? "asc" : "desc";
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        var key = button.dataset.scoreSortKey || "wars";
+        var nextDirection = key === activeKey && direction === "desc" ? "asc" : key === "player" ? "asc" : "desc";
         applySort(key, nextDirection);
       });
     });
