@@ -45,6 +45,51 @@ export function renderApp(title: string, body: string, opts: {
           item.classList.add('active');
         }
       });
+
+      document.addEventListener('click', function (e) {
+        var target = e.target instanceof Element ? e.target : null;
+        if (!target) return;
+        var reportBtn = target.closest('[data-report-action]');
+        if (!reportBtn) return;
+        e.preventDefault();
+        var raction = reportBtn.getAttribute('data-report-action');
+        var rid = reportBtn.getAttribute('data-report-id');
+        var rgid = reportBtn.getAttribute('data-guild-id');
+        var rcsrf = reportBtn.getAttribute('data-csrf');
+        if (!raction || !rid || !rgid || !rcsrf) return;
+        if (raction === 'delete') {
+          if (!confirm('Delete this scoreboard and uploaded image?')) return;
+        }
+        reportBtn.disabled = true;
+        var origText = reportBtn.textContent;
+        reportBtn.textContent = raction === 'delete' ? 'Deleting\u2026' : 'Rescanning\u2026';
+        var body = new URLSearchParams();
+        body.set('csrfToken', rcsrf);
+        body.set('guildId', rgid);
+        fetch('/stats/reports/' + encodeURIComponent(rid) + '/' + raction, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+          redirect: 'follow'
+        }).then(function (resp) {
+          if (resp.redirected) {
+            window.location.href = resp.url;
+            return;
+          }
+          if (!resp.ok) {
+            reportBtn.disabled = false;
+            reportBtn.textContent = origText;
+            return resp.text().then(function (t) {
+              alert((raction === 'delete' ? 'Delete' : 'Rescan') + ' failed: ' + (t || resp.statusText));
+            });
+          }
+          window.location.reload();
+        }).catch(function (err) {
+          reportBtn.disabled = false;
+          reportBtn.textContent = origText;
+          alert('Network error: ' + (err && err.message ? err.message : err));
+        });
+      });
     })();
   </script>
 </body>
