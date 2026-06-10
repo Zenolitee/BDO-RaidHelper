@@ -662,7 +662,7 @@ export function renderScoreReportEditorPage(
     ),
 
     `<div class="page-content">
-      <form method="post" action="/stats/reports/${enc(report.id)}/edit" ${isManual ? 'enctype="multipart/form-data"' : ""}>
+      <form method="post" action="/stats/reports/${enc(report.id)}/edit" enctype="multipart/form-data">
         <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
         <input type="hidden" name="guildId" value="${esc(guild.id)}">
 
@@ -686,12 +686,11 @@ export function renderScoreReportEditorPage(
               <label class="label" for="edit-title">Title</label>
               <input class="input" type="text" id="edit-title" name="title" maxlength="120" value="${esc(report.title ?? "")}">
             </div>
-            ${isManual ? `
             <div class="form-group" style="grid-column:1/-1;">
-              <label class="label" for="edit-screenshot">Attach screenshot <span style="color:var(--text-muted);">(optional)</span></label>
+              <label class="label" for="edit-screenshot">Replace screenshot <span style="color:var(--text-muted);">(optional)</span></label>
               <input class="input" type="file" id="edit-screenshot" name="newScreenshot" accept="image/png,image/jpeg,image/webp">
-              <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1);">Attach the original scoreboard screenshot to this manually-entered report.</p>
-            </div>` : ""}
+              <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:var(--space-1);">Upload a new screenshot to replace the existing one.</p>
+            </div>
           </div>
 
         <div class="card" style="margin-bottom:var(--space-6);">
@@ -731,6 +730,16 @@ export function renderScoreReportEditorPage(
           <a class="button button-secondary" href="/stats?guild=${enc(guild.id)}">Cancel</a>
         </div>
       </form>
+
+      ${report.imagePath ? `
+      <form method="post" action="/stats/reports/${enc(report.id)}/rescan" style="margin-top:var(--space-2);">
+        <input type="hidden" name="csrfToken" value="${esc(session.csrfToken)}">
+        <input type="hidden" name="guildId" value="${esc(guild.id)}">
+        <button type="submit" class="button button-ghost button-sm" onclick="return confirm('Re-run OCR on the existing screenshot? This will replace all current score rows.')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Re-evaluate with OCR
+        </button>
+      </form>` : ""}
     </div>`,
   ].join("\n");
 
