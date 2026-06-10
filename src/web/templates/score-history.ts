@@ -10,6 +10,7 @@ export function renderScoreHistoryPage(
   guild: DiscordGuild,
   session: WebSession,
   reports: ScoreReport[],
+  canManage = false,
   summaries?: GuildDashboardSummary[]
 ): string {
   const sorted = [...reports].sort((a, b) => b.warDate.localeCompare(a.warDate));
@@ -33,7 +34,7 @@ export function renderScoreHistoryPage(
           </div>
         </div>`
       : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:var(--space-4);">
-          ${sorted.map(report => renderScoreHistoryCard(report, guild.id)).join("")}
+          ${sorted.map(report => renderScoreHistoryCard(report, guild.id, session.csrfToken, canManage)).join("")}
         </div>`
     }
   </div>`;
@@ -43,7 +44,7 @@ export function renderScoreHistoryPage(
 
 /* ── Individual score history card ───────────────────────────── */
 
-function renderScoreHistoryCard(report: ScoreReport, guildId: string): string {
+function renderScoreHistoryCard(report: ScoreReport, guildId: string, csrfToken: string, canManage: boolean): string {
   const { rows } = report;
   const kills = rows.reduce((sum, r) => sum + r.kills, 0);
   const deaths = rows.reduce((sum, r) => sum + r.deaths, 0);
@@ -69,7 +70,10 @@ function renderScoreHistoryCard(report: ScoreReport, guildId: string): string {
             <span class="badge ${resultTone}" style="margin-bottom:var(--space-1);display:inline-block;">${esc(report.result)}</span>
             <h3 style="margin-top:var(--space-1);font-size:var(--text-lg);">${esc(report.title || formatDateLabel(report.warDate))}</h3>
           </div>
-          <a class="button button-secondary button-sm" href="${editUrl}">Edit</a>
+          <div style="display:flex;gap:var(--space-2);">
+            <a class="button button-secondary button-sm" href="${editUrl}">Edit</a>
+            ${canManage ? `<button class="button button-ghost button-sm" type="button" data-report-action="delete" data-report-id="${esc(report.id)}" data-guild-id="${esc(guildId)}" data-csrf="${esc(csrfToken)}" style="color:var(--danger,#ef4444);">Delete</button>` : ""}
+          </div>
         </div>
 
         <div style="font-size:var(--text-xs);color:var(--text-muted);display:flex;gap:var(--space-3);flex-wrap:wrap;">

@@ -175,7 +175,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
       const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
       const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
-      response.type("html").send(renderScoreHistoryPage(mockGuild, mockSession, mockReports));
+      response.type("html").send(renderScoreHistoryPage(mockGuild, mockSession, mockReports, true));
       return;
     }
 
@@ -191,7 +191,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
     const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
     const reports = await options.scoreStore.listReports(guild.id);
-    response.type("html").send(renderScoreHistoryPage(guild, session, reports, summaries));
+    response.type("html").send(renderScoreHistoryPage(guild, session, reports, canManageGuild(session, guild.id), summaries));
   });
 
   async function sendStatsDashboard(request: Request, response: express.Response, guildId?: string): Promise<void> {
