@@ -5,7 +5,7 @@ import { readDiscordConfig } from "./config.js";
 const { token, clientId, guildId } = readDiscordConfig();
 const rest = new REST({ version: "10" }).setToken(token);
 
-const registerGlobal = process.env.REGISTER_COMMANDS_GLOBAL === "true";
+const registerGlobal = process.env.REGISTER_COMMANDS_GLOBAL !== "false";
 const guildIds = (process.env.DISCORD_GUILD_IDS ?? guildId)
   .split(",")
   .map((value) => value.trim())

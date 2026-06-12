@@ -402,38 +402,42 @@ async function exportStats(interaction: ChatInputCommandInteraction, scoreStore?
     .sort((left, right) => right.kills - left.kills || right.damageDealt - left.damageDealt)
     .slice(0, 10);
 
-  const table = [
-    "Rank  Player              Wars   K    D    K/D     Damage",
-    "----  ------------------  ----  ---  ---  ------  --------",
-    ...topPlayers.map((player, index) => {
-      const kd = player.deaths ? (player.kills / player.deaths).toFixed(2) : String(player.kills);
-      return [
-        String(index + 1).padEnd(4),
-        truncateDiscordCell(player.familyName, 18).padEnd(18),
-        String(player.participations).padStart(4),
-        String(player.kills).padStart(3),
-        String(player.deaths).padStart(3),
-        kd.padStart(6),
-        formatDiscordStat(player.damageDealt).padStart(8)
-      ].join("  ");
-    })
-  ].join("\n");
+  const medals = ["🥇", "🥈", "🥉"];
+  const leaderboard = topPlayers.map((player, index) => {
+    const rank = index + 1;
+    const label = rank <= 3 ? medals[rank - 1] : `**${rank}.**`;
+    const kd = player.deaths ? (player.kills / player.deaths).toFixed(2) : String(player.kills);
+    const kills = formatDiscordStat(player.kills);
+    const deaths = formatDiscordStat(player.deaths);
+    const damage = formatDiscordStat(player.damageDealt);
+    const name = truncateDiscordCell(player.familyName, 22);
+    return `${label} **${name}** — ${kills}K / ${deaths}D · K/D **${kd}** · ${damage} dmg · ${player.participations} war${player.participations === 1 ? "" : "s"}`;
+  }).join("\n");
 
   const embed = new EmbedBuilder()
-    .setTitle("Project Athena — Scoreboard Export")
-    .setDescription(`Latest report: **${latest.title ?? latest.warDate}**\nReports: **${reports.length}** · Players: **${players.length}**`)
+    .setTitle("⚔️  Project Athena — Scoreboard Export")
     .setColor(0xc99a2e)
-    .addFields(
-      { name: "Total Kills", value: formatDiscordStat(totalKills), inline: true },
-      { name: "Total Deaths", value: formatDiscordStat(totalDeaths), inline: true },
-      { name: "Guild K/D", value: totalDeaths ? (totalKills / totalDeaths).toFixed(2) : String(totalKills), inline: true }
+    .setDescription(
+      [
+        `**${latest.title ?? latest.warDate}**`,
+        `Reports: **${reports.length}** · Players: **${players.length}**`,
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "",
+        leaderboard,
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      ].join("\n")
     )
+    .addFields(
+      { name: "⚔️ Kills", value: `**${formatDiscordStat(totalKills)}**`, inline: true },
+      { name: "💀 Deaths", value: `**${formatDiscordStat(totalDeaths)}**`, inline: true },
+      { name: "📊 Guild K/D", value: `**${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : String(totalKills)}**`, inline: true }
+    )
+    .setFooter({ text: "Project Athena Scoreboard" })
     .setTimestamp(new Date());
 
-  await interaction.editReply({
-    embeds: [embed],
-    content: `\`\`\`\n${table}\n\`\`\``
-  });
+  await interaction.editReply({ embeds: [embed] });
 }
 
 
