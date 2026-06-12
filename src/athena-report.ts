@@ -286,9 +286,6 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
   lines.push(
     padEnd("MVP", COL_LEFT) + "| Guild Stats"
   );
-  lines.push(
-    "-".repeat(COL_LEFT) + "|" + "-".repeat(COL_RIGHT)
-  );
 
   // Left column: MVP name + medals + stats
   // Right column: guild stats
@@ -326,7 +323,7 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
     const mvp = report.mvp.player;
     const avgDamage = mvp.participations > 0 ? Math.round(mvp.damageDealt / mvp.participations) : mvp.damageDealt;
     left.push(
-      `${formatStat(mvp.kills)} K / ${formatStat(mvp.deaths)} D \u00B7 ${kdRatio(mvp)} K/D \u00B7 ${formatStat(avgDamage)} Dmg`
+      `${mvp.kills}K|${mvp.deaths}D|${kdRatio(mvp)} K/D|${formatStat(avgDamage)} Dmg`
     );
     right.push(`\uD83D\uDCC1 Reports: ${report.reportCount}`);
   }
