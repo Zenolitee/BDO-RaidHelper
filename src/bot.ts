@@ -3,7 +3,6 @@ import {
   ButtonInteraction,
   ChannelSelectMenuInteraction,
   ChatInputCommandInteraction,
-  EmbedBuilder,
   Client,
   Events,
   GatewayIntentBits,
@@ -23,6 +22,7 @@ import { extractScoreScreenshot } from "./score-ocr.js";
 import { aggregateScoreRows, consumeScoreGeminiQuota, normalizePlayerName } from "./web/score.js";
 import { type ScoreReportResult, type ScoreRow } from "./score-types.js";
 import { type GroupKey, type WarDay, type WarEvent } from "./types.js";
+import { prepareAthenaReport, buildAthenaReportEmbed } from "./athena-report.js";
 
 // --- Bot modules ---
 import {
@@ -397,46 +397,9 @@ async function exportStats(interaction: ChatInputCommandInteraction, scoreStore?
   const players = aggregateScoreRows(rows);
   const totalKills = rows.reduce((sum, row) => sum + row.kills, 0);
   const totalDeaths = rows.reduce((sum, row) => sum + row.deaths, 0);
-  const latest = reports[0];
-  const topPlayers = [...players]
-    .sort((left, right) => right.kills - left.kills || right.damageDealt - left.damageDealt)
-    .slice(0, 10);
 
-  const medals = ["🥇", "🥈", "🥉"];
-  const leaderboard = topPlayers.map((player, index) => {
-    const rank = index + 1;
-    const label = rank <= 3 ? medals[rank - 1] : `**${rank}.**`;
-    const kd = player.deaths ? (player.kills / player.deaths).toFixed(2) : String(player.kills);
-    const kills = formatDiscordStat(player.kills);
-    const deaths = formatDiscordStat(player.deaths);
-    const damage = formatDiscordStat(player.damageDealt);
-    const name = truncateDiscordCell(player.familyName, 22);
-    return `${label} **${name}** — ${kills}K / ${deaths}D · K/D **${kd}** · ${damage} dmg · ${player.participations} war${player.participations === 1 ? "" : "s"}`;
-  }).join("\n");
-
-  const embed = new EmbedBuilder()
-    .setTitle("⚔️  Project Athena — Scoreboard Export")
-    .setColor(0xc99a2e)
-    .setDescription(
-      [
-        `**${latest.title ?? latest.warDate}**`,
-        `Reports: **${reports.length}** · Players: **${players.length}**`,
-        "",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        "",
-        leaderboard,
-        "",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-      ].join("\n")
-    )
-    .addFields(
-      { name: "⚔️ Kills", value: `**${formatDiscordStat(totalKills)}**`, inline: true },
-      { name: "💀 Deaths", value: `**${formatDiscordStat(totalDeaths)}**`, inline: true },
-      { name: "📊 Guild K/D", value: `**${totalDeaths ? (totalKills / totalDeaths).toFixed(2) : String(totalKills)}**`, inline: true }
-    )
-    .setFooter({ text: "Project Athena Scoreboard" })
-    .setTimestamp(new Date());
-
+  const report = prepareAthenaReport({ players, reports, totalKills, totalDeaths });
+  const embed = buildAthenaReportEmbed(report);
   await interaction.editReply({ embeds: [embed] });
 }
 
@@ -811,15 +774,6 @@ function inferScoreImageMimeType(name: string | null | undefined): string | unde
   return undefined;
 }
 
-function truncateDiscordCell(value: string, length: number): string {
-  return value.length > length ? `${value.slice(0, Math.max(0, length - 1))}…` : value;
-}
-
-function formatDiscordStat(value: number): string {
-  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
-  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
-  return String(value);
-}
 
 // ---------------------------------------------------------------------------
 // Scheduler
@@ -1007,14 +961,27 @@ async function replyWithError(interaction: Interaction, error: unknown): Promise
     return;
   }
 
+  const payload = { content: message, ephemeral: true };
   try {
     if (interaction.deferred || interaction.replied) {
-      await interaction.followUp({ content: message, ephemeral: true });
+      await interaction.followUp(payload);
     } else {
-      await interaction.reply({ content: message, ephemeral: true });
+      await interaction.reply(payload);
     }
-  } catch (replyError) {
-    console.error("Failed to send interaction error response:", replyError);
+  } catch (firstError: unknown) {
+    // If the interaction was already acknowledged (flag stale or race),
+    // try followUp as a fallback before giving up.
+    const alreadyAcknowledged =
+      firstError instanceof Error && /already acknowledged/i.test(firstError.message);
+    if (alreadyAcknowledged) {
+      try {
+        await interaction.followUp(payload);
+      } catch (followUpError) {
+        console.error("Failed to send interaction error response:", followUpError);
+      }
+    } else {
+      console.error("Failed to send interaction error response:", firstError);
+    }
   }
 }
 
