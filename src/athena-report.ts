@@ -287,7 +287,7 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
     padEnd("MVP", COL_LEFT) + "|" + " Guild Stats"
   );
   lines.push(
-    "-".repeat(COL_LEFT - 2) + "| " + "-".repeat(COL_RIGHT - 1)
+    "-".repeat(COL_LEFT - 2) + "|" + "-".repeat(COL_RIGHT - 1)
   );
 
   // Left column: MVP name + medals + stats
@@ -326,7 +326,7 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
   while (right.length < left.length) right.push("");
 
   for (let i = 0; i < left.length; i++) {
-    lines.push(padEnd(left[i], COL_LEFT) + "| " + right[i]);
+    lines.push(padEnd(left[i], COL_LEFT) + "|" + right[i]);
   }
 
   return "```\n" + lines.join("\n") + "\n```";
