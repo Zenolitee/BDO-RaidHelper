@@ -191,14 +191,14 @@ export function renderScoreTables(players: PlayerScoreAggregate[], topDamage: nu
     <div class="score-tab-bar" role="tablist">
       <button type="button" class="score-tab is-active" data-tab-target="scoreboard-totals" role="tab" aria-selected="true">▸ Scoreboard totals</button>
       <button type="button" class="score-tab" data-tab-target="impact-formula" role="tab" aria-selected="false">▸ Impact formula</button>
-      <span class="score-tab-meta">Kills 20% · Assists 10% · Damage 20% · Fort 30% · Obj 10% · Survive 10%</span>
+      <span class="score-tab-meta">Kills 20% · Streak 10% · Damage 20% · Fort 30% · Obj 10% · Survive 10%</span>
     </div>
     <div class="score-table-panel score-table-panel-main score-tab-panel is-active" data-tab-panel="scoreboard-totals" role="tabpanel">
       <header><h3>Raw stats</h3><small>Sort each column to inspect volume, pressure, and support.</small></header>
       ${renderScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage)}
     </div>
     <div class="score-table-panel impact-panel score-tab-panel" data-tab-panel="impact-formula" role="tabpanel" hidden>
-      <header><p class="eyebrow">Impact formula</p><h3>Impact ranking</h3><small>Weighted score: Kills 20% | Assists 10% | Damage 20% | Fort 30% | Objectives 10% | Survival 10%</small></header>
+      <header><p class="eyebrow">Impact formula</p><h3>Impact ranking</h3><small>Weighted score: Kills 20% | Streak 10% | Damage 20% | Fort 30% | Objectives 10% | Survival 10%</small></header>
       ${renderImpactTable(impactScores)}
     </div>
   </section>${renderScoreSortScript()}${renderScoreTabsScript()}`;
@@ -345,7 +345,7 @@ export function renderImpactTable(impactScores: PlayerImpactScore[]): string {
           <td colspan="5">
             <div>
               ${renderImpactChip("K", impact.killsScore, "kills")}
-              ${renderImpactChip("A", impact.assistsScore, "assists")}
+              ${renderImpactChip("STK", impact.assistsScore, "streak")}
               ${renderImpactChip("DMG", impact.damageScore, "damage")}
               ${renderImpactChip("FORT", impact.structureScore, "structure")}
               ${renderImpactChip("OBJ", impact.objectiveScore, "objective")}
@@ -416,7 +416,7 @@ export function renderScoreEditCard(row: ScoreRow | undefined, index: number): s
     <div class="score-edit-group score-edit-core">
       ${renderScoreEditField("K", "kills", row?.kills ?? 0)}
       ${renderScoreEditField("D", "deaths", row?.deaths ?? 0)}
-      ${renderScoreEditField("A", "assists", row?.assists ?? 0)}
+      ${renderScoreEditField("Streak", "assists", row?.assists ?? 0)}
     </div>
     <div class="score-edit-group">
       ${renderScoreEditField("Damage", "damageDealt", row?.damageDealt ?? 0)}

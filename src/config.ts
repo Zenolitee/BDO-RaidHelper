@@ -34,7 +34,8 @@ export const config = {
   geminiGuildDayLimit: Number(process.env.GEMINI_GUILD_DAY_LIMIT ?? 50),
   timezone: process.env.TIMEZONE ?? "Asia/Singapore",
   nodeWarPostTime: process.env.NODEWAR_POST_TIME ?? "22:15",
-  nodeWarStartTime: process.env.NODEWAR_START_TIME ?? "21:00"
+  nodeWarStartTime: process.env.NODEWAR_START_TIME ?? "21:00",
+  bdoCommunityApiBaseUrl: process.env.BDO_COMMUNITY_API_BASE_URL ?? "https://api.cutepap.us/community/v1"
 };
 
 /** Returns the Discord credentials required by the slash-command registration script. */

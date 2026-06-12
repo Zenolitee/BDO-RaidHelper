@@ -17,7 +17,7 @@ export function renderAccountControls(session?: WebSession, selectedGuildId?: st
 export function renderNav(session?: WebSession, guildId?: string, summaries?: GuildDashboardSummary[]): string {
   const summaryList = summaries ?? (session ? buildGuildDashboardSummaries(session.guilds, []) : []);
   return `<header class="app-nav">
-    <div class="nav-brand-row"><a class="brand" href="/"><span>NW</span><strong>NW Helper</strong></a></div>
+    <div class="nav-brand-row"><a class="brand" href="/"><span>NW</span><strong>Project Athena</strong></a></div>
     <nav>
       <a class="top-nav-link" href="/">${renderNavIcon("home")}<span>Home</span></a>
       ${session ? renderNavDropdown("Stats", "stats", summaryList, "stats") : `<a class="top-nav-link" href="/stats">${renderNavIcon("stats")}<span>Stats</span></a>`}
@@ -41,7 +41,7 @@ export function renderNavGuildItem(summary: GuildDashboardSummary, mode: "stats"
     mode === "stats"
       ? `/guilds/${encodeURIComponent(summary.guild.id)}/stats`
       : mode === "raids"
-        ? `/guilds/${encodeURIComponent(summary.guild.id)}/raids`
+        ? `/guilds/${encodeURIComponent(summary.guild.id)}/events`
         : `/?guild=${encodeURIComponent(summary.guild.id)}`;
   const meta =
     mode === "stats"

@@ -3,10 +3,12 @@ import {
   ButtonInteraction,
   ChannelSelectMenuInteraction,
   ChatInputCommandInteraction,
+  EmbedBuilder,
   Client,
   Events,
   GatewayIntentBits,
   Interaction,
+  Message,
   ModalSubmitInteraction,
   RoleSelectMenuInteraction,
   StringSelectMenuInteraction,
@@ -16,6 +18,10 @@ import { formatGroupBadge, formatGroupName } from "./emojis.js";
 import { getNodeWarCapacity, buildNodeWarTitle } from "./nodewar-presets.js";
 import { formatAnnouncementSchedule, renderEventEmbed } from "./render.js";
 import { activeRosterCapacity, activeRosterSignupCount, type EventStore } from "./store.js";
+import { type ScoreStore } from "./score-store.js";
+import { extractScoreScreenshot } from "./score-ocr.js";
+import { aggregateScoreRows, consumeScoreGeminiQuota, normalizePlayerName } from "./web/score.js";
+import { type ScoreReportResult, type ScoreRow } from "./score-types.js";
 import { type GroupKey, type WarDay, type WarEvent } from "./types.js";
 
 // --- Bot modules ---
@@ -62,8 +68,32 @@ import {
   startEditWizard,
 } from "./bot/edit-wizard.js";
 
-// Re-export symbols that index.ts (or other consumers) may import from here.
-export { refreshEventMessage } from "./bot/posting.js";
+// Re-export symbols that index.ts, QA, or other consumers may import from here.
+const SCORE_UPLOAD_TIMEOUT_MS = 5 * 60_000;
+const SCORE_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const SCORE_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+interface DiscordClientOptions {
+  scoreStore?: ScoreStore;
+}
+
+interface PendingScoreUpload {
+  guildId: string;
+  channelId: string;
+  userId: string;
+  warDate: string;
+  result: ScoreReportResult;
+  title?: string;
+  expiresAt: number;
+}
+
+const pendingScoreUploads = new Map<string, PendingScoreUpload>();
+
+function pendingScoreUploadKey(guildId: string, channelId: string, userId: string): string {
+  return `${guildId}:${channelId}:${userId}`;
+}
+export { eventEndsAt, refreshEventMessage } from "./bot/posting.js";
+export { nextWarDayFromSelection } from "./bot/utils.js";
 
 const AUTO_SCHEDULER_USER = "nodewar-scheduler";
 const SCHEDULER_INTERVAL_MS = 60_000;
@@ -77,8 +107,8 @@ const NODEWAR_DURATION_MS = 60 * 60 * 1000;
  * Creates the Discord client, routes supported interaction types, and starts
  * scheduler polling after the client becomes ready.
  */
-export function createDiscordClient(store: EventStore): Client {
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+export function createDiscordClient(store: EventStore, options: DiscordClientOptions = {}): Client {
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
   client.once(Events.ClientReady, async (readyClient) => {
     console.log(`Discord bot ready as ${readyClient.user.tag}`);
@@ -97,7 +127,7 @@ export function createDiscordClient(store: EventStore): Client {
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
       if (interaction.isChatInputCommand()) {
-        await handleCommand(interaction, store, client);
+        await handleCommand(interaction, store, client, options);
       }
 
       if (interaction.isStringSelectMenu()) {
@@ -124,6 +154,15 @@ export function createDiscordClient(store: EventStore): Client {
     }
   });
 
+  client.on(Events.MessageCreate, async (message) => {
+    try {
+      await handleScoreUploadMessage(message, store, options);
+    } catch (error) {
+      console.error("Score screenshot upload failed:", error);
+      await message.reply(`Score upload failed: ${error instanceof Error ? error.message : "Unknown error."}`).catch(() => undefined);
+    }
+  });
+
   return client;
 }
 
@@ -135,11 +174,34 @@ export function createDiscordClient(store: EventStore): Client {
 async function handleCommand(
   interaction: ChatInputCommandInteraction,
   store: EventStore,
-  client: Client
+  client: Client,
+  options: DiscordClientOptions = {}
 ): Promise<void> {
   if (interaction.commandName === "set-nwchannel") {
     await requireAdministrator(interaction);
     await setNodeWarChannel(interaction, store);
+    return;
+  }
+
+  if (interaction.commandName === "export") {
+    await requireOfficer(interaction);
+    if (interaction.options.getSubcommand() === "stats") {
+      await exportStats(interaction, options.scoreStore);
+    }
+    return;
+  }
+
+  if (interaction.commandName === "score") {
+    await requireAdministrator(interaction);
+    const scoreSubcommand = interaction.options.getSubcommand();
+    if (scoreSubcommand === "set-channel") {
+      await setScoreUploadChannel(interaction, store);
+      return;
+    }
+    if (scoreSubcommand === "upload") {
+      await armScoreUpload(interaction, store, options.scoreStore);
+      return;
+    }
     return;
   }
 
@@ -248,6 +310,132 @@ async function setNodeWarChannel(interaction: ChatInputCommandInteraction, store
     ephemeral: true
   });
 }
+
+async function setScoreUploadChannel(interaction: ChatInputCommandInteraction, store: EventStore): Promise<void> {
+  if (!interaction.guildId) {
+    throw new Error("Use this command inside a server channel.");
+  }
+
+  const channel = interaction.channel;
+  if (!channel || !("send" in channel)) {
+    throw new Error("Use this command in a text channel where the bot can read scoreboard screenshots.");
+  }
+
+  await store.setScoreUploadChannelId(interaction.guildId, interaction.channelId);
+  await interaction.reply({
+    content: `Score screenshot upload channel set to <#${interaction.channelId}>. Use \`/score upload\` before posting a screenshot.`,
+    ephemeral: true
+  });
+}
+
+async function armScoreUpload(
+  interaction: ChatInputCommandInteraction,
+  store: EventStore,
+  scoreStore?: ScoreStore
+): Promise<void> {
+  if (!scoreStore) {
+    throw new Error("Score storage is not configured.");
+  }
+  if (!interaction.guildId) {
+    throw new Error("Use this command inside a Discord server.");
+  }
+
+  const settings = await store.getSettings();
+  const configuredChannelId = settings.scoreUploadChannelIds?.[interaction.guildId];
+  if (!configuredChannelId) {
+    throw new Error("Set a score screenshot channel first with /score set-channel.");
+  }
+  if (configuredChannelId !== interaction.channelId) {
+    throw new Error(`Use /score upload in the configured score screenshot channel: <#${configuredChannelId}>.`);
+  }
+
+  const warDate = parseDiscordScoreDate(interaction.options.getString("war-date", true));
+  const duplicate = (await scoreStore.listReports(interaction.guildId)).find((report) => report.warDate === warDate);
+  if (duplicate) {
+    throw new Error(`A score report already exists for ${warDate}. Delete or edit it from the web stats page first.`);
+  }
+
+  const result = (interaction.options.getString("result") ?? "unknown") as ScoreReportResult;
+  const title = cleanOptionalDiscordText(interaction.options.getString("title"), 120);
+  const pending: PendingScoreUpload = {
+    guildId: interaction.guildId,
+    channelId: interaction.channelId,
+    userId: interaction.user.id,
+    warDate,
+    result,
+    title,
+    expiresAt: Date.now() + SCORE_UPLOAD_TIMEOUT_MS
+  };
+  pendingScoreUploads.set(pendingScoreUploadKey(pending.guildId, pending.channelId, pending.userId), pending);
+
+  await interaction.reply({
+    content: [
+      `Upload armed for **${warDate}** in <#${interaction.channelId}>.`,
+      "Post one PNG, JPG, or WebP scoreboard screenshot in the next 5 minutes.",
+      "Only your next image in this channel will be processed."
+    ].join("\n"),
+    ephemeral: true
+  });
+}
+
+async function exportStats(interaction: ChatInputCommandInteraction, scoreStore?: ScoreStore): Promise<void> {
+  if (!scoreStore) {
+    throw new Error("Score storage is not configured.");
+  }
+  if (!interaction.guildId) {
+    throw new Error("Use this command inside a Discord server.");
+  }
+
+  await interaction.deferReply();
+  const reports = await scoreStore.listReports(interaction.guildId);
+  if (!reports.length) {
+    await interaction.editReply("No score reports have been uploaded for this server yet.");
+    return;
+  }
+
+  const rows = reports.flatMap((report) => report.rows);
+  const players = aggregateScoreRows(rows);
+  const totalKills = rows.reduce((sum, row) => sum + row.kills, 0);
+  const totalDeaths = rows.reduce((sum, row) => sum + row.deaths, 0);
+  const latest = reports[0];
+  const topPlayers = [...players]
+    .sort((left, right) => right.kills - left.kills || right.damageDealt - left.damageDealt)
+    .slice(0, 10);
+
+  const table = [
+    "Rank  Player              Wars   K    D    K/D     Damage",
+    "----  ------------------  ----  ---  ---  ------  --------",
+    ...topPlayers.map((player, index) => {
+      const kd = player.deaths ? (player.kills / player.deaths).toFixed(2) : String(player.kills);
+      return [
+        String(index + 1).padEnd(4),
+        truncateDiscordCell(player.familyName, 18).padEnd(18),
+        String(player.participations).padStart(4),
+        String(player.kills).padStart(3),
+        String(player.deaths).padStart(3),
+        kd.padStart(6),
+        formatDiscordStat(player.damageDealt).padStart(8)
+      ].join("  ");
+    })
+  ].join("\n");
+
+  const embed = new EmbedBuilder()
+    .setTitle("Project Athena — Scoreboard Export")
+    .setDescription(`Latest report: **${latest.title ?? latest.warDate}**\nReports: **${reports.length}** · Players: **${players.length}**`)
+    .setColor(0xc99a2e)
+    .addFields(
+      { name: "Total Kills", value: formatDiscordStat(totalKills), inline: true },
+      { name: "Total Deaths", value: formatDiscordStat(totalDeaths), inline: true },
+      { name: "Guild K/D", value: totalDeaths ? (totalKills / totalDeaths).toFixed(2) : String(totalKills), inline: true }
+    )
+    .setTimestamp(new Date());
+
+  await interaction.editReply({
+    embeds: [embed],
+    content: `\`\`\`\n${table}\n\`\`\``
+  });
+}
+
 
 async function createTestEvent(interaction: ChatInputCommandInteraction, store: EventStore): Promise<void> {
   const guildId = interaction.guildId;
@@ -502,6 +690,131 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
     await refreshEventMessage(client, event);
     await interaction.editReply({ content: `Closed ${event.title}.` });
   }
+}
+
+async function handleScoreUploadMessage(
+  message: Message,
+  _store: EventStore,
+  options: DiscordClientOptions
+): Promise<void> {
+  if (message.author.bot || !message.guildId || !options.scoreStore) {
+    return;
+  }
+
+  const key = pendingScoreUploadKey(message.guildId, message.channelId, message.author.id);
+  const pending = pendingScoreUploads.get(key);
+  if (!pending) {
+    return;
+  }
+
+  if (Date.now() > pending.expiresAt) {
+    pendingScoreUploads.delete(key);
+    await message.reply("Your score upload window expired. Run `/score upload` again before posting the screenshot.");
+    return;
+  }
+
+  const attachment = message.attachments.find((candidate) => isScoreImageAttachment(candidate.contentType, candidate.name, candidate.size));
+  if (!attachment) {
+    return;
+  }
+
+  pendingScoreUploads.delete(key);
+  await message.reply("Scoreboard screenshot received. Extracting rows now...");
+
+  const imageResponse = await fetch(attachment.url);
+  if (!imageResponse.ok) {
+    throw new Error(`Discord attachment download failed (${imageResponse.status}).`);
+  }
+  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+  if (imageBuffer.byteLength > SCORE_IMAGE_MAX_BYTES) {
+    throw new Error("Score screenshot is too large. Upload an image under 10 MB.");
+  }
+
+  const duplicate = (await options.scoreStore.listReports(pending.guildId)).find((report) => report.warDate === pending.warDate);
+  if (duplicate) {
+    throw new Error(`A score report already exists for ${pending.warDate}. Delete or edit it from the web stats page first.`);
+  }
+
+  const geminiQuota = consumeScoreGeminiQuota(pending.userId, pending.guildId);
+  const mimeType = attachment.contentType ?? inferScoreImageMimeType(attachment.name) ?? "image/png";
+  const extraction = await extractScoreScreenshot(imageBuffer, {
+    mimeType,
+    geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
+    geminiModel: config.geminiModel,
+    preferGemini: geminiQuota.allowed
+  });
+
+  const rows = extraction.rows.map((row) => ({
+    ...row,
+    familyName: normalizePlayerName(row.familyName),
+    guildId: pending.guildId
+  })) as ScoreRow[];
+  if (!rows.length) {
+    throw new Error("No scoreboard rows were extracted. Try a clearer screenshot or upload from the web stats page for manual review.");
+  }
+
+  const report = await options.scoreStore.createReport({
+    guildId: pending.guildId,
+    warDate: pending.warDate,
+    result: pending.result,
+    title: pending.title,
+    imageMimeType: mimeType,
+    imageOriginalName: attachment.name ?? "discord-scoreboard.png",
+    imageBuffer,
+    ocrEngine: extraction.engine,
+    rawOcrText: extraction.rawText,
+    ocrConfidence: extraction.confidence,
+    uploadedBy: `${message.author.username} (${message.author.id})`,
+    rows
+  });
+
+  await message.reply([
+    `Saved score report **${report.title ?? report.warDate}**.`,
+    `Extracted **${rows.length}** player row${rows.length === 1 ? "" : "s"} using \`${extraction.engine}\`.`,
+    `View it in Project Athena: http://localhost:${config.port}/stats?guild=${encodeURIComponent(pending.guildId)}`
+  ].join("\n"));
+}
+
+function parseDiscordScoreDate(value: string): string {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new Error("Use war-date in YYYY-MM-DD format.");
+  }
+  const parsed = new Date(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== trimmed) {
+    throw new Error("Use a valid calendar date for war-date.");
+  }
+  return trimmed;
+}
+
+function cleanOptionalDiscordText(value: string | null, maxLength: number): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLength);
+}
+
+function isScoreImageAttachment(contentType: string | null | undefined, name: string | null | undefined, size: number): boolean {
+  if (size > SCORE_IMAGE_MAX_BYTES) return false;
+  if (contentType && SCORE_IMAGE_MIME_TYPES.has(contentType.toLowerCase())) return true;
+  return Boolean(inferScoreImageMimeType(name));
+}
+
+function inferScoreImageMimeType(name: string | null | undefined): string | undefined {
+  const lowerName = name?.toLowerCase() ?? "";
+  if (lowerName.endsWith(".png")) return "image/png";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  if (lowerName.endsWith(".webp")) return "image/webp";
+  return undefined;
+}
+
+function truncateDiscordCell(value: string, length: number): string {
+  return value.length > length ? `${value.slice(0, Math.max(0, length - 1))}…` : value;
+}
+
+function formatDiscordStat(value: number): string {
+  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
+  return String(value);
 }
 
 // ---------------------------------------------------------------------------

@@ -53,13 +53,13 @@ try {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("QA server did not bind to a TCP port.");
   const baseUrl = `http://127.0.0.1:${address.port}`;
-  await expectResponse(`${baseUrl}/`, 200, "Log in with Discord");
+  await expectResponse(`${baseUrl}/`, 200, "Start with Discord");
   await expectSecurityHeaders(`${baseUrl}/`);
   await expectResponse(`${baseUrl}/assets/styles.css`, 200, ".delivery-editor");
   await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Zen");
-  await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Raid day");
+  await expectResponse(`${baseUrl}/events/${event.id}`, 200, "Schedule");
   await expectResponse(`${baseUrl}/events/${event.id}/edit`, 404, "Event not found");
-  await expectResponse(`${baseUrl}/create?guild=qa-guild`, 403, "Discord login required");
+  await expectResponse(`${baseUrl}/create?guild=qa-guild`, 403, "Login Required");
   const deleteResponse = await fetch(`${baseUrl}/events/${event.id}/delete`, { method: "POST" });
   if (deleteResponse.status !== 403 || !(await store.getEvent(event.id))) {
     throw new Error("Unauthenticated web request could delete an event.");
@@ -137,10 +137,10 @@ try {
     autoRepost: true,
     signups: event.signups.map((signup) => ({ ...signup }))
   });
-  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Fresh roster");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Roster commitment");
   await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "T1 Balenos/Serendia War [qa-weekly]");
-  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Current live roster");
-  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Future signup announcement queue");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Schedule");
+  await expectResponse(`${baseUrl}/events/qa-weekly`, 200, "Upcoming Announcements");
   await rollCompletedWeeklyEvents(
     { channels: { fetch: async () => undefined } },
     store,

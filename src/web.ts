@@ -11,6 +11,7 @@ import { createWebSessionStore } from "./web-session-store.js";
 
 import type { DiscordGuild, UserProfile, WebAppOptions, WebSession } from "./web/types.js";
 import { buildGuildDashboardSummaries, nextScheduledRaid, previousDate } from "./web/utils.js";
+export { nextScheduledRaid } from "./web/utils.js";
 import {
   parseAnnouncementChannelId,
   parseAnnouncementRoleIds,
@@ -45,6 +46,7 @@ import { consumeScoreGeminiQuota, parseScoreSortKey } from "./web/score.js";
 import { renderWebError } from "./web/templates/helpers.js";
 import { renderHome } from "./web/templates/home.js";
 import {
+  renderDashboardPage,
   renderRaidsPage,
   renderEventDetailPage,
   renderServersPage,
@@ -55,6 +57,12 @@ import {
 } from "./web/templates/raids-page.js";
 import { renderStatsServerPickerPage, renderStatsPage, renderScoreReportEditorPage } from "./web/templates/stats-page.js";
 import { renderScoreHistoryPage } from "./web/templates/score-history.js";
+import { renderGuildActivityPage } from "./web/templates/guild-activity.js";
+import { renderGuildPerformancePage } from "./web/templates/guild-performance.js";
+import { renderAttendancePage } from "./web/templates/attendance.js";
+import { getAsiaGuild } from "./integrations/bdo-asia.js";
+import { renderDocsPage } from "./web/templates/docs.js";
+import { getBdoGuild, type BdoGuildProfile } from "./integrations/bdo-community.js";
 import { renderCreateServerPickerPage, renderCreateRaidPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
 import type { ScoreReport } from "./score-types.js";
 import { normalizePlayerName } from "./web/score.js";
@@ -124,48 +132,160 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     const [events, settings] = session ? await Promise.all([store.listEvents(), store.getSettings()]) : [[], {} as BotSettings];
     if (session && guild) {
-      response.type("html").send(renderRaidsPage(events.filter((event) => event.guildId === guild.id), session, guildId, buildGuildDashboardSummaries(session.guilds, events, settings)));
+      response.redirect(302, `/events?guild=${encodeURIComponent(guild.id)}`);
       return;
     }
     response.type("html").send(renderHome(events, session, settings));
   });
 
-  app.get("/guilds/:guildId/raids", async (request, response) => {
-    const session = await getSession(request, sessions);
-    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
-    if (!session || !guild) {
-    response.type("html").send(renderLoginRequiredPage());
-    return;
-  }
-  const events = await store.listEvents();
-  const settings = await store.getSettings();
-  response.type("html").send(renderRaidsPage(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events, settings)));
-  });
-
-  app.get("/raids", async (request, response) => {
-    const session = await getSession(request, sessions);
-  if (!session) {
-    response.status(403).type("html").send(renderLoginRequiredPage());
-    return;
-  }
-  const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
-  const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
-  response.type("html").send(renderRaidsPage(events, session, undefined, summaries));
-  });
-
-  app.get("/guilds/:guildId/stats", async (request, response) => {
-    await sendStatsDashboard(request, response, request.params.guildId);
-  });
-
-  app.get("/servers", async (request, response) => {
+  app.get("/dashboard", async (request, response) => {
     const session = await getSession(request, sessions);
     if (!session) {
       response.status(403).type("html").send(renderLoginRequiredPage());
       return;
     }
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
-    response.type("html").send(renderServersPage(session, buildGuildDashboardSummaries(session.guilds, events, settings)));
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    response.type("html").send(renderDashboardPage(guild ? events.filter((event) => event.guildId === guild.id) : events, session, guild?.id, summaries));
   });
+
+  app.get("/guilds/:guildId/events", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
+    if (!session || !guild) {
+      response.type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const events = await store.listEvents();
+    const settings = await store.getSettings();
+    response.type("html").send(renderRaidsPage(events.filter((event) => event.guildId === guild.id), session, guild.id, buildGuildDashboardSummaries(session.guilds, events, settings)));
+  });
+
+  app.get("/events", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
+    if (!guild) {
+      response.redirect(302, "/servers");
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    response.type("html").send(renderRaidsPage(events.filter((event) => event.guildId === guild.id), session, guild.id, summaries));
+  });
+
+  app.get("/raids", (_request, response) => {
+    response.redirect(301, "/dashboard");
+  });
+
+  app.get("/guilds/:guildId/raids", (request, response) => {
+    response.redirect(301, `/guilds/${encodeURIComponent(request.params.guildId)}/events`);
+  });
+
+  app.get("/guilds/:guildId/stats", async (request, response) => {
+    await sendStatsDashboard(request, response, request.params.guildId);
+  });
+  // ── Guild Activity (BDO community API) ───────────────────────
+  app.get("/guilds/:guildId/activity", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
+    if (!session || !guild) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    const configuredName = settings.bdoGuildNames?.[guild.id] ?? null;
+    const configuredRegion = settings.bdoGuildRegions?.[guild.id] ?? null;
+    let bdoProfile: BdoGuildProfile | null = null;
+    if (configuredName) {
+      try {
+        if (configuredRegion === "ASIA") {
+          bdoProfile = await getAsiaGuild(configuredName);
+        } else {
+          bdoProfile = await getBdoGuild(configuredName, configuredRegion as "EU" | "NA" | "SA" | "KR" | undefined);
+        }
+      } catch {
+        // Guild not found or API error — show the form with the configured name
+      }
+    }
+    response.type("html").send(renderGuildActivityPage(guild, session, bdoProfile, configuredName, configuredRegion, summaries));
+  });
+
+  app.post("/guilds/:guildId/activity", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const bdoGuildName = typeof request.body.bdoGuildName === "string" ? request.body.bdoGuildName.trim() : "";
+    const region = typeof request.body.region === "string" ? request.body.region.toUpperCase() : "EU";
+    if (!bdoGuildName) {
+      response.redirect(302, `/guilds/${encodeURIComponent(guild.id)}/activity`);
+      return;
+    }
+    // Validate the guild exists via the API before saving
+    try {
+      if (region === "ASIA") {
+        const profile = await getAsiaGuild(bdoGuildName);
+        if (!profile) {
+          response.redirect(302, `/guilds/${encodeURIComponent(guild.id)}/activity`);
+          return;
+        }
+      } else {
+        await getBdoGuild(bdoGuildName, region as "EU" | "NA" | "SA" | "KR");
+      }
+    } catch {
+      response.redirect(302, `/guilds/${encodeURIComponent(guild.id)}/activity`);
+      return;
+    }
+    await store.setBdoGuildName(guild.id, bdoGuildName);
+    await store.setBdoGuildRegion(guild.id, region);
+    response.redirect(302, `/guilds/${encodeURIComponent(guild.id)}/activity`);
+  });
+  // ── Guild Performance ────────────────────────────────────────
+  app.get("/guilds/:guildId/performance", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
+    if (!session || !guild) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    const reports = options.scoreStore ? await options.scoreStore.listReports(guild.id) : [];
+    response.type("html").send(renderGuildPerformancePage(guild, session, reports, summaries));
+  });
+
+  // ── Attendance ────────────────────────────────────────────────
+  app.get("/guilds/:guildId/attendance", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const guild = session?.guilds.find((candidate) => candidate.id === request.params.guildId);
+    if (!session || !guild) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    const reports = options.scoreStore ? await options.scoreStore.listReports(guild.id) : [];
+    response.type("html").send(renderAttendancePage(guild, session, events.filter((e) => e.guildId === guild.id), reports, summaries));
+  });
+
+  // ── Documentation ─────────────────────────────────────────────
+  app.get("/docs", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = session ? buildGuildDashboardSummaries(session.guilds, events, settings) : undefined;
+    response.type("html").send(renderDocsPage(session ?? { user: { id: '', username: 'Guest' }, guilds: [], csrfToken: '', expiresAt: 0 }, summaries));
+  });
+
 
   app.get("/member", async (request, response) => {
     const session = await getSession(request, sessions);
@@ -303,7 +423,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const players = aggregateScoreRows(allRows);
 
     // Build CSV
-    const header = "Player,Wars,Kills,Deaths,K/D,Damage,CC,Fort,Assists,Healed,Resurrections";
+    const header = "Player,Wars,Kills,Deaths,K/D,Damage,CC,Fort,Streak,Healed,Resurrections";
     const csvRows = players.map((p) => {
       const kd = p.deaths ? (p.kills / p.deaths).toFixed(2) : String(p.kills);
       return [
@@ -672,7 +792,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
             familyName: normalizePlayerName(name.slice(0, 80)),
             kills: num("kills"),
             deaths: num("deaths"),
-            assists: num("assists"),
+            assists: num("streak") || num("assists"),
             damageDealt: num("damage"),
             damageTaken: num("taken"),
             crowdControls: num("cc"),
@@ -693,7 +813,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         const lines = scoreData.trim().split("\n").filter((l) => l.trim());
         for (const line of lines) {
           const cols = line.split("\t").map((c) => c.trim());
-          if (cols.length < 6) throw new Error(`Each line needs at least 6 tab-separated columns (Name, K, D, A, DMG, CC). Got ${cols.length} on: "${line.slice(0, 60)}"`);
+          if (cols.length < 6) throw new Error(`Each line needs at least 6 tab-separated columns (Name, K, D, Streak, DMG, CC). Got ${cols.length} on: "${line.slice(0, 60)}"`);
           const num = (i: number) => { const v = (cols[i] ?? "").replace(/,/g, ""); const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0; };
           rows.push({
             familyName: normalizePlayerName(cols[0].slice(0, 80)),
@@ -1004,7 +1124,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const sessionId = readCookie(request, sessionCookieName());
     if (sessionId) await sessions.delete(sessionId).catch(() => undefined);
     response.setHeader("Set-Cookie", sessionCookie("", 0));
-    response.redirect("/");
+    response.redirect(request.query.next === "/auth/discord" ? "/auth/discord" : "/");
   });
 
   app.get("/create", async (request, response) => {

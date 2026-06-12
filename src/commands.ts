@@ -101,4 +101,56 @@ export const setNodeWarChannelCommand = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .setDMPermission(false);
 
-export const commands = [eventCommand.toJSON(), setNodeWarChannelCommand.toJSON()];
+export const exportCommand = new SlashCommandBuilder()
+  .setName("export")
+  .setDescription("Export Project Athena data to Discord")
+  .setDMPermission(false)
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("stats")
+      .setDescription("Post a formatted guild scoreboard summary in this channel")
+  );
+
+export const scoreCommand = new SlashCommandBuilder()
+  .setName("score")
+  .setDescription("Manage scoreboard screenshots")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .setDMPermission(false)
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("set-channel")
+      .setDescription("Use this channel for command-approved scoreboard screenshots")
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("upload")
+      .setDescription("Authorize your next scoreboard screenshot upload in this channel")
+      .addStringOption((option) =>
+        option
+          .setName("war-date")
+          .setDescription("War date as YYYY-MM-DD")
+          .setRequired(true)
+          .setMaxLength(10)
+      )
+      .addStringOption((option) =>
+        option
+          .setName("result")
+          .setDescription("War result")
+          .setRequired(false)
+          .addChoices(
+            { name: "Win", value: "win" },
+            { name: "Loss", value: "loss" },
+            { name: "Unknown", value: "unknown" }
+          )
+      )
+      .addStringOption((option) =>
+        option
+          .setName("title")
+          .setDescription("Optional report title")
+          .setRequired(false)
+          .setMaxLength(120)
+      )
+  );
+
+export const commands = [eventCommand.toJSON(), setNodeWarChannelCommand.toJSON(), exportCommand.toJSON(), scoreCommand.toJSON()];
+

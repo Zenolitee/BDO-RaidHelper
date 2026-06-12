@@ -13,7 +13,7 @@ export function renderApp(title: string, body: string, opts: {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)} | NW Helper</title>
+  <title>${esc(title)} | Project Athena</title>
   <link rel="stylesheet" href="/assets/css/tokens.css">
   <link rel="stylesheet" href="/assets/css/base.css">
   <link rel="stylesheet" href="/assets/css/layout.css">
@@ -22,24 +22,45 @@ export function renderApp(title: string, body: string, opts: {
 </head>
 <body>
   <div class="app">
-    ${renderSidebar(opts.session, opts.summaries, opts.activeNav)}
+    ${renderTopNav(opts.session, opts.summaries, opts.activeNav)}
     <main class="main">
       ${body}
     </main>
   </div>
   <script>
     (function () {
-      var sidebar = document.querySelector('.sidebar');
-      var toggle = document.querySelector('[data-sidebar-toggle]');
-      var mobileToggle = document.querySelector('[data-mobile-sidebar]');
-      var overlay = document.querySelector('.sidebar-overlay');
+      var topNav = document.querySelector('.top-nav');
+      var mobileToggle = document.querySelector('[data-mobile-nav]');
+      var mobileMenu = document.querySelector('[data-mobile-menu]');
 
-      if (toggle) toggle.addEventListener('click', function () { sidebar.classList.toggle('collapsed'); });
-      if (mobileToggle) mobileToggle.addEventListener('click', function () { sidebar.classList.toggle('mobile-open'); });
-      if (overlay) overlay.addEventListener('click', function () { sidebar.classList.remove('mobile-open'); });
+      if (mobileToggle && mobileMenu) {
+        mobileToggle.addEventListener('click', function () {
+          var expanded = mobileToggle.getAttribute('aria-expanded') === 'true';
+          mobileToggle.setAttribute('aria-expanded', String(!expanded));
+          topNav.classList.toggle('mobile-open', !expanded);
+        });
+      }
+
+      var accountMenu = document.querySelector('[data-account-menu]');
+      var accountToggle = document.querySelector('[data-account-toggle]');
+      if (accountToggle && accountMenu) {
+        accountToggle.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          var expanded = accountToggle.getAttribute('aria-expanded') === 'true';
+          accountToggle.setAttribute('aria-expanded', String(!expanded));
+          accountMenu.classList.toggle('open', !expanded);
+        });
+        document.addEventListener('click', function (event) {
+          var target = event.target instanceof Element ? event.target : null;
+          if (!target || target.closest('[data-account-menu]')) return;
+          accountToggle.setAttribute('aria-expanded', 'false');
+          accountMenu.classList.remove('open');
+        });
+      }
 
       var path = window.location.pathname;
-      document.querySelectorAll('.nav-item').forEach(function (item) {
+      document.querySelectorAll('.top-nav-link').forEach(function (item) {
         var href = item.getAttribute('href') || '';
         if (href === path || (href !== '/' && path.indexOf(href) === 0)) {
           item.classList.add('active');
@@ -96,61 +117,51 @@ export function renderApp(title: string, body: string, opts: {
 </html>`;
 }
 
-/* ── Sidebar ─────────────────────────────────────────────────── */
+/* ── Top navigation ───────────────────────────────────────────── */
 
-function renderSidebar(session?: WebSession, summaries?: GuildDashboardSummary[], activeNav?: string): string {
+function renderTopNav(session?: WebSession, summaries?: GuildDashboardSummary[], activeNav?: string): string {
   const isLoggedIn = Boolean(session);
   const user = session?.user;
   const initials = user ? (user.global_name || user.username || "U").slice(0, 2).toUpperCase() : "?";
+  const primaryItems = [
+    { href: "/", label: "Home", key: "home" },
+    ...(isLoggedIn ? [
+      { href: "/dashboard", label: "Dashboard", key: "dashboard" },
+    ] : []),
+    { href: "/docs", label: "Docs", key: "docs" },
+  ];
 
-  return `<aside class="sidebar" role="navigation" aria-label="Main navigation">
-    <div class="sidebar-brand">
-      <span class="brand-icon">NW</span>
-      <span class="brand-text">NW Helper</span>
-    </div>
+  return `<header class="top-nav" role="banner">
+    <a class="top-brand" href="/" aria-label="Project Athena home">
+      <img src="/assets/project_athena.png" alt="Project Athena" class="top-brand-logo">
+      <span class="top-brand-text">PROJECT ATHENA</span>
+    </a>
 
-    <nav class="sidebar-nav">
-      ${renderNavSection("Overview", [
-        { href: "/", icon: homeIcon(), label: "Dashboard", key: "home" },
-        ...(isLoggedIn ? [
-          { href: "/raids", icon: shieldIcon(), label: "All Raids", key: "raids" },
-        ] : []),
-      ])}
-
-      ${isLoggedIn && summaries?.length ? renderNavSection("Servers", summaries.map((s) => ({
-        href: `/?guild=${s.guild.id}`,
-        icon: serverIcon(),
-        label: s.guild.name,
-        key: `guild-${s.guild.id}`
-      })).slice(0, 5)) : ""}
-
-      ${isLoggedIn ? renderNavSection("Tools", [
-        { href: "/stats", icon: chartIcon(), label: "Stats", key: "stats" },
-      ]) : ""}
+    <button class="top-nav-toggle" type="button" data-mobile-nav aria-expanded="false" aria-controls="top-nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <nav id="top-nav-menu" class="top-nav-menu" data-mobile-menu aria-label="Main navigation">
+      ${primaryItems.map((item) => `<a class="top-nav-link${activeNav === item.key ? " active" : ""}" href="${esc(item.href)}">${esc(item.label)}</a>`).join("")}
     </nav>
 
-    <div class="sidebar-footer">
+    <div class="top-nav-actions">
       ${isLoggedIn && user ? `
-        <a href="/logout" class="sidebar-user" title="Sign out">
-          <span class="sidebar-user-avatar">${user.avatar ? `<img src="https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64" alt="">` : initials}</span>
-          <span class="sidebar-user-info">
-            <span class="sidebar-user-name">${esc(user.global_name || user.username)}</span>
-            <span class="sidebar-user-role">Signed in</span>
-          </span>
-        </a>
+        <div class="top-account" data-account-menu>
+          <button class="top-user" type="button" data-account-toggle aria-expanded="false" aria-haspopup="menu" title="Account options">
+            <span class="top-user-avatar">${user.avatar ? `<img src="https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64" alt="">` : initials}</span>
+            <span class="top-user-name">${esc(user.global_name || user.username)}</span>
+          </button>
+          <div class="top-account-menu" role="menu">
+            <div class="top-account-name">${esc(user.global_name || user.username)}</div>
+            <a href="/logout?next=/auth/discord" role="menuitem">Change account</a>
+            <a href="/logout" role="menuitem">Log out</a>
+          </div>
+        </div>
       ` : `
-        <a href="/auth/discord" class="nav-item">
-          <span class="nav-item-icon">${loginIcon()}</span>
-          <span class="nav-label">Sign in with Discord</span>
-        </a>
+        <a href="/auth/discord" class="button button-primary button-sm">Sign in</a>
       `}
-      <button class="sidebar-toggle" data-sidebar-toggle title="Toggle sidebar">
-        <span class="nav-item-icon">${collapseIcon()}</span>
-        <span class="nav-label">Collapse</span>
-      </button>
     </div>
-  </aside>
-  <div class="sidebar-overlay" aria-hidden="true"></div>`;
+  </header>`;
 }
 
 function renderNavSection(label: string, items: Array<{ href: string; icon: string; label: string; key: string }>): string {
@@ -168,14 +179,10 @@ function renderNavSection(label: string, items: Array<{ href: string; icon: stri
 export function renderPageHeader(title: string, subtitle?: string, actions?: string): string {
   return `<div class="page-header">
     <div class="page-header-inner">
-      <div style="display:flex;align-items:center;gap:var(--space-3);">
-        <button class="mobile-menu-btn" data-mobile-sidebar style="display:none;background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:var(--space-1);">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-        <div>
-          <h1 class="page-title">${esc(title)}</h1>
-          ${subtitle ? `<p class="page-subtitle">${esc(subtitle)}</p>` : ""}
-        </div>
+      <div>
+        <div class="landing-kicker">COMMAND CENTER</div>
+        <h1 class="page-title">${esc(title)}</h1>
+        ${subtitle ? `<p class="page-subtitle">${esc(subtitle)}</p>` : ""}
       </div>
       ${actions ? `<div class="header-actions">${actions}</div>` : ""}
     </div>

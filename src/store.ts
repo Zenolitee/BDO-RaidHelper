@@ -45,6 +45,42 @@ export class EventStore {
     });
   }
 
+  /** Saves the approved score screenshot upload channel selected for a Discord guild. */
+  async setScoreUploadChannelId(guildId: string, channelId: string): Promise<BotSettings> {
+    return this.withStore(async (data) => {
+      data.settings = {
+        ...(data.settings ?? {}),
+        scoreUploadChannelIds: { ...(data.settings?.scoreUploadChannelIds ?? {}), [guildId]: channelId }
+      };
+      await this.write(data);
+      return { ...data.settings };
+    });
+  }
+  /** Saves the BDO guild name linked to a Discord guild. */
+  async setBdoGuildName(guildId: string, bdoGuildName: string): Promise<BotSettings> {
+    return this.withStore(async (data) => {
+      data.settings = {
+        ...(data.settings ?? {}),
+        bdoGuildNames: { ...(data.settings?.bdoGuildNames ?? {}), [guildId]: bdoGuildName }
+      };
+      await this.write(data);
+      return { ...data.settings };
+    });
+  }
+  /** Saves the BDO region linked to a Discord guild. */
+  async setBdoGuildRegion(guildId: string, region: string): Promise<BotSettings> {
+    return this.withStore(async (data) => {
+      data.settings = {
+        ...(data.settings ?? {}),
+        bdoGuildRegions: { ...(data.settings?.bdoGuildRegions ?? {}), [guildId]: region }
+      };
+      await this.write(data);
+      return { ...data.settings };
+    });
+  }
+
+
+
   /** Persists a newly created event. */
   async createEvent(event: WarEvent): Promise<WarEvent> {
     return this.withStore(async (data) => {
@@ -434,6 +470,16 @@ function validateSettings(settings: unknown): void {
       Object.entries(nodeWarChannelIds).some(([guildId, channelId]) => !guildId || typeof channelId !== "string"))
   ) {
     throw new Error("Invalid event store JSON: settings.nodeWarChannelIds must map guild IDs to channel IDs.");
+  }
+
+  const scoreUploadChannelIds = (settings as BotSettings).scoreUploadChannelIds;
+  if (
+    scoreUploadChannelIds !== undefined &&
+    (!scoreUploadChannelIds ||
+      typeof scoreUploadChannelIds !== "object" ||
+      Object.entries(scoreUploadChannelIds).some(([guildId, channelId]) => !guildId || typeof channelId !== "string"))
+  ) {
+    throw new Error("Invalid event store JSON: settings.scoreUploadChannelIds must map guild IDs to channel IDs.");
   }
 }
 

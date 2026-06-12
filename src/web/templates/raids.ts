@@ -53,7 +53,7 @@ export function renderEventList(events: WarEvent[], session?: WebSession, guildI
     </section>` : ""}
     ${selectedGuild ? `<section class="event-grid">${cards || `<div class="empty-state"><h2>No raids scheduled</h2><p>${selectedCanManage ? "Create a roster or use the Discord wizard to get started." : "No active raids are posted for this server yet."}</p></div>`}</section>` : ""}
   </main>`;
-  return `${renderWindow(selectedGuild ? `ls /guilds/${escapeHtml(selectedGuild.name)}/raids` : "raids", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow(selectedGuild ? `ls /guilds/${escapeHtml(selectedGuild.name)}/events` : "events", inner, { prompt: "nwhelper@os" })}`;
 }
 
 export function renderEventDetail(event: WarEvent, canManage: boolean, session?: WebSession, deliveryOptions?: GuildDeliveryOptions): string {
@@ -253,7 +253,7 @@ export function renderCreateRaid(
   ];
 
   const inner = `<main class="shell create-shell">
-    <div class="page-nav"><a href="/?guild=${encodeURIComponent(guildId)}">Back to raids</a></div>
+    <div class="page-nav"><a href="/?guild=${encodeURIComponent(guildId)}">Back to events</a></div>
     <section class="builder-head">
       <div>
         <p class="eyebrow">Node War template builder</p>
@@ -329,7 +329,7 @@ export function renderCreateServerPicker(session: WebSession, summaries: GuildDa
           (summary) => `<article class="member-server-card">
             <div class="fleet-head">${renderGuildAvatar(summary.guild)}<div><h3>${escapeHtml(summary.guild.name)}</h3><small>${summary.activeRaids} active raids | ${escapeHtml(summary.nextAnnouncement)}</small></div></div>
             <span class="setup-pill ${summary.setupWarnings.length ? "setup-pill-warning" : "setup-pill-ready"}">${summary.setupWarnings.length ? "Setup warnings" : "Ready"}</span>
-            <div class="fleet-links"><a href="/create?guild=${encodeURIComponent(summary.guild.id)}">Create Raid</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Raids</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Dashboard</a></div>
+            <div class="fleet-links"><a href="/create?guild=${encodeURIComponent(summary.guild.id)}">Create Event</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/events">Events</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Dashboard</a></div>
           </article>`
         )
         .join("") || `<div class="empty-state compact-empty"><h2>No manageable servers</h2><p>Your Discord account needs Administrator, Manage Server, Manage Channels, Manage Roles, or Manage Messages on a shared server to create raids.</p></div>`}</div>

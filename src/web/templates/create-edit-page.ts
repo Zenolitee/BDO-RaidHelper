@@ -65,7 +65,7 @@ export function renderCreateRaidPage(
     { key: "shai", label: getGroupLabel("shai"), capacity: 2 }
   ];
 
-  const content = `${renderPageHeader("Create Raid", "Schedule a Node War roster. The bot publishes it in Discord at the configured announcement time.", `<a href="/raids?guild=${encodeURIComponent(guildId)}" class="button button-ghost button-sm">Back to raids</a>`)}
+  const content = `${renderPageHeader("Create Event", "Schedule a Node War roster. The bot publishes it in Discord at the configured announcement time.", `<a href="/events?guild=${encodeURIComponent(guildId)}" class="button button-ghost button-sm">Back to events</a>`)}
   <div class="page-content">
     <form method="post" action="/create" id="allocation-form">
       <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}">
@@ -152,7 +152,7 @@ export function renderCreateRaidPage(
       </div>
 
       <div style="display:flex;gap:var(--space-3);justify-content:flex-end;padding-bottom:var(--space-8);">
-        <a href="/raids?guild=${encodeURIComponent(guildId)}" class="button button-ghost">Cancel</a>
+        <a href="/events?guild=${encodeURIComponent(guildId)}" class="button button-ghost">Cancel</a>
         <button type="submit" class="button button-primary">Schedule Raid</button>
       </div>
     </form>

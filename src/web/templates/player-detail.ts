@@ -290,7 +290,7 @@ export function renderPlayerDetailPage(
                 <th>K</th>
                 <th>D</th>
                 <th>K/D</th>
-                <th>A</th>
+                <th>STK</th>
                 <th>DMG</th>
                 <th>CC</th>
                 <th>Fort</th>

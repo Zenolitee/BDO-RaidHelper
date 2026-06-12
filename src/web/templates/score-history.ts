@@ -17,7 +17,7 @@ export function renderScoreHistoryPage(
 
   const headerActions = `<a class="button button-ghost button-sm" href="/stats?guild=${enc(guild.id)}">← Back to Stats</a>`;
 
-  const content = `<div class="dashboard">
+  const content = `<div class="dashboard athena-data-page">
     <div class="dashboard-header">
       <div>
         <h1 style="font-size:var(--text-xl);font-weight:700;">Score History</h1>
@@ -88,7 +88,7 @@ function renderScoreHistoryCard(report: ScoreReport, guildId: string, csrfToken:
             <p class="score-history-card-stat-value">${formatStatNumber(kills)} / ${formatStatNumber(deaths)}</p>
           </div>
           <div>
-            <span class="score-history-card-stat-label">Assists</span>
+            <span class="score-history-card-stat-label">Streak</span>
             <p class="score-history-card-stat-value">${formatStatNumber(assists)}</p>
           </div>
           <div>

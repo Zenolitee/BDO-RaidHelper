@@ -71,4 +71,10 @@ export interface EventStoreData {
 export interface BotSettings {
   nodeWarChannelId?: string;
   nodeWarChannelIds?: Record<string, string>;
+  /** Maps Discord guild ID → approved score screenshot upload channel ID. */
+  scoreUploadChannelIds?: Record<string, string>;
+  /** Maps Discord guild ID → BDO guild name for the BDO community API. */
+  bdoGuildNames?: Record<string, string>;
+  /** Maps Discord guild ID → BDO region (EU, NA, SA, KR, ASIA). */
+  bdoGuildRegions?: Record<string, string>;
 }

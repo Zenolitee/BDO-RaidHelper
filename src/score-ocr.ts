@@ -178,7 +178,7 @@ function buildGeminiScorePrompt(): string {
     "Use this exact shape: {\"rows\":[{\"familyName\":\"\",\"kills\":0,\"deaths\":0,\"assists\":0,\"damageDealt\":0,\"damageTaken\":0,\"crowdControls\":0,\"hpHealed\":0,\"allySupport\":0,\"structureDamage\":0,\"lynchCannonKills\":0,\"siegeAssists\":0,\"resurrections\":0,\"siegeDeaths\":0,\"specialKills\":0,\"timeAlive\":\"\",\"totalWarTime\":\"\"}]}",
     "Read player names from the left Family Name column.",
     "Return all visible player rows, top to bottom.",
-    "The assists field is the kill streak column, not player assists.",
+    "The assists JSON key stores the official BDO Streak column, not player assists.",
     "Use hpHealed only for the self HP healed / recovery column.",
     "Use allySupport only for the right-side Support / healing given to allies column marked with the plus + support icon.",
     "Convert K/M values to full integers. Example: 614.1K is 614100 and 5.4M is 5400000.",
@@ -458,10 +458,10 @@ function postProcessOcrRows(rows: Omit<ScoreRow, "guildId">[]): Omit<ScoreRow, "
       }
     }
 
-    // Fix 3: Single-digit assists when other stats are high (digit dropped from assists)
+    // Fix 3: Single-digit streak when other stats are high (digit dropped from OCR)
     if (r.assists > 0 && r.assists < 10 && r.damageDealt > medianDamage * 0.3 && dmgRatio > 0.3) {
-      // In BDO, assists are usually 2-20 range; single digit is actually common
-      // Only flag if assists is exactly 1-digit AND deaths are 2+ digits
+      // In BDO, streak values are usually 2-20 range; single digit is actually common.
+      // Only flag if streak is exactly 1-digit AND deaths are 2+ digits.
       // This catches "7" that should be "70" or "700" etc.
     }
 

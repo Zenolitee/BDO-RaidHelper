@@ -11,7 +11,7 @@ import { labelWarDay } from '../../nodewar-presets.js';
 export function renderMemberLogin(): string {
   return `<main class="shell member-shell">
     <section class="member-hero member-login-hero">
-      <div><p class="eyebrow">Member roster view</p><h1>Check your guild's Node War roster without admin controls.</h1><p>Log in with Discord to see only servers you share with NW Helper and the current raid rosters available to your account.</p><div class="button-row"><a class="button" href="/auth/discord">Log in with Discord</a>${renderInviteButton("Invite Bot")}</div></div>
+      <div><p class="eyebrow">Member roster view</p><h1>Check your guild's Node War roster without admin controls.</h1><p>Log in with Discord to see only servers you share with Project Athena and the current raid rosters available to your account.</p><div class="button-row"><a class="button" href="/auth/discord">Log in with Discord</a>${renderInviteButton("Invite Bot")}</div></div>
     </section>
   </main>`;
 }
@@ -22,7 +22,7 @@ export function renderAllRaidsDashboard(session: WebSession, summaries: GuildDas
     .sort((left, right) => left.sortTime - right.sortTime);
   const inner = `<main class="shell member-shell">
     <section class="member-hero">
-      <div><p class="eyebrow">All raids</p><h1>Raid board across your shared servers</h1><p>Aggregated read-only raid schedule for every server you share with NW Helper.</p></div>
+      <div><p class="eyebrow">All raids</p><h1>Raid board across your shared servers</h1><p>Aggregated read-only raid schedule for every server you share with Project Athena.</p></div>
       <dl class="member-telemetry">
         <div><dt>Servers</dt><dd>${summaries.length}</dd></div>
         <div><dt>Total raids</dt><dd>${raids.length}</dd></div>
@@ -35,7 +35,7 @@ export function renderAllRaidsDashboard(session: WebSession, summaries: GuildDas
       <div class="member-raid-grid">${raids.map(({ summary, event }) => renderMemberRaidCard(summary, event)).join("") || `<div class="empty-state compact-empty"><h2>No raids found</h2><p>No raid schedules are available for your shared servers yet.</p></div>`}</div>
     </section>
   </main>`;
-  return `${renderWindow("ls ~/raids", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+  return `${renderWindow("ls ~/events", inner, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
 }
 
 export function renderServersPicker(
@@ -127,7 +127,7 @@ export function renderMemberDashboard(session: WebSession, summaries: GuildDashb
       <div class="member-raid-grid">${events.map(({ summary, event }) => renderMemberRaidCard(summary, event)).join("") || `<div class="empty-state compact-empty"><h2>No active raids</h2><p>No current roster is available for your shared servers.</p></div>`}</div>
     </section>
     <section class="member-section">
-      <div class="section-title"><div><p class="eyebrow">Server list</p><h2>Your NW Helper servers</h2></div><span>${summaries.length} visible</span></div>
+      <div class="section-title"><div><p class="eyebrow">Server list</p><h2>Your Project Athena servers</h2></div><span>${summaries.length} visible</span></div>
       <div class="member-server-grid">${summaries.map(renderMemberServerCard).join("")}</div>
     </section>` : renderMemberNoServers()}
   </main>`;
@@ -150,14 +150,14 @@ export function renderMemberFeaturedRaid(summary: GuildDashboardSummary, event: 
         <div><dt>Countdown</dt><dd data-countdown="${announcement ? announcementTimestamp(announcement) : warStartTimestamp(event)}">${announcement ? formatAnnouncementDateTime(announcement) : formatClockTime(event.time)}</dd></div>
       </dl>
       <div class="war-progress"><div><span>Roster signed</span><b>${signed}/${capacity}</b></div><span class="card-meter"><i style="width:${percent}%"></i></span></div>
-      <div class="button-row"><a class="button" href="/events/${encodeURIComponent(event.id)}">Open Roster</a><a class="button button-secondary" href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Server Raids</a></div>
+      <div class="button-row"><a class="button" href="/events/${encodeURIComponent(event.id)}">Open Roster</a><a class="button button-secondary" href="/guilds/${encodeURIComponent(summary.guild.id)}/events">Server Events</a></div>
     </div>
     <aside class="member-composition">${renderMemberComposition(event)}</aside>
   </section>`;
 }
 
 export function renderMemberEmptyRaids(guild: DiscordGuild): string {
-  return `<section class="member-focus member-empty-focus"><div><p class="eyebrow">Next roster</p><h1>No active raids scheduled</h1><p>${escapeHtml(guild.name)} does not have a current member-visible roster yet.</p><a class="button button-secondary" href="/guilds/${encodeURIComponent(guild.id)}/raids">View Server Raids</a></div></section>`;
+  return `<section class="member-focus member-empty-focus"><div><p class="eyebrow">Next roster</p><h1>No active events scheduled</h1><p>${escapeHtml(guild.name)} does not have a current member-visible roster yet.</p><a class="button button-secondary" href="/guilds/${encodeURIComponent(guild.id)}/events">View Server Events</a></div></section>`;
 }
 
 export function renderMemberRaidCard(summary: GuildDashboardSummary, event: WarEvent): string {
@@ -188,12 +188,12 @@ export function renderMemberServerCard(summary: GuildDashboardSummary): string {
   return `<article class="member-server-card">
     <div class="fleet-head">${renderGuildAvatar(summary.guild)}<div><h3>${escapeHtml(summary.guild.name)}</h3><small>${summary.activeRaids} active raids | ${summary.totalSignups} signups</small></div></div>
     <span class="setup-pill ${summary.activeRaids ? "setup-pill-ready" : "setup-pill-warning"}">${summary.activeRaids ? "Roster live" : "No active raid"}</span>
-    <div class="fleet-links"><a href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Raids</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">Stats</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Dashboard</a></div>
+    <div class="fleet-links"><a href="/guilds/${encodeURIComponent(summary.guild.id)}/events">Events</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">Stats</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Dashboard</a></div>
   </article>`;
 }
 
 export function renderMemberNoServers(): string {
-  return `<section class="member-hero member-login-hero"><div><p class="eyebrow">No shared servers</p><h1>No member rosters are available yet</h1><p>NW Helper only lists Discord servers where your account has access and the bot is installed.</p><div class="button-row">${renderInviteButton("Invite Bot")}<a class="button button-secondary" href="/auth/discord">Refresh Login</a></div></div></section>`;
+  return `<section class="member-hero member-login-hero"><div><p class="eyebrow">No shared servers</p><h1>No member rosters are available yet</h1><p>Project Athena only lists Discord servers where your account has access and the bot is installed.</p><div class="button-row">${renderInviteButton("Invite Bot")}<a class="button button-secondary" href="/auth/discord">Refresh Login</a></div></div></section>`;
 }
 
 export function renderStatsServerPicker(session: WebSession, summaries?: GuildDashboardSummary[]): string {

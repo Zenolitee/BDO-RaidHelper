@@ -105,7 +105,7 @@ export function renderHome(events: WarEvent[], session?: WebSession, settings: B
   if (!session) {
     const heroBody = `
       <p class="eyebrow">~/welcome.md</p>
-      <h1>NW Helper keeps raids, rosters, and war stats organized.</h1>
+      <h1>Project Athena keeps raids, rosters, and war stats organized.</h1>
       <p class="summary">Connect Discord to manage shared servers, schedule weekly Node War signup posts, track active rosters, and review uploaded scoreboard stats from one dark dashboard.</p>
       ${renderPromptLine({ path: "~", suffix: "cat welcome.md" })}
       ${renderTerminal([
@@ -127,7 +127,7 @@ export function renderHome(events: WarEvent[], session?: WebSession, settings: B
 
   const body = `
     ${renderPromptLine({ path: "~", suffix: "./nw-helper --dashboard" })}
-    <section class="war-room-layout" aria-label="NW Helper war room">
+    <section class="war-room-layout" aria-label="Project Athena war room">
       ${renderCommandRail()}
       ${renderPrimaryWarFocus(summaries, session)}
       ${renderReadinessPanel(summaries[0])}
@@ -144,7 +144,7 @@ export function renderCommandRail(): string {
   return `<aside class="command-rail" aria-label="Command actions">
     <p class="eyebrow">Command rail</p>
     ${renderCommandRailAction("Create Raid", "/create", "Choose server")}
-    ${renderCommandRailAction("View All Raids", "/raids", "All shared servers")}
+    ${renderCommandRailAction("View All Events", "/events", "All shared servers")}
     ${renderCommandRailAction("View Stats", "/stats", "Choose server")}
     ${renderCommandRailAction("Manage Servers", "/servers", "Choose server")}
     ${botInviteUrl() ? renderCommandRailAction("Invite Bot", botInviteUrl() as string, "Expand fleet", true) : ""}
@@ -165,7 +165,7 @@ export function renderPrimaryWarFocus(summaries: GuildDashboardSummary[], sessio
       <p class="eyebrow">Next node war</p>
       <h1>No raids scheduled yet</h1>
       <p>Start by creating a Node War schedule for ${escapeHtml(guild.name)}.</p>
-      <div class="button-row"><a class="button" href="/create?guild=${encodeURIComponent(guild.id)}">Create Raid</a><a class="button button-secondary" href="/guilds/${encodeURIComponent(guild.id)}/raids">View Raids</a></div>
+      <div class="button-row"><a class="button" href="/create?guild=${encodeURIComponent(guild.id)}">Create Event</a><a class="button button-secondary" href="/guilds/${encodeURIComponent(guild.id)}/events">View Events</a></div>
     </section>`;
   }
   const { summary, event } = focused;
@@ -215,7 +215,7 @@ export function renderUpcomingRaidsTimeline(summaries: GuildDashboardSummary[]):
     .sort((left, right) => left.sortTime - right.sortTime)
     .slice(0, 6);
   return `<section class="timeline-section">
-    <div class="section-title"><div><p class="eyebrow">Mission timeline</p><h2>Upcoming raids</h2></div><a href="/raids">View all raids</a></div>
+    <div class="section-title"><div><p class="eyebrow">Mission timeline</p><h2>Upcoming events</h2></div><a href="/events">View all events</a></div>
     <div class="raid-timeline">${raids
       .map(({ summary, event }) => {
         const signed = activeRosterSignupCount(event);
@@ -238,7 +238,7 @@ export function renderServerFleetSection(summaries: GuildDashboardSummary[]): st
         (summary) => `<article class="fleet-card">
           <div class="fleet-head">${renderGuildAvatar(summary.guild)}<div><h3>${escapeHtml(summary.guild.name)}</h3><small>${summary.activeRaids} active | ${escapeHtml(summary.nextAnnouncement)}</small></div></div>
           <span class="setup-pill ${summary.setupWarnings.length ? "setup-pill-warning" : "setup-pill-ready"}">${summary.setupWarnings.length ? "Attention" : "Ready"}</span>
-          <div class="fleet-links"><a href="/guilds/${encodeURIComponent(summary.guild.id)}/raids">Raids</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">Stats</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Manage</a></div>
+          <div class="fleet-links"><a href="/guilds/${encodeURIComponent(summary.guild.id)}/events">Events</a><a href="/guilds/${encodeURIComponent(summary.guild.id)}/stats">Stats</a><a href="/?guild=${encodeURIComponent(summary.guild.id)}">Manage</a></div>
         </article>`
       )
       .join("")}</div>
@@ -254,7 +254,7 @@ export function renderRecentActivitySection(): string {
 
 export function renderNoSharedServersHome(): string {
   return `<section class="home-hero logged-out-hero command-hero">
-    <div><p class="eyebrow">No shared servers</p><h1>No Discord servers are available yet</h1><p>NW Helper only lists servers where your Discord account has access and the bot is installed. Invite the bot, then log in again to refresh your session.</p><div class="button-row">${renderInviteButton("Invite Bot")}<a class="button button-secondary" href="/auth/discord">Refresh Login</a></div></div>
+    <div><p class="eyebrow">No shared servers</p><h1>No Discord servers are available yet</h1><p>Project Athena only lists servers where your Discord account has access and the bot is installed. Invite the bot, then log in again to refresh your session.</p><div class="button-row">${renderInviteButton("Invite Bot")}<a class="button button-secondary" href="/auth/discord">Refresh Login</a></div></div>
   </section>`;
 }
 

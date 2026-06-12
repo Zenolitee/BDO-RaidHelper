@@ -15,12 +15,12 @@ console.log(
     ? "Using Supabase event storage."
     : `Using JSON event storage at ${config.dataFile}.`
 );
-const client = config.discordToken ? createDiscordClient(store) : undefined;
 const scoreStore = createScoreStore({
   supabaseUrl: config.supabaseUrl,
   supabaseServiceRoleKey: config.supabaseServiceRoleKey,
   dataFile: config.dataFile
 });
+const client = config.discordToken ? createDiscordClient(store, { scoreStore }) : undefined;
 const app = createWebApp(store, {
   onEventUpdated: client ? (event) => refreshEventMessage(client, event) : undefined,
   scoreStore

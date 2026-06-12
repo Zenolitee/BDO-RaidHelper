@@ -34,7 +34,7 @@ export function renderPolybarClean(currentTitle: string, isLoggedIn: boolean): s
 
   const navItems: { href: string; label: string; icon: string; tone: string }[] = [
     { href: "/", label: "home", icon: "", tone: "bg-pink" },
-    { href: "/raids", label: "raids", icon: "", tone: "bg-cyan" },
+    { href: "/events", label: "events", icon: "", tone: "bg-cyan" },
     { href: "/servers", label: "servers", icon: "", tone: "bg-aqua" }
   ];
   if (isLoggedIn) {
@@ -596,7 +596,7 @@ export function renderOsShellScript(): string {
           if (cmd === "raids") {
             var sel4 = selectedServer();
             if (!sel4) { line("no server selected. type: cd <name>", "warn"); return; }
-            window.location.href = "/guilds/" + encodeURIComponent(sel4.id) + "/raids";
+            window.location.href = "/guilds/" + encodeURIComponent(sel4.id) + "/events";
             return;
           }
 

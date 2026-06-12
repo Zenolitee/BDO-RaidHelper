@@ -14,7 +14,7 @@ export function renderStatsServerPickerPage(
   if (!summaries.length) {
     const content = [
       renderPageHeader("Stats", "Server performance and scoreboards"),
-      renderEmptyState("No servers yet", "Join a server with NW Helper installed to view stats."),
+      renderEmptyState("No servers yet", "Join a server with Project Athena installed to view stats."),
     ].join("\n");
     return renderApp("Stats", content, { session, activeNav: "stats" });
   }
@@ -44,7 +44,7 @@ export function renderStatsServerPickerPage(
 
   const content = [
     renderPageHeader("Stats", "Server performance and scoreboards"),
-    `<div class="page-content">
+    `<div class="page-content athena-data-page">
       <div class="grid grid-3">${cards}</div>
     </div>`,
   ].join("\n");
@@ -84,7 +84,7 @@ export function renderStatsPage(
   const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a><a class="button button-ghost button-sm" href="/stats/compare?guild=${enc(guild.id)}">Compare</a><a class="button button-ghost button-sm" href="/stats/export.csv?guild=${enc(guild.id)}">Export CSV</a>${uploadButton}`;
 
   const content = [
-    `<div class="dashboard">
+    `<div class="dashboard athena-data-page">
       <div class="dashboard-header">
         <div>
           <h1 style="font-size:var(--text-xl);font-weight:700;">${esc(guild.name)}</h1>
@@ -293,7 +293,7 @@ function renderUploadForm(guild: DiscordGuild, session: WebSession): string {
             familyName: p.name || p.familyName || '',
             kills: parseInt(p.kills) || 0,
             deaths: parseInt(p.deaths) || 0,
-            assists: parseInt(p.assists) || 0,
+            assists: parseInt(p.streak ?? p.assists) || 0,
             damageDealt: parseInt(p.damage) || 0,
             damageTaken: parseInt(p.taken) || 0,
             crowdControls: parseInt(p.cc) || 0,
@@ -389,7 +389,7 @@ function renderManualEntryForm(guild: DiscordGuild, session: WebSession): string
     result: "loss",
     title: "Node War",
     players: [
-      { name: "PlayerName", kills: 0, deaths: 0, assists: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }
+      { name: "PlayerName", kills: 0, deaths: 0, streak: 0, damage: 0, taken: 0, cc: 0, healed: 0, support: 0, fort: 0 }
     ]
   }, null, 2);
 
@@ -410,7 +410,8 @@ function renderManualEntryForm(guild: DiscordGuild, session: WebSession): string
         2. Open a text editor (Notepad, VS Code, etc.) and paste the template.<br>
         3. Fill in player names and stats, duplicate the player object for each player.<br>
         4. Paste the entire JSON into the textarea and click Save.<br><br>
-        <strong>Fields:</strong> kills, deaths, assists, damage, taken, cc, healed, support, fort
+        <strong>Fields:</strong> kills, deaths, streak, damage, taken, cc, healed, support, fort<br>
+        <span>Note: older saved payloads using the legacy third-column key still import as Streak.</span>
       </div>
       <div style="grid-column:1/-1;display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-3);">
         <button type="button" class="button button-secondary button-sm" id="copy-template-btn" onclick="navigator.clipboard.writeText(document.getElementById('json-template').textContent).then(function(){var b=document.getElementById('copy-template-btn');b.textContent='✓ Copied!';setTimeout(function(){b.textContent='Copy JSON Template'},2000)})">Copy JSON Template</button>
@@ -573,7 +574,7 @@ function renderScoreTableTabs(
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         Impact formula
       </button>
-      <span style="margin-left:auto;font-size:var(--text-xs);color:var(--text-muted);align-self:center;padding-right:var(--space-4);">Kills 20% · Assists 10% · Damage 20% · Fort 30% · Obj 10% · Survive 10%</span>
+      <span style="margin-left:auto;font-size:var(--text-xs);color:var(--text-muted);align-self:center;padding-right:var(--space-4);">Kills 20% · Streak 10% · Damage 20% · Fort 30% · Obj 10% · Survive 10%</span>
     </div>
     <div style="padding:var(--space-5);">
       <div class="score-tab-panel is-active" data-tab-panel="scoreboard-totals">
@@ -725,7 +726,7 @@ function renderCompactScoreTable(
   return `<div class="dashboard-table-wrap">
     <div class="dashboard-table-header">
       <span class="chart-card-title">Scoreboard Totals</span>
-      <span class="chart-card-subtitle">Fort 35% · Damage 25% · Objective 20% · Kills 10% · Assist 5% · Surv 5%</span>
+      <span class="chart-card-subtitle">Fort 35% · Damage 25% · Objective 20% · Kills 10% · Streak 5% · Surv 5%</span>
     </div>
     <div class="dashboard-table-scroll">
       <table class="table" data-score-table data-score-sort="${sortKey}">
@@ -776,7 +777,7 @@ function renderImpactSection(impactScores: PlayerImpactScore[]): string {
       <td colspan="5" style="padding:var(--space-2) var(--space-4);">
         <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
           ${renderImpactChip("K", impact.killsScore, "kills")}
-          ${renderImpactChip("A", impact.assistsScore, "assists")}
+          ${renderImpactChip("STK", impact.assistsScore, "streak")}
           ${renderImpactChip("DMG", impact.damageScore, "damage")}
           ${renderImpactChip("FORT", impact.structureScore, "structure")}
           ${renderImpactChip("OBJ", impact.objectiveScore, "objective")}
@@ -994,7 +995,7 @@ export function renderScoreReportEditorPage(
                   <th>Player</th>
                   <th>K</th>
                   <th>D</th>
-                  <th>A</th>
+                  <th>Streak</th>
                   <th>Damage</th>
                   <th>Taken</th>
                   <th>Structure</th>
@@ -1231,7 +1232,7 @@ function renderChartsScript(players: PlayerScoreAggregate[], reports: ScoreRepor
           datasets: [
             { label: 'Kills', data: ${JSON.stringify(top10.map(p => p.kills))}, backgroundColor: 'rgba(99, 102, 241, 0.85)', borderColor: '#6366f1', borderWidth: 0, borderRadius: 4 },
             { label: 'Deaths', data: ${JSON.stringify(top10.map(p => p.deaths))}, backgroundColor: 'rgba(244, 63, 94, 0.85)', borderColor: '#f43f5e', borderWidth: 0, borderRadius: 4 },
-            { label: 'Assists', data: ${JSON.stringify(top10.map(p => p.assists))}, backgroundColor: 'rgba(16, 185, 129, 0.85)', borderColor: '#10b981', borderWidth: 0, borderRadius: 4 }
+            { label: 'Streak', data: ${JSON.stringify(top10.map(p => p.assists))}, backgroundColor: 'rgba(16, 185, 129, 0.85)', borderColor: '#10b981', borderWidth: 0, borderRadius: 4 }
           ]
         },
         options: {

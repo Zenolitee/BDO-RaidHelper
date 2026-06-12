@@ -18,6 +18,10 @@ body {
   line-height: var(--leading-normal);
   color: var(--text-primary);
   background: var(--bg-base);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(10, 15, 30, 0.5) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(10, 15, 30, 0.3) 0%, transparent 60%);
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
@@ -50,7 +54,11 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
 }
 
-h1 { font-size: var(--text-3xl); }
+h1 {
+  font-weight: 800;
+  font-size: var(--text-3xl);
+  letter-spacing: -0.025em;
+}
 h2 { font-size: var(--text-2xl); }
 h3 { font-size: var(--text-xl); }
 h4 { font-size: var(--text-lg); }
@@ -94,4 +102,52 @@ small {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
+}
+
+/* ── Decorative Greek Key Border ──────────────────────────────── */
+/* Subtle repeating-meander pattern using CSS gradients.
+   Use via .greek-border-top / .greek-border-bottom classes. */
+
+.greek-border-top,
+.greek-border-bottom {
+  position: relative;
+}
+
+.greek-border-top::before,
+.greek-border-bottom::after {
+  content: "";
+  display: block;
+  height: 3px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      var(--border-subtle) 0px,
+      var(--border-subtle) 6px,
+      transparent 6px,
+      transparent 8px,
+      var(--border-subtle) 8px,
+      var(--border-subtle) 10px,
+      transparent 10px,
+      transparent 12px,
+      var(--border-subtle) 12px,
+      var(--border-subtle) 18px,
+      transparent 18px,
+      transparent 20px
+    );
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.greek-border-top::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.greek-border-bottom::after {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
 }
