@@ -9,7 +9,9 @@ import {
   Interaction,
   Message,
   ModalSubmitInteraction,
+  REST,
   RoleSelectMenuInteraction,
+  Routes,
   StringSelectMenuInteraction,
 } from "discord.js";
 import { config } from "./config.js";
@@ -23,6 +25,8 @@ import { aggregateScoreRows, consumeScoreGeminiQuota, normalizePlayerName } from
 import { type ScoreReportResult, type ScoreRow } from "./score-types.js";
 import { type GroupKey, type WarDay, type WarEvent } from "./types.js";
 import { prepareAthenaReport, buildAthenaReportEmbed } from "./athena-report.js";
+import { commands } from "./commands.js";
+
 
 // --- Bot modules ---
 import {
@@ -116,6 +120,27 @@ export function createDiscordClient(store: EventStore, options: DiscordClientOpt
       activities: [{ name: "Meow", type: ActivityType.Listening }],
       status: "online"
     });
+
+    // Auto-register slash commands so they appear in every server the bot joins.
+    const rest = new REST({ version: "10" }).setToken(config.discordToken!);
+    const clientId = config.discordClientId!;
+    const registerGlobal = process.env.REGISTER_COMMANDS_GLOBAL !== "false";
+    try {
+      if (registerGlobal) {
+        await rest.put(Routes.applicationCommands(clientId), { body: commands });
+        console.log(`Registered ${commands.length} commands globally.`);
+      } else {
+        const guildIds = (process.env.DISCORD_GUILD_IDS ?? config.discordGuildId ?? "")
+          .split(",").map((g) => g.trim()).filter(Boolean);
+        for (const guildId of guildIds) {
+          await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+          console.log(`Registered ${commands.length} commands for guild ${guildId}.`);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to register slash commands:", error);
+    }
+
     await refreshOpenEventMessages(client, store).catch((error) => {
       console.warn("Could not refresh open event messages:", error);
     });
@@ -184,7 +209,6 @@ async function handleCommand(
   }
 
   if (interaction.commandName === "export") {
-    await requireOfficer(interaction);
     if (interaction.options.getSubcommand() === "stats") {
       await exportStats(interaction, options.scoreStore);
     }
