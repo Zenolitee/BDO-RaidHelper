@@ -286,6 +286,9 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
   lines.push(
     padEnd("MVP", COL_LEFT) + "| Guild Stats"
   );
+  lines.push(
+    "-".repeat(COL_LEFT - 2) + "|" + "-".repeat(COL_RIGHT - 1)
+  );
 
   // Left column: MVP name + medals + stats
   // Right column: guild stats
