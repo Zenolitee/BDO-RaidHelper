@@ -284,7 +284,7 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
 
   // Header
   lines.push(
-    padEnd("MVP", COL_LEFT) + "| Guild Stats"
+    padEnd("MVP", COL_LEFT) + " | Guild Stats"
   );
   lines.push(
     "-".repeat(COL_LEFT - 2) + "|" + "-".repeat(COL_RIGHT - 1)
