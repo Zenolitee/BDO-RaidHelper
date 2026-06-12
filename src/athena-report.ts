@@ -265,10 +265,6 @@ function buildDescription(report: AthenaFullReport): string {
   parts.push("");
   parts.push(buildSummaryCodeBlock(report));
 
-  // --- Divider ---
-  parts.push("");
-  parts.push("\u2501".repeat(52));
-
   // --- Scoreboard table code block ---
   parts.push("");
   parts.push(buildTableCodeBlock(report));
@@ -328,13 +324,11 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
   // MVP detailed stats (below medals)
   if (report.mvp) {
     const mvp = report.mvp.player;
-    left.push(
-      `${formatStat(mvp.kills)} K / ${formatStat(mvp.deaths)} D \u00B7 ${kdRatio(mvp)} K/D`
-    );
     const avgDamage = mvp.participations > 0 ? Math.round(mvp.damageDealt / mvp.participations) : mvp.damageDealt;
-    left.push(`${formatStat(avgDamage)} Damage (avg/war)`);
+    left.push(
+      `${formatStat(mvp.kills)} K / ${formatStat(mvp.deaths)} D \u00B7 ${kdRatio(mvp)} K/D \u00B7 ${formatStat(avgDamage)} Dmg`
+    );
     right.push(`\uD83D\uDCC1 Reports: ${report.reportCount}`);
-    right.push("");
   }
 
   while (left.length < right.length) left.push("");
