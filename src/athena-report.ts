@@ -350,44 +350,46 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
 // Scoreboard table code block
 // ---------------------------------------------------------------------------
 
-const TABLE_RANK = 4;
-const TABLE_NAME = 16;
-const TABLE_KILLS = 6;
-const TABLE_DEATHS = 7;
-const TABLE_KD = 5;
-const TABLE_DMG = 8;
-const TABLE_WARS = 5;
+const TABLE_RANK = 2;
+const TABLE_NAME = 11;
+const TABLE_KILLS = 4;
+const TABLE_DEATHS = 4;
+const TABLE_KD = 4;
+const TABLE_DMG = 4;
+const TABLE_WARS = 3;
 
 function buildTableCodeBlock(report: AthenaFullReport): string {
   const lines: string[] = [];
+  const SEP = " | ";
 
   // Header
   lines.push(
-    padEnd("Rank", TABLE_RANK) + " | " +
-    padEnd("Player", TABLE_NAME) + " | " +
-    padStart("Kills", TABLE_KILLS) + " | " +
-    padStart("Deaths", TABLE_DEATHS) + " | " +
-    padStart("K/D", TABLE_KD) + " | " +
-    padStart("Damage", TABLE_DMG) + " | " +
+    padEnd("Rk", TABLE_RANK) + SEP +
+    padEnd("Player", TABLE_NAME) + SEP +
+    padStart("Kills", TABLE_KILLS) + SEP +
+    padStart("Deaths", TABLE_DEATHS) + SEP +
+    padStart("K/D", TABLE_KD) + SEP +
+    padStart("Dmg", TABLE_DMG) + SEP +
     padStart("Wars", TABLE_WARS)
   );
 
   // Separator
   const sepLen =
-    TABLE_RANK + 3 + TABLE_NAME + 3 + TABLE_KILLS + 3 + TABLE_DEATHS +
-    3 + TABLE_KD + 3 + TABLE_DMG + 3 + TABLE_WARS;
+    TABLE_RANK + SEP.length + TABLE_NAME + SEP.length + TABLE_KILLS +
+    SEP.length + TABLE_DEATHS + SEP.length + TABLE_KD + SEP.length +
+    TABLE_DMG + SEP.length + TABLE_WARS;
   lines.push("-".repeat(sepLen));
 
   // Data rows
   for (const entry of report.rankings) {
     const name = truncate(entry.player.familyName, TABLE_NAME);
     lines.push(
-      padStart(String(entry.rank), TABLE_RANK) + " | " +
-      padEnd(name, TABLE_NAME) + " | " +
-      padStart(String(entry.player.kills), TABLE_KILLS) + " | " +
-      padStart(String(entry.player.deaths), TABLE_DEATHS) + " | " +
-      padStart(entry.kd, TABLE_KD) + " | " +
-      padStart(entry.damageFmt, TABLE_DMG) + " | " +
+      padStart(String(entry.rank), TABLE_RANK) + SEP +
+      padEnd(name, TABLE_NAME) + SEP +
+      padStart(String(entry.player.kills), TABLE_KILLS) + SEP +
+      padStart(String(entry.player.deaths), TABLE_DEATHS) + SEP +
+      padStart(entry.kd, TABLE_KD) + SEP +
+      padStart(entry.damageFmt, TABLE_DMG) + SEP +
       padStart(String(entry.player.participations), TABLE_WARS)
     );
   }
