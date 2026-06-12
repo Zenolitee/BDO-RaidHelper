@@ -295,7 +295,7 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
   const left: string[] = [];
   const right: string[] = [];
 
-  // MVP header line
+  // Trophy + MVP name
   if (report.mvp) {
     left.push(`\uD83C\uDFC6 ${truncate(report.mvp.player.familyName, 22)}`);
   } else {
@@ -303,33 +303,24 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
   }
   right.push(`\u2694\uFE0F Total Kills: ${report.totalKills}`);
 
-  // Medal lines (top 3)
+  // MVP stats on next line
+  if (report.mvp) {
+    const mvp = report.mvp.player;
+    left.push(`MVP AVG KD - ${kdRatio(mvp)} K/D`);
+    right.push(`\uD83D\uDC80 Total Deaths: ${report.totalDeaths}`);
+  }
+
+  // Medal lines (ranks 2, 3, 4 — not the MVP)
   const medals = ["\uD83E\uDD47", "\uD83E\uDD48", "\uD83E\uDD49"];
-  const podium = report.rankings.slice(0, 3);
+  const podium = report.rankings.slice(1, 4);
   for (const entry of podium) {
-    left.push(`${medals[entry.rank - 1]} ${truncate(entry.player.familyName, 24)}`);
+    left.push(`${medals[entry.rank - 2]} ${truncate(entry.player.familyName, 24)}`);
   }
   // Pad right column to match podium lines
   const podiumCount = podium.length;
-  if (podiumCount > 0) {
-    right.push(`\uD83D\uDC80 Total Deaths: ${report.totalDeaths}`);
-    if (podiumCount >= 2) right.push(`\uD83D\uDCCA Guild K/D: ${report.guildKd}`);
-    if (podiumCount >= 3) right.push(`\uD83D\uDC65 Players: ${report.playerCount}`);
-  }
-
-  // Pad left to match right length
-  while (left.length < right.length) left.push("");
-  while (right.length < left.length) right.push("");
-
-  // MVP detailed stats (below medals)
-  if (report.mvp) {
-    const mvp = report.mvp.player;
-    const avgDamage = mvp.participations > 0 ? Math.round(mvp.damageDealt / mvp.participations) : mvp.damageDealt;
-    left.push(
-      `${mvp.kills}K|${mvp.deaths}D|${kdRatio(mvp)} K/D|${formatStat(avgDamage)} Dmg`
-    );
-    right.push(`\uD83D\uDCC1 Reports: ${report.reportCount}`);
-  }
+  if (podiumCount >= 1) right.push(`\uD83D\uDCCA Guild K/D: ${report.guildKd}`);
+  if (podiumCount >= 2) right.push(`\uD83D\uDC65 Players: ${report.playerCount}`);
+  if (podiumCount >= 3) right.push(`\uD83D\uDCC1 Reports: ${report.reportCount}`);
 
   while (left.length < right.length) left.push("");
   while (right.length < left.length) right.push("");
