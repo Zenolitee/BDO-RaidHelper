@@ -331,7 +331,8 @@ function buildSummaryCodeBlock(report: AthenaFullReport): string {
     left.push(
       `${formatStat(mvp.kills)} K / ${formatStat(mvp.deaths)} D \u00B7 ${kdRatio(mvp)} K/D`
     );
-    left.push(`${formatStat(mvp.damageDealt)} Damage`);
+    const avgDamage = mvp.participations > 0 ? Math.round(mvp.damageDealt / mvp.participations) : mvp.damageDealt;
+    left.push(`${formatStat(avgDamage)} Damage (avg/war)`);
     right.push(`\uD83D\uDCC1 Reports: ${report.reportCount}`);
     right.push("");
   }
