@@ -119,7 +119,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use("/assets", express.static("src/public"));
-  app.use("/images/classes", express.static("images"));
+  app.use("/images/classes", express.static("images/classes"));
   app.use((_request, response, next) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Pragma", "no-cache");
