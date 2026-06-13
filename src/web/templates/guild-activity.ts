@@ -152,7 +152,7 @@ export function renderGuildActivityPage(
 
     function loadGuildProfile(name, region) {
       guildProfile.style.display = 'block';
-      guildProfile.innerHTML = '<div style="padding:var(--space-6);text-align:center;color:var(--text-muted);">Loading guild profile...</div>';
+      guildProfile.innerHTML = '<div style="padding:var(--space-8);text-align:center;color:var(--text-muted);">Loading guild profile...</div>';
 
       var url = '/api/bdo/guilds/search?q=' + encodeURIComponent(name) + '&region=' + encodeURIComponent(region);
       fetch(url)
@@ -162,17 +162,37 @@ export function renderGuildActivityPage(
           if (!g) { guildProfile.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--text-muted);">Guild not found</div>'; return; }
 
           var createdDate = g.createdOn ? new Date(g.createdOn).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown';
+          var guildUrl = region === 'ASIA'
+            ? 'https://blackdesert.pearlabyss.com/Asia/en-US/Game/Guild/Profile?_regionType=1&_guildName=' + encodeURIComponent(g.name)
+            : '#';
+
           guildProfile.innerHTML =
-            '<div style="padding:var(--space-4);background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:var(--radius-md);">' +
-              '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-                '<div>' +
-                  '<div style="font-size:var(--text-lg);font-weight:700;">' + esc(g.name) + '</div>' +
-                  '<div style="margin-top:2px;color:var(--text-muted);font-size:var(--text-sm);">' + esc(g.region) + ' · Founded ' + createdDate + '</div>' +
+            '<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">' +
+              '<div style="padding:var(--space-5);background:linear-gradient(135deg,var(--bg-surface),var(--bg-elevated));border-bottom:1px solid var(--border);">' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-4);">' +
+                  '<div style="min-width:0;">' +
+                    '<div style="font-size:var(--text-xl);font-weight:800;color:var(--text-primary);letter-spacing:-0.01em;">' + esc(g.name) + '</div>' +
+                    '<div style="display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-2);color:var(--text-secondary);font-size:var(--text-sm);">' +
+                      '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>' + esc(g.region) + '</span>' +
+                      '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Founded ' + createdDate + '</span>' +
+                    '</div>' +
+                  '</div>' +
+                  (region === 'ASIA' ? '<a href="' + guildUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:var(--accent-muted);border:1px solid var(--accent-border);border-radius:var(--radius-md);color:var(--accent);font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseenter="this.style.background=\'var(--accent-glow)\'" onmouseleave="this.style.background=\'var(--accent-muted)\'">View on PA <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>' : '') +
                 '</div>' +
               '</div>' +
-              '<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);">' +
-                '<div style="padding:6px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;min-width:80px;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Members</div><div style="font-weight:700;">' + (g.population || '—') + '</div></div>' +
-                (g.master ? '<div style="padding:6px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;min-width:80px;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Master</div><div style="font-weight:700;">' + esc(g.master) + '</div></div>' : '') +
+              '<div style="padding:var(--space-5);display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--space-3);">' +
+                '<div style="padding:var(--space-3) var(--space-4);background:linear-gradient(135deg,rgba(201,154,46,0.06),rgba(201,154,46,0.02));border:1px solid var(--accent-border);border-radius:var(--radius-md);text-align:center;">' +
+                  '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Members</div>' +
+                  '<div style="font-size:var(--text-lg);font-weight:800;color:var(--accent);">' + (g.population || '—') + '</div>' +
+                '</div>' +
+                (g.master ? '<div style="padding:var(--space-3) var(--space-4);background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(139,92,246,0.02));border:1px solid rgba(139,92,246,0.2);border-radius:var(--radius-md);text-align:center;">' +
+                  '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Guild Master</div>' +
+                  '<div style="font-weight:700;color:var(--text-primary);">' + esc(g.master) + '</div>' +
+                '</div>' : '') +
+                '<div style="padding:var(--space-3) var(--space-4);background:linear-gradient(135deg,rgba(65,182,255,0.06),rgba(65,182,255,0.02));border:1px solid rgba(65,182,255,0.2);border-radius:var(--radius-md);text-align:center;">' +
+                  '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Region</div>' +
+                  '<div style="font-weight:700;color:var(--text-primary);">' + esc(g.region) + '</div>' +
+                '</div>' +
               '</div>' +
             '</div>';
         })
@@ -234,7 +254,7 @@ export function renderGuildActivityPage(
 
     function loadProfile(profileTarget, region, familyName) {
       profileDiv.style.display = 'block';
-      profileDiv.innerHTML = '<div style="padding:var(--space-6);text-align:center;color:var(--text-muted);">Loading profile...</div>';
+      profileDiv.innerHTML = '<div style="padding:var(--space-8);text-align:center;color:var(--text-muted);">Loading profile...</div>';
 
       var nameParam = familyName ? '&name=' + encodeURIComponent(familyName) : '';
       fetch('/api/bdo/players/' + encodeURIComponent(profileTarget) + '?region=' + encodeURIComponent(region) + nameParam)
@@ -242,46 +262,88 @@ export function renderGuildActivityPage(
         .then(function(p) {
           if (p.error) { profileDiv.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--text-muted);">' + esc(p.error) + '</div>'; return; }
 
-          var chars = '';
-          if (p.characters && p.characters.length) {
-            chars = '<div style="margin-top:var(--space-3);"><h4 style="margin:0 0 var(--space-2);font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Characters</h4><div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">' +
-              p.characters.map(function(c) {
-                var badge = c.main ? ' <span style="font-size:10px;background:rgba(34,197,94,0.15);color:var(--color-green,#22c55e);padding:1px 6px;border-radius:99px;">MAIN</span>' : '';
-                return '<div style="padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--text-sm);"><strong>' + esc(c.name) + '</strong>' + badge + '<div style="font-size:11px;color:var(--text-muted);">' + esc(c.class) + (c.level ? ' · Lv.' + c.level : '') + '</div></div>';
-              }).join('') + '</div></div>';
-          }
-
-          var statsItems = [];
-          var gs = p.gs || p.gearScore;
-          var contrib = p.contributionPoints || p.contribution;
-          if (gs) statsItems.push({ l: 'GS', v: String(gs) });
-          if (p.combatFame) statsItems.push({ l: 'Combat Fame', v: String(p.combatFame) });
-          if (p.lifeFame) statsItems.push({ l: 'Life Fame', v: String(p.lifeFame) });
-          if (contrib) statsItems.push({ l: 'Contrib', v: String(contrib) });
-          if (p.energy) statsItems.push({ l: 'Energy', v: String(p.energy) });
-          var stats = statsItems.length ? '<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);">' + statsItems.map(function(s) {
-            return '<div style="padding:6px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;min-width:80px;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">' + esc(s.l) + '</div><div style="font-weight:700;">' + esc(s.v) + '</div></div>';
-          }).join('') + '</div>' : '';
-
-          var createdDate = p.createdOn ? new Date(p.createdOn).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+          var createdDate = p.createdOn ? new Date(p.createdOn).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
           var profileUrl = region === 'ASIA'
             ? 'https://blackdesert.pearlabyss.com/Asia/en-US/Game/Profile/Search?_keyword=' + encodeURIComponent(p.familyName)
             : 'https://www.naeu.playblackdesert.com/en-US/Profile?_target=' + encodeURIComponent(p.profileTarget);
 
-          profileDiv.innerHTML =
-            '<div style="padding:var(--space-4);background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:var(--radius-md);">' +
-              '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
-                '<div>' +
-                  '<div style="font-size:var(--text-lg);font-weight:700;">' + esc(p.familyName) + '</div>' +
-                  '<div style="margin-top:2px;display:flex;gap:var(--space-3);color:var(--text-muted);font-size:var(--text-sm);">' +
-                    (p.guild ? '<span>Guild: <strong style="color:var(--text-primary);">' + esc(p.guild) + '</strong></span>' : '') +
-                    '<span>' + esc(p.region) + '</span>' +
-                    (createdDate ? '<span>Joined ' + createdDate + '</span>' : '') +
-                  '</div>' +
-                '</div>' +
-                '<a href="' + profileUrl + '" target="_blank" rel="noopener" class="button button-ghost button-sm" style="text-decoration:none;font-size:var(--text-xs);">PA Profile ↗</a>' +
+          // ── Stats row ──
+          var gs = p.gs || p.gearScore;
+          var contrib = p.contributionPoints || p.contribution;
+          var statsHtml = '';
+          var statsItems = [];
+          if (gs) statsItems.push({ l: 'Gear Score', v: String(gs), color: '#f59e0b' });
+          if (contrib) statsItems.push({ l: 'Contribution', v: String(contrib), color: '#8b5cf6' });
+          if (p.energy) statsItems.push({ l: 'Energy', v: String(p.energy), color: '#3b82f6' });
+          if (p.combatFame) statsItems.push({ l: 'Combat Fame', v: String(p.combatFame), color: '#ef4444' });
+          if (p.lifeFame) statsItems.push({ l: 'Life Fame', v: String(p.lifeFame), color: '#22c55e' });
+          if (statsItems.length) {
+            statsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:var(--space-3);margin-top:var(--space-4);">' +
+              statsItems.map(function(s) {
+                return '<div style="padding:var(--space-3) var(--space-4);background:linear-gradient(135deg,' + s.color + '08,' + s.color + '03);border:1px solid ' + s.color + '25;border-radius:var(--radius-md);text-align:center;">' +
+                  '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">' + esc(s.l) + '</div>' +
+                  '<div style="font-size:var(--text-lg);font-weight:800;color:' + s.color + ';">' + esc(s.v) + '</div>' +
+                '</div>';
+              }).join('') + '</div>';
+          }
+
+          // ── Characters grid ──
+          var charsHtml = '';
+          if (p.characters && p.characters.length) {
+            // Sort: main first, then by level desc
+            var sorted = p.characters.slice().sort(function(a, b) {
+              if (a.main && !b.main) return -1;
+              if (!a.main && b.main) return 1;
+              return (b.level || 0) - (a.level || 0);
+            });
+            charsHtml = '<div style="margin-top:var(--space-5);">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-3);">' +
+                '<h4 style="margin:0;font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">Characters</h4>' +
+                '<span style="font-size:var(--text-xs);color:var(--text-muted);">' + p.characters.length + ' total</span>' +
               '</div>' +
-              chars + stats +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--space-2);">' +
+                sorted.map(function(c) {
+                  var mainBadge = c.main ? '<span style="display:inline-block;font-size:9px;font-weight:700;background:linear-gradient(135deg,rgba(34,197,94,0.18),rgba(34,197,94,0.08));color:#22c55e;padding:1px 6px;border-radius:99px;margin-left:6px;letter-spacing:0.04em;vertical-align:middle;">MAIN</span>' : '';
+                  var levelBar = c.level ? '<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--border);border-radius:0 0 var(--radius-sm) var(--radius-sm);overflow:hidden;"><div style="height:100%;width:' + Math.min(100, (c.level / 70) * 100) + '%;background:linear-gradient(90deg,var(--accent),var(--accent-hover));border-radius:0 0 var(--radius-sm) var(--radius-sm);"></div></div>' : '';
+                  return '<div style="position:relative;padding:var(--space-3) var(--space-3) var(--space-3);background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;transition:border-color 0.15s,background 0.15s;" onmouseenter="this.style.borderColor=\'' + (c.main ? 'var(--accent)' : 'var(--border-strong)') + '\';this.style.background=\'var(--bg-surface-hover)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.background=\'var(--bg-surface)\'">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                      '<div style="min-width:0;">' +
+                        '<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.name) + mainBadge + '</div>' +
+                        '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">' + esc(c.class) + '</div>' +
+                      '</div>' +
+                      (c.level ? '<div style="font-size:var(--text-sm);font-weight:700;color:var(--accent);white-space:nowrap;">Lv. ' + c.level + '</div>' : '') +
+                    '</div>' +
+                    levelBar +
+                  '</div>';
+                }).join('') +
+              '</div>' +
+            '</div>';
+          }
+
+          // ── Profile card ──
+          profileDiv.innerHTML =
+            '<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">' +
+              // Header banner
+              '<div style="padding:var(--space-5) var(--space-5) var(--space-4);background:linear-gradient(135deg,var(--bg-surface),var(--bg-elevated));border-bottom:1px solid var(--border);">' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-4);">' +
+                  '<div style="min-width:0;">' +
+                    '<div style="font-size:var(--text-xl);font-weight:800;color:var(--text-primary);letter-spacing:-0.01em;">' + esc(p.familyName) + '</div>' +
+                    '<div style="display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-2);color:var(--text-secondary);font-size:var(--text-sm);">' +
+                      (p.guild ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' + esc(p.guild) + '</span>' : '') +
+                      '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>' + esc(p.region) + '</span>' +
+                      (createdDate ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(createdDate) + '</span>' : '') +
+                    '</div>' +
+                  '</div>' +
+                  '<a href="' + profileUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:var(--accent-muted);border:1px solid var(--accent-border);border-radius:var(--radius-md);color:var(--accent);font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseenter="this.style.background=\'var(--accent-glow)\'" onmouseleave="this.style.background=\'var(--accent-muted)\'">' +
+                    'View on PA <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+                  '</a>' +
+                '</div>' +
+              '</div>' +
+              // Body
+              '<div style="padding:var(--space-5);">' +
+                statsHtml +
+                charsHtml +
+              '</div>' +
             '</div>';
         })
         .catch(function() { profileDiv.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--text-muted);">Failed to load profile</div>'; });
