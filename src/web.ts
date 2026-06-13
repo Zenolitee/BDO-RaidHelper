@@ -452,11 +452,26 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const familyNameOrTarget = typeof request.query.name === "string" ? request.query.name : profileTarget;
     try {
       if (region === "ASIA") {
-        const { searchAsiaPlayers } = await import("./integrations/bdo-asia.js");
+        const { searchAsiaPlayers, getAsiaPlayerProfile } = await import("./integrations/bdo-asia.js");
+        // First search to get the profileTarget for the profile page
         const results = await searchAsiaPlayers(familyNameOrTarget, "familyName");
         const match = results.find((p) => p.familyName.toLowerCase() === familyNameOrTarget.toLowerCase()) ?? results[0];
         if (match) {
-          response.json({ familyName: match.familyName, guild: match.guildName, mainCharacter: match.mainCharacter, profileTarget: match.profileTarget, region: "ASIA", characters: [] });
+          // Fetch the full profile page
+          const profile = await getAsiaPlayerProfile(match.profileTarget);
+          if (profile) {
+            response.json({
+              familyName: profile.familyName,
+              guild: profile.guildName,
+              mainCharacter: profile.characters.find((c) => c.main)?.name ?? profile.characters[0]?.name ?? null,
+              characters: profile.characters.map((c) => ({ name: c.name, class: c.class, level: c.level, main: c.main })),
+              createdOn: profile.createdOn,
+              region: "ASIA",
+              profileTarget: match.profileTarget,
+            });
+          } else {
+            response.json({ familyName: match.familyName, guild: match.guildName, mainCharacter: match.mainCharacter, profileTarget: match.profileTarget, region: "ASIA", characters: [] });
+          }
         } else {
           response.status(404).json({ error: "Player not found" });
         }

@@ -18,6 +18,13 @@ export interface AsiaPlayerSearchResult {
   mainCharacter: string | null;
 }
 
+export interface AsiaPlayerProfile {
+  familyName: string;
+  guildName: string | null;
+  createdOn: string | null;
+  characters: Array<{ name: string; class: string; level: number | null; main?: boolean }>;
+}
+
 export interface AsiaGuildProfile {
   name: string;
   createdOn: string | null;
@@ -104,6 +111,86 @@ function parsePlayerSearchResults(html: string): AsiaPlayerSearchResult[] {
   }
 
   return results;
+}
+
+/**
+ * Fetches the PA Asia player profile page and parses character and profile data.
+ */
+export async function getAsiaPlayerProfile(profileTarget: string): Promise<AsiaPlayerProfile | null> {
+  const url = `${BASE_URL}/Game/Profile/Adventure?_target=${encodeURIComponent(profileTarget)}`;
+
+  const response = await fetch(url, {
+    headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) return null;
+
+  const html = await response.text();
+  return parsePlayerProfile(html);
+}
+
+function parsePlayerProfile(html: string): AsiaPlayerProfile | null {
+  // Extract family name from title or profile header
+  const familyMatch = html.match(/<h2[^>]*class="[^"]*family[^"]*"[^>]*>([^<]+)/i)
+    || html.match(/<span[^>]*class="[^"]*family_name[^"]*"[^>]*>([^<]+)/i);
+  const familyName = familyMatch ? decodeHtmlEntities(familyMatch[1]) : null;
+  if (!familyName) return null;
+
+  // Extract creation date
+  const createdMatch = html.match(/Created On<\/span>\s*<span[^>]*>\s*<span[^>]*>([^<]+)/i)
+    || html.match(/Family Created On\s*([\w\s,:.]+\d{4})/i);
+  const createdOn = createdMatch ? decodeHtmlEntities(createdMatch[1]).trim() : null;
+
+  // Extract guild
+  const guildMatch = html.match(/Joined Guild<\/span>\s*<span[^>]*>\s*<span[^>]*>([^<]+)/i)
+    || html.match(/Joined Guild\s+([^\s<]+)/i);
+  const guildName = guildMatch ? decodeHtmlEntities(guildMatch[1]) : null;
+
+  // Extract characters from profile_list section
+  const characters = parseCharacterList(html);
+
+  return { familyName, guildName, createdOn, characters };
+}
+
+function parseCharacterList(html: string): Array<{ name: string; class: string; level: number | null; main?: boolean }> {
+  const characters: Array<{ name: string; class: string; level: number | null; main?: boolean }> = [];
+
+  // Match pattern: "CharName ClassName Lv. XX" in the profile list
+  // The PA Asia page shows: <a href="...">CharName</a> followed by class and level
+  const listSection = html.match(/profile_list[\s\S]*?<\/ul>/i);
+  if (!listSection) return characters;
+
+  const listHtml = listSection[0];
+
+  // Extract character entries: Name Class Lv. XX
+  // Pattern: <a href="...">CharName</a> ... <span class="class_name">ClassName</span> ... <span class="level">Lv. XX</span>
+  const charRegex = /<a[^>]*>([^<]+)<\/a>[\s\S]*?class_name[^>]*>\s*([^<]+)<[\s\S]*?level[^>]*>\s*(?:Lv\.\s*)?(\d+)/gi;
+  let match;
+  while ((match = charRegex.exec(listHtml)) !== null) {
+    const name = decodeHtmlEntities(match[1]).trim();
+    const cls = decodeHtmlEntities(match[2]).trim();
+    const level = parseInt(match[3], 10);
+    // Check if this character has "Main Character" nearby
+    const beforeMatch = listHtml.substring(Math.max(0, match.index - 200), match.index);
+    const isMain = /main\s*character/i.test(beforeMatch);
+    characters.push({ name, class: cls, level: level || null, main: isMain || undefined });
+  }
+
+  // Fallback: simpler pattern without class_name span
+  if (characters.length === 0) {
+    const simpleRegex = /<a[^>]*>([^<]+)<\/a>[\s\S]*?Lv\.\s*(\d+)/gi;
+    while ((match = simpleRegex.exec(listHtml)) !== null) {
+      const name = decodeHtmlEntities(match[1]).trim();
+      const level = parseInt(match[2], 10);
+      // Try to find class name nearby
+      const afterMatch = listHtml.substring(match.index, match.index + 200);
+      const classMatch = afterMatch.match(/class_name[^>]*>\s*([^<]+)/i) || afterMatch.match(/(?:Shai|Sorceress|Witch|Berserker|Musa|Warrior|Dusa|Deadeye|Drakania|Mystic|Maegu|Woosa|Ninja|Tamer|Hashashin|Nova|Dark Knight|Valkyrie|Archer|Sage|Seraph)/i);
+      const cls = classMatch ? decodeHtmlEntities(classMatch[1]).trim() : "Unknown";
+      characters.push({ name, class: cls, level: level || null });
+    }
+  }
+
+  return characters;
 }
 
 /**
