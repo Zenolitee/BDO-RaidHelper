@@ -304,14 +304,15 @@ export function renderGuildActivityPage(
               '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--space-2);">' +
                 sorted.map(function(c) {
                   var mainBadge = c.main ? '<span style="display:inline-block;font-size:9px;font-weight:700;background:linear-gradient(135deg,rgba(34,197,94,0.18),rgba(34,197,94,0.08));color:#22c55e;padding:1px 6px;border-radius:99px;margin-left:6px;letter-spacing:0.04em;vertical-align:middle;">MAIN</span>' : '';
-                  var levelBar = c.level ? '<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--border);border-radius:0 0 var(--radius-sm) var(--radius-sm);overflow:hidden;"><div style="height:100%;width:' + Math.min(100, (c.level / 70) * 100) + '%;background:linear-gradient(90deg,var(--accent),var(--accent-hover));border-radius:0 0 var(--radius-sm) var(--radius-sm);"></div></div>' : '';
-                  return '<div style="position:relative;padding:var(--space-3) var(--space-3) var(--space-3);background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;transition:border-color 0.15s,background 0.15s;" onmouseenter="this.style.borderColor=\'' + (c.main ? 'var(--accent)' : 'var(--border-strong)') + '\';this.style.background=\'var(--bg-surface-hover)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.background=\'var(--bg-surface)\'">' +
+                  var levelBar = c.level ? '<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:#3a2b18;border-radius:0 0 6px 6px;overflow:hidden;"><div style="height:100%;width:' + Math.min(100, (c.level / 70) * 100) + '%;background:linear-gradient(90deg,#c99a2e,#f2b84b);border-radius:0 0 6px 6px;"></div></div>' : '';
+                  var hoverColor = c.main ? '#c99a2e' : '#524020';
+                  return '<div class="char-card" data-hover-border="' + hoverColor + '" style="position:relative;padding:var(--space-3) var(--space-3) var(--space-3);background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;transition:border-color 0.15s,background 0.15s;cursor:default;" onmouseenter="this.style.borderColor=this.dataset.hoverBorder;this.style.background=\'#1a2030\'" onmouseleave="this.style.borderColor=\'#3a2b18\';this.style.background=\'#121722\'">' +
                     '<div style="display:flex;justify-content:space-between;align-items:center;">' +
                       '<div style="min-width:0;">' +
-                        '<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.name) + mainBadge + '</div>' +
-                        '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">' + esc(c.class) + '</div>' +
+                        '<div style="font-weight:600;font-size:var(--text-sm);color:#f5f7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.name) + mainBadge + '</div>' +
+                        '<div style="font-size:11px;color:#6d7580;margin-top:1px;">' + esc(c.class) + '</div>' +
                       '</div>' +
-                      (c.level ? '<div style="font-size:var(--text-sm);font-weight:700;color:var(--accent);white-space:nowrap;">Lv. ' + c.level + '</div>' : '') +
+                      (c.level ? '<div style="font-size:var(--text-sm);font-weight:700;color:#c99a2e;white-space:nowrap;">Lv. ' + c.level + '</div>' : '') +
                     '</div>' +
                     levelBar +
                   '</div>';
@@ -334,7 +335,7 @@ export function renderGuildActivityPage(
                       (createdDate ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(createdDate) + '</span>' : '') +
                     '</div>' +
                   '</div>' +
-                  '<a href="' + profileUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:var(--accent-muted);border:1px solid var(--accent-border);border-radius:var(--radius-md);color:var(--accent);font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseenter="this.style.background=\'var(--accent-glow)\'" onmouseleave="this.style.background=\'var(--accent-muted)\'">' +
+                  '<a href="' + profileUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:rgba(201,154,46,0.1);border:1px solid rgba(201,154,46,0.3);border-radius:var(--radius-md);color:#c99a2e;font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseenter="this.style.background=\'rgba(242,184,75,0.2)\'" onmouseleave="this.style.background=\'rgba(201,154,46,0.1)\'">' +
                     'View on PA <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
                   '</a>' +
                 '</div>' +
