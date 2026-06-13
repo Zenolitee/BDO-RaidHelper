@@ -61,7 +61,8 @@ export function renderStatsPage(
   notice?: "uploaded" | "rescanned" | "saved" | "deleted" | "renamed",
   sortKey: ScoreSortKey = "wars",
   canManage = false,
-  summaries?: GuildDashboardSummary[]
+  summaries?: GuildDashboardSummary[],
+  playerClasses: Record<string, string> = {}
 ): string {
   const rows = reports.flatMap((r) => r.rows);
   const players = sortScoreAggregates(aggregateScoreRows(rows), sortKey);
@@ -104,7 +105,7 @@ export function renderStatsPage(
       ${canManage ? renderManualEntryForm(guild, session) : ""}
 
       ${players.length
-        ? renderScoreSection(players, reports, topDamage, sortKey, guild.id, session.csrfToken, canManage)
+        ? renderScoreSection(players, reports, topDamage, sortKey, guild.id, session.csrfToken, canManage, playerClasses)
         : `<div style="flex:1;display:flex;align-items:center;justify-content:center;">
             ${renderEmptyState(
               "No score data yet",
@@ -460,7 +461,8 @@ function renderScoreSection(
   sortKey: ScoreSortKey,
   guildId: string,
   csrfToken: string,
-  canManage: boolean
+  canManage: boolean,
+  playerClasses: Record<string, string> = {}
 ): string {
   const impactScores = calculateImpactScores(players);
   const outlierWarnings = detectOutliers(reports.flatMap(r => r.rows));
@@ -485,7 +487,7 @@ function renderScoreSection(
 
     <div class="dashboard-split">
       <div class="dashboard-split-main">
-        ${renderCompactScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage, impactScores, outlierWarnings)}
+        ${renderCompactScoreTable(players, topDamage, sortKey, guildId, csrfToken, canManage, impactScores, outlierWarnings, playerClasses)}
       </div>
       <div class="dashboard-split-side">
         <div class="chart-card">
@@ -657,7 +659,8 @@ function renderCompactScoreTable(
   csrfToken: string,
   canManage: boolean,
   impactScores: PlayerImpactScore[],
-  outlierWarnings: Map<string, string[]> = new Map()
+  outlierWarnings: Map<string, string[]> = new Map(),
+  playerClasses: Record<string, string> = {}
 ): string {
   const sortColumns: Array<{ label: string; key: string }> = [
     { label: "", key: "" },
@@ -705,10 +708,13 @@ function renderCompactScoreTable(
     const nameHtml = rank <= 5
       ? `<a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:${rc.text};font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;background:${rc.bg};border:1px solid ${rc.border}22;padding:2px 8px;border-radius:var(--radius-sm);display:inline-block;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>`
       : `<a href="/stats/players/${enc(player.familyName)}?guild=${enc(guildId)}" style="font-weight:600;color:var(--text-primary);font-size:var(--text-sm);text-decoration:none;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">${esc(player.familyName)}</a>`;
+    const classKey = playerClasses[player.familyName.toLowerCase()];
+    const classIcon = classKey ? `<img src="/images/classes/${enc(classKey)}.png" alt="" style="width:22px;height:22px;border-radius:4px;flex-shrink:0;">` : "";
     return `<tr data-table="scoreboard" data-rank="${rank}" data-player="${esc(player.familyName.toLowerCase())}" data-wars="${player.participations}" data-kills="${player.kills}" data-deaths="${player.deaths}" data-kd="${kd}" data-damage="${player.damageDealt}" data-taken="${player.damageTaken}" data-cc="${player.crowdControls}" data-healed="${player.allySupport}" data-structure="${player.structureDamage}" style="background:${rowBg};${rowBorder}">
       <td style="text-align:center;" data-rank-cell>${rankBadge}</td>
       <td>
         <div style="display:flex;align-items:center;gap:var(--space-2);">
+          ${classIcon}
           ${nameHtml}
           ${outlierWarnings.has(player.familyName) ? `<span class="outlier-warn" style="color:var(--color-amber,#f59e0b);cursor:help;font-size:0.85em;">⚠<span class="outlier-tip">${outlierWarnings.get(player.familyName)!.join('<br>')}</span></span>` : ''}
           ${canManage ? renderInlineRenameControl(player.familyName, guildId, csrfToken) : ""}

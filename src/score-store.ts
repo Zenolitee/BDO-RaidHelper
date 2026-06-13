@@ -8,6 +8,7 @@ const SCORE_BUCKET = "score-screenshots";
 
 interface ScoreStoreData {
   reports: ScoreReport[];
+  playerClasses?: Record<string, Record<string, string>>;
 }
 
 interface ScoreReportRow {
@@ -66,6 +67,9 @@ export interface ScoreStore {
   ): Promise<ScoreReport>;
   renamePlayer(guildId: string, oldName: string, newName: string): Promise<number>;
   deleteReport(guildId: string, reportId: string): Promise<void>;
+  getPlayerClass(guildId: string, playerName: string): Promise<string | null>;
+  setPlayerClass(guildId: string, playerName: string, classKey: string | null): Promise<void>;
+  getPlayerClasses(guildId: string): Promise<Record<string, string>>;
 }
 
 export class JsonScoreStore implements ScoreStore {
@@ -198,13 +202,39 @@ export class JsonScoreStore implements ScoreStore {
     return renamed;
   }
 
+  async getPlayerClass(guildId: string, playerName: string): Promise<string | null> {
+    const data = await this.read();
+    return data.playerClasses?.[guildId]?.[playerName.toLowerCase()] ?? null;
+  }
+
+  async setPlayerClass(guildId: string, playerName: string, classKey: string | null): Promise<void> {
+    const data = await this.read();
+    if (!data.playerClasses) data.playerClasses = {};
+    if (!data.playerClasses[guildId]) data.playerClasses[guildId] = {};
+    const key = playerName.toLowerCase();
+    if (classKey) {
+      data.playerClasses[guildId][key] = classKey;
+    } else {
+      delete data.playerClasses[guildId][key];
+    }
+    await this.write(data);
+  }
+
+  async getPlayerClasses(guildId: string): Promise<Record<string, string>> {
+    const data = await this.read();
+    return data.playerClasses?.[guildId] ?? {};
+  }
+
   private async read(): Promise<ScoreStoreData> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as Partial<ScoreStoreData>;
-      return { reports: Array.isArray(parsed.reports) ? parsed.reports.filter(isScoreReport) : [] };
+      return {
+        reports: Array.isArray(parsed.reports) ? parsed.reports.filter(isScoreReport) : [],
+        playerClasses: parsed.playerClasses ?? {}
+      };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { reports: [] };
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { reports: [], playerClasses: {} };
       throw error;
     }
   }
@@ -439,6 +469,48 @@ export class SupabaseScoreStore implements ScoreStore {
 
     if (error) throw new Error(`Score player rename failed: ${error.message}`);
     return data?.length ?? 0;
+  }
+
+  async getPlayerClass(guildId: string, playerName: string): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from("player_classes")
+      .select("class_key")
+      .eq("guild_id", guildId)
+      .ilike("family_name", escapePostgrestLike(playerName.trim()))
+      .maybeSingle<{ class_key: string }>();
+    if (error) throw new Error(`Player class read failed: ${error.message}`);
+    return data?.class_key ?? null;
+  }
+
+  async setPlayerClass(guildId: string, playerName: string, classKey: string | null): Promise<void> {
+    const cleanedName = playerName.trim();
+    if (classKey) {
+      const { error } = await this.supabase
+        .from("player_classes")
+        .upsert({ guild_id: guildId, family_name: cleanedName, class_key: classKey }, { onConflict: "guild_id,family_name" });
+      if (error) throw new Error(`Player class write failed: ${error.message}`);
+    } else {
+      const { error } = await this.supabase
+        .from("player_classes")
+        .delete()
+        .eq("guild_id", guildId)
+        .ilike("family_name", escapePostgrestLike(cleanedName));
+      if (error) throw new Error(`Player class delete failed: ${error.message}`);
+    }
+  }
+
+  async getPlayerClasses(guildId: string): Promise<Record<string, string>> {
+    const { data, error } = await this.supabase
+      .from("player_classes")
+      .select("family_name, class_key")
+      .eq("guild_id", guildId)
+      .returns<Array<{ family_name: string; class_key: string }>>();
+    if (error) throw new Error(`Player classes read failed: ${error.message}`);
+    const map: Record<string, string> = {};
+    for (const row of data ?? []) {
+      map[row.family_name.toLowerCase()] = row.class_key;
+    }
+    return map;
   }
 }
 

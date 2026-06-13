@@ -5,6 +5,40 @@ import type { WebSession, GuildDashboardSummary, PlayerScoreAggregate } from '..
 import type { ScoreReport, ScoreRow } from '../../score-types.js';
 import type { DiscordGuild } from '../types.js';
 
+const BDO_CLASSES = [
+  { key: "warrior", name: "Warrior" },
+  { key: "ranger", name: "Ranger" },
+  { key: "sorceress", name: "Sorceress" },
+  { key: "berserker", name: "Berserker" },
+  { key: "tamer", name: "Tamer" },
+  { key: "musa", name: "Musa" },
+  { key: "maehwa", name: "Maehwa" },
+  { key: "valkyrie", name: "Valkyrie" },
+  { key: "kunoichi", name: "Kunoichi" },
+  { key: "ninja", name: "Ninja" },
+  { key: "wizard", name: "Wizard" },
+  { key: "witch", name: "Witch" },
+  { key: "darkknight", name: "Dark Knight" },
+  { key: "striker", name: "Striker" },
+  { key: "mystic", name: "Mystic" },
+  { key: "lahn", name: "Lahn" },
+  { key: "archer", name: "Archer" },
+  { key: "shai", name: "Shai" },
+  { key: "guardian", name: "Guardian" },
+  { key: "hashashin", name: "Hashashin" },
+  { key: "nova", name: "Nova" },
+  { key: "sage", name: "Sage" },
+  { key: "corsair", name: "Corsair" },
+  { key: "drakania", name: "Drakania" },
+  { key: "woosa", name: "Woosa" },
+  { key: "maegu", name: "Maegu" },
+  { key: "scholar", name: "Scholar" },
+  { key: "dusa", name: "Dusa" },
+  { key: "deadeye", name: "Deadeye" },
+  { key: "wukong", name: "Wukong" },
+  { key: "seraph", name: "Seraph" },
+];
+
 /* ── Player Detail Page ─────────────────────────────────────── */
 
 export function renderPlayerDetailPage(
@@ -12,7 +46,8 @@ export function renderPlayerDetailPage(
   session: WebSession,
   playerName: string,
   reports: ScoreReport[],
-  summaries?: GuildDashboardSummary[]
+  summaries?: GuildDashboardSummary[],
+  playerClass?: string | null
 ): string {
   // Find all rows for this player (case-insensitive)
   const playerKey = playerName.toLowerCase();
@@ -265,8 +300,96 @@ export function renderPlayerDetailPage(
 })();
 </script>`;
 
+  const classIcon = playerClass
+    ? `<img src="/images/classes/${enc(playerClass)}.png" alt="${esc(playerClass)}" style="width:48px;height:48px;border-radius:var(--radius-md);cursor:pointer;" onclick="openClassModal()" title="Change class">`
+    : `<div onclick="openClassModal()" style="width:48px;height:48px;border-radius:var(--radius-md);border:2px dashed var(--text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:20px;transition:border-color 0.2s,color 0.2s;" onmouseover="this.style.borderColor='var(--color-cyan)';this.style.color='var(--color-cyan)'" onmouseout="this.style.borderColor='var(--text-muted)';this.style.color='var(--text-muted)'" title="Set class">+</div>`;
+
+  const classGrid = BDO_CLASSES.map((c) => {
+    const selected = playerClass === c.key;
+    return `<div class="class-option${selected ? " selected" : ""}" data-class-key="${esc(c.key)}" onclick="selectClass('${esc(c.key)}')" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border-radius:var(--radius-md);cursor:pointer;border:2px solid ${selected ? "var(--color-cyan)" : "transparent"};background:${selected ? "rgba(6,182,212,0.1)" : "transparent"};transition:all 0.15s;">
+      <img src="/images/classes/${enc(c.key)}.png" alt="${esc(c.name)}" style="width:40px;height:40px;border-radius:var(--radius-sm);">
+      <span style="font-size:11px;color:${selected ? "var(--color-cyan)" : "var(--text-secondary)"};">${esc(c.name)}</span>
+    </div>`;
+  }).join("");
+
+  const classModalScript = `
+<script>
+var currentPlayerClass = ${JSON.stringify(playerClass ?? null)};
+var currentGuildId = ${JSON.stringify(guild.id)};
+var currentPlayerName = ${JSON.stringify(playerName)};
+
+function openClassModal() {
+  document.getElementById('class-modal').style.display = 'flex';
+}
+function closeClassModal() {
+  document.getElementById('class-modal').style.display = 'none';
+}
+function selectClass(key) {
+  fetch('/api/players/' + encodeURIComponent(currentPlayerName) + '/class', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ guild: currentGuildId, classKey: key })
+  }).then(function(r) { return r.json(); }).then(function() {
+    currentPlayerClass = key;
+    var icon = document.getElementById('player-class-icon');
+    icon.innerHTML = '<img src="/images/classes/' + key + '.png" alt="" style="width:48px;height:48px;border-radius:var(--radius-md);cursor:pointer;" onclick="openClassModal()" title="Change class">';
+    closeClassModal();
+    document.querySelectorAll('.class-option').forEach(function(el) {
+      var isSelected = el.dataset.classKey === key;
+      el.style.borderColor = isSelected ? 'var(--color-cyan)' : 'transparent';
+      el.style.background = isSelected ? 'rgba(6,182,212,0.1)' : 'transparent';
+      el.querySelector('span').style.color = isSelected ? 'var(--color-cyan)' : 'var(--text-secondary)';
+    });
+  });
+}
+function clearClass() {
+  fetch('/api/players/' + encodeURIComponent(currentPlayerName) + '/class', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ guild: currentGuildId, classKey: null })
+  }).then(function(r) { return r.json(); }).then(function() {
+    currentPlayerClass = null;
+    document.getElementById('player-class-icon').innerHTML = '<div onclick="openClassModal()" style="width:48px;height:48px;border-radius:var(--radius-md);border:2px dashed var(--text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:20px;transition:border-color 0.2s,color 0.2s;" onmouseover="this.style.borderColor=\\'var(--color-cyan)\\';this.style.color=\\'var(--color-cyan)\\'" onmouseout="this.style.borderColor=\\'var(--text-muted)\\';this.style.color=\\'var(--text-muted)\\'" title="Set class">+</div>';
+    closeClassModal();
+    document.querySelectorAll('.class-option').forEach(function(el) {
+      el.style.borderColor = 'transparent';
+      el.style.background = 'transparent';
+      el.querySelector('span').style.color = 'var(--text-secondary)';
+    });
+  });
+}
+</script>`;
+
+  const classModal = `<div id="class-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;" onclick="if(event.target===this)closeClassModal()">
+    <div style="background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="font-size:var(--text-lg);font-weight:700;color:var(--text-primary);margin:0;">Select Class</h3>
+        <button onclick="closeClassModal()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:20px;padding:4px;">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
+        ${classGrid}
+      </div>
+      ${playerClass ? `<div style="margin-top:16px;text-align:center;"><button onclick="clearClass()" class="button button-ghost button-sm" style="color:var(--text-muted);">Remove class</button></div>` : ""}
+    </div>
+  </div>`;
+
   const content = `<div class="dashboard">
-    ${renderPageHeader(`${esc(playerName)}`, `${playerRows.length} wars played`, headerActions)}
+    <div class="page-header">
+      <div class="page-header-inner">
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div id="player-class-icon">${classIcon}</div>
+          <div>
+            <div class="landing-kicker">COMMAND CENTER</div>
+            <h1 class="page-title">${esc(playerName)}</h1>
+            <p class="page-subtitle">${playerRows.length} wars played</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <a class="button button-ghost button-sm" href="/stats?guild=${enc(guild.id)}">← Back to Stats</a>
+        </div>
+      </div>
+    </div>
+    ${classModal}
 
     ${renderStatGrid([
       { label: "Wars", value: String(playerRows.length), color: "var(--color-indigo)" },
@@ -337,7 +460,8 @@ export function renderPlayerDetailPage(
       </div>
     </div>
   </div>
-  ${chartScript}`;
+  ${chartScript}
+  ${classModalScript}`;
 
   return renderApp(`${playerName} — Stats`, content, { session, summaries, activeNav: "stats", headExtra: '<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>' });
 }

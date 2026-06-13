@@ -119,6 +119,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use("/assets", express.static("src/public"));
+  app.use("/images/classes", express.static("images"));
   app.use((_request, response, next) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Pragma", "no-cache");
@@ -358,9 +359,45 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
     const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
-    const reports = await options.scoreStore.listReports(guild.id);
+    const [reports, playerClass] = await Promise.all([
+      options.scoreStore.listReports(guild.id),
+      options.scoreStore.getPlayerClass(guild.id, playerName)
+    ]);
     const { renderPlayerDetailPage } = await import("./web/templates/player-detail.js");
-    response.type("html").send(renderPlayerDetailPage(guild, session, playerName, reports, summaries));
+    response.type("html").send(renderPlayerDetailPage(guild, session, playerName, reports, summaries, playerClass));
+  });
+
+  // Player class API
+  app.get("/api/players/:name/class", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) { response.status(403).json({ error: "Login required" }); return; }
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const playerName = decodeURIComponent(request.params.name);
+    const guild = session.guilds.find((c) => c.id === guildId);
+    if (!guild || !options.scoreStore) { response.status(404).json({ error: "Not found" }); return; }
+    const classKey = await options.scoreStore.getPlayerClass(guild.id, playerName);
+    response.json({ classKey });
+  });
+
+  app.post("/api/players/:name/class", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) { response.status(403).json({ error: "Login required" }); return; }
+    const guildId = typeof request.body.guild === "string" ? request.body.guild : undefined;
+    const playerName = decodeURIComponent(request.params.name);
+    const classKey = typeof request.body.classKey === "string" ? request.body.classKey : null;
+    const guild = session.guilds.find((c) => c.id === guildId);
+    if (!guild || !options.scoreStore) { response.status(404).json({ error: "Not found" }); return; }
+    await options.scoreStore.setPlayerClass(guild.id, playerName, classKey);
+    response.json({ ok: true });
+  });
+
+  app.get("/api/guilds/:guildId/player-classes", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) { response.status(403).json({ error: "Login required" }); return; }
+    const guild = session.guilds.find((c) => c.id === request.params.guildId);
+    if (!guild || !options.scoreStore) { response.status(404).json({ error: "Not found" }); return; }
+    const classes = await options.scoreStore.getPlayerClasses(guild.id);
+    response.json(classes);
   });
 
   // War comparison page
@@ -512,7 +549,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
                 : request.query.renamed === "1"
                   ? "renamed"
                   : undefined;
-      response.type("html").send(renderStatsPage(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id), summaries));
+      const playerClasses = options.scoreStore ? await options.scoreStore.getPlayerClasses(guild.id) : {};
+      response.type("html").send(renderStatsPage(guild, session, reports, notice, sortKey, canManageGuild(session, guild.id), summaries, playerClasses));
     } catch (error) {
       response.status(502).type("html").send(renderWebError(error));
     }
