@@ -15,202 +15,279 @@ export function renderGuildActivityPage(
   summaries?: GuildDashboardSummary[]
 ): string {
   const backLink = `<a class="button button-ghost button-sm" href="/dashboard">← Dashboard</a>`;
+  const regionOptions = ["EU", "NA", "SA", "KR", "ASIA"].map((r) =>
+    `<option value="${r}" ${(configuredRegion ?? "NA") === r ? "selected" : ""}>${r === "ASIA" ? "ASIA (TH/SEA)" : r}</option>`
+  ).join("");
 
-  const content = bdoGuildProfile
-    ? renderGuildProfile(bdoGuildProfile, guild, session, backLink, configuredRegion)
-    : renderNoGuildModal(guild, session, configuredGuildName, configuredRegion, backLink);
+  // Guild profile card (if linked)
+  const profileCard = bdoGuildProfile
+    ? renderGuildProfileCard(bdoGuildProfile)
+    : `<div style="padding:var(--space-6);text-align:center;color:var(--text-muted);">No guild linked yet — search and link one below.</div>`;
 
-  return renderApp(`Guild Activity — ${guild.name}`, content, { session, summaries, activeNav: "dashboard" });
-}
-
-/* ── Guild profile view ──────────────────────────────────────── */
-
-function renderGuildProfile(
-  profile: BdoGuildProfile,
-  guild: DiscordGuild,
-  session: WebSession,
-  backLink: string,
-  configuredRegion: string | null
-): string {
-  const createdDate = profile.createdOn
-    ? new Date(profile.createdOn).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-    : "Unknown";
-  const memberCount = profile.population ?? 0;
-
-  return `<section class="page-content dash-layout" style="max-width:820px;">
+  const content = `<section class="page-content dash-layout" style="max-width:860px;">
     <div class="dash-header" style="text-align:left;">
       ${backLink}
       <p class="landing-kicker" style="margin-top:var(--space-4);">Guild Activity</p>
-      <h1>${escapeHtml(profile.name)}</h1>
-      <p style="color:var(--text-muted);margin-top:var(--space-2);">${escapeHtml(profile.region)} region · Founded ${createdDate}</p>
+      <h1>${bdoGuildProfile ? escapeHtml(bdoGuildProfile.name) : "Guild Lookup"}</h1>
+      ${bdoGuildProfile ? `<p style="color:var(--text-muted);margin-top:var(--space-2);">${escapeHtml(bdoGuildProfile.region)} region · Founded ${bdoGuildProfile.createdOn ? new Date(bdoGuildProfile.createdOn).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "Unknown"}</p>` : ""}
     </div>
 
+    <!-- Guild Stats -->
     <div class="guild-stats-grid">
       <article class="stat-card">
         <span>Members</span>
-        <strong>${memberCount}</strong>
+        <strong>${bdoGuildProfile?.population ?? 0}</strong>
       </article>
       <article class="stat-card">
         <span>Master</span>
-        <strong>${profile.master ? escapeHtml(profile.master.familyName) : "—"}</strong>
+        <strong>${bdoGuildProfile?.master ? escapeHtml(bdoGuildProfile.master.familyName) : "—"}</strong>
       </article>
       <article class="stat-card">
         <span>Territory</span>
-        <strong>${profile.occupying ? escapeHtml(profile.occupying) : "None"}</strong>
+        <strong>${bdoGuildProfile?.occupying ? escapeHtml(bdoGuildProfile.occupying) : "None"}</strong>
       </article>
       <article class="stat-card">
         <span>Region</span>
-        <strong>${escapeHtml(profile.region)}</strong>
+        <strong>${bdoGuildProfile ? escapeHtml(bdoGuildProfile.region) : "—"}</strong>
       </article>
     </div>
-    <div style="margin-top:var(--space-6);">
-      <form method="POST" action="/guilds/${encodeURIComponent(guild.id)}/activity" style="display:flex;align-items:center;gap:var(--space-3);">
-        <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
-        <label style="color:var(--text-muted);font-size:var(--text-sm);white-space:nowrap;">BDO Guild:</label>
-        <input type="text" name="bdoGuildName" value="${escapeHtml(profile.name)}" class="input" style="max-width:240px;" required>
-        <select name="region" class="select" style="max-width:120px;">
-          <option value="EU" ${configuredRegion === "EU" ? "selected" : ""}>EU</option>
-          <option value="NA" ${configuredRegion === "NA" ? "selected" : ""}>NA</option>
-          <option value="SA" ${configuredRegion === "SA" ? "selected" : ""}>SA</option>
-          <option value="KR" ${configuredRegion === "KR" ? "selected" : ""}>KR</option>
-          <option value="ASIA" ${configuredRegion === "ASIA" ? "selected" : ""}>ASIA (TH/SEA)</option>
-        </select>
-        <button type="submit" class="button button-secondary button-sm">Update</button>
-      </form>
-    </div>
-  </section>`;
-}
 
-/* ── No guild modal ──────────────────────────────────────────── */
-
-function renderNoGuildModal(
-  guild: DiscordGuild,
-  session: WebSession,
-  configuredGuildName: string | null,
-  configuredRegion: string | null,
-  backLink: string
-): string {
-  const regionOptions = ["EU", "NA", "SA", "KR", "ASIA"].map((r) =>
-    `<option value="${r}" ${configuredRegion === r ? "selected" : ""}>${r === "ASIA" ? "ASIA (TH/SEA)" : r}</option>`
-  ).join("");
-
-  return `<section class="page-content dash-layout" style="max-width:680px;">
-    <div class="dash-header">
-      ${backLink}
-      <p class="landing-kicker" style="margin-top:var(--space-4);">Guild Activity</p>
-      <h1>No guild linked</h1>
-      <p style="color:var(--text-muted);margin-top:var(--space-2);">No BDO guild is associated with <strong>${escapeHtml(guild.name)}</strong> yet. Search for your guild below.</p>
-    </div>
-
-    <div class="card guild-link-modal" style="margin-top:var(--space-6);">
-      <div style="padding:var(--space-6);">
-        <h3 style="margin:0 0 var(--space-2);font-size:var(--text-lg);">Link a BDO Guild</h3>
-        <p style="color:var(--text-muted);margin:0 0 var(--space-5);font-size:var(--text-sm);">Start typing to search for your guild across all regions.</p>
+    <!-- Guild Search + Link -->
+    <div class="card" style="margin-top:var(--space-6);">
+      <div style="padding:var(--space-5);">
+        <h3 style="margin:0 0 var(--space-1);font-size:var(--text-base);font-weight:600;">Link / Change BDO Guild</h3>
+        <p style="color:var(--text-muted);margin:0 0 var(--space-4);font-size:var(--text-sm);">Type to search across all regions. Select a result to link.</p>
 
         <form method="POST" action="/guilds/${encodeURIComponent(guild.id)}/activity" id="guild-link-form">
           <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
           <input type="hidden" name="bdoGuildName" id="selectedGuildName" value="${configuredGuildName ? escapeHtml(configuredGuildName) : ""}">
           <input type="hidden" name="region" id="selectedGuildRegion" value="${configuredRegion ? escapeHtml(configuredRegion) : "NA"}">
 
-          <div class="form-group" style="position:relative;">
-            <label class="label" for="guildSearchInput">Search Guild</label>
-            <input type="text" id="guildSearchInput" class="input" placeholder="Type guild name..." value="${configuredGuildName ? escapeHtml(configuredGuildName) : ""}" autocomplete="off" autofocus>
-            <div id="guildSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:240px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+          <div style="display:flex;gap:var(--space-3);align-items:flex-end;">
+            <div style="flex:1;position:relative;">
+              <label class="label" for="guildSearchInput">Search Guild</label>
+              <input type="text" id="guildSearchInput" class="input" placeholder="Type guild name..." value="${configuredGuildName ? escapeHtml(configuredGuildName) : ""}" autocomplete="off">
+              <div id="guildSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:240px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+            </div>
+            <div style="width:130px;">
+              <label class="label" for="regionSelect">Region</label>
+              <select id="regionSelect" class="select" onchange="document.getElementById('selectedGuildRegion').value=this.value">
+                ${regionOptions}
+              </select>
+            </div>
+            <button type="submit" class="button button-primary button-sm" id="linkGuildBtn" style="height:38px;">${bdoGuildProfile ? "Update" : "Link"}</button>
           </div>
 
-          <div class="form-group">
-            <label class="label" for="regionSelect">Region</label>
-            <select id="regionSelect" class="select" onchange="document.getElementById('selectedGuildRegion').value=this.value">
+          <div id="selectedGuildDisplay" style="display:${bdoGuildProfile ? "block" : "none"};padding:var(--space-2) var(--space-3);background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-md);margin-top:var(--space-3);font-size:var(--text-sm);">
+            <span style="color:var(--color-green,#22c55e);">✓ Selected: <strong id="selectedGuildText">${bdoGuildProfile ? escapeHtml(bdoGuildProfile.name) + " (" + escapeHtml(bdoGuildProfile.region) + ")" : ""}</strong></span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Player Search -->
+    <div class="card" style="margin-top:var(--space-6);">
+      <div style="padding:var(--space-5);">
+        <h3 style="margin:0 0 var(--space-1);font-size:var(--text-base);font-weight:600;">Adventurer Lookup</h3>
+        <p style="color:var(--text-muted);margin:0 0 var(--space-4);font-size:var(--text-sm);">Search for any BDO player by family name.</p>
+
+        <div style="display:flex;gap:var(--space-3);align-items:flex-end;">
+          <div style="flex:1;position:relative;">
+            <label class="label" for="playerSearchInput">Family Name</label>
+            <input type="text" id="playerSearchInput" class="input" placeholder="Enter family name..." autocomplete="off">
+            <div id="playerSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:280px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+          </div>
+          <div style="width:130px;">
+            <label class="label" for="playerRegionSelect">Region</label>
+            <select id="playerRegionSelect" class="select">
               ${regionOptions}
             </select>
           </div>
+        </div>
 
-          <div id="selectedGuildDisplay" style="display:none;padding:var(--space-3);background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-md);margin-top:var(--space-3);">
-            <span style="color:var(--color-green,#22c55e);font-size:var(--text-sm);">✓ Selected: <strong id="selectedGuildText"></strong></span>
-          </div>
-
-          <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
-            <button type="submit" class="button button-primary" id="linkGuildBtn" disabled>Link Guild</button>
-            <a href="/dashboard" class="button button-ghost">Cancel</a>
-          </div>
-        </form>
+        <div id="playerProfile" style="display:none;margin-top:var(--space-4);"></div>
       </div>
     </div>
   </section>
 
   <script>
   (function() {
-    var searchInput = document.getElementById('guildSearchInput');
-    var resultsDiv = document.getElementById('guildSearchResults');
-    var hiddenName = document.getElementById('selectedGuildName');
-    var hiddenRegion = document.getElementById('selectedGuildRegion');
-    var regionSelect = document.getElementById('regionSelect');
-    var display = document.getElementById('selectedGuildDisplay');
-    var displayText = document.getElementById('selectedGuildText');
-    var linkBtn = document.getElementById('linkGuildBtn');
-    var debounceTimer = null;
+    // ── Guild search ──
+    var guildInput = document.getElementById('guildSearchInput');
+    var guildResults = document.getElementById('guildSearchResults');
+    var guildHiddenName = document.getElementById('selectedGuildName');
+    var guildHiddenRegion = document.getElementById('selectedGuildRegion');
+    var guildRegionSelect = document.getElementById('regionSelect');
+    var guildDisplay = document.getElementById('selectedGuildDisplay');
+    var guildDisplayText = document.getElementById('selectedGuildText');
+    var guildDebounce = null;
 
-    searchInput.addEventListener('input', function() {
-      clearTimeout(debounceTimer);
-      var query = this.value.trim();
-      if (query.length < 2) { resultsDiv.style.display = 'none'; return; }
-      debounceTimer = setTimeout(function() { doSearch(query); }, 300);
+    guildInput.addEventListener('input', function() {
+      clearTimeout(guildDebounce);
+      var q = this.value.trim();
+      if (q.length < 2) { guildResults.style.display = 'none'; return; }
+      guildDebounce = setTimeout(function() { searchGuilds(q); }, 300);
+    });
+    guildInput.addEventListener('focus', function() {
+      if (guildResults.children.length > 0 && this.value.trim().length >= 2) guildResults.style.display = 'block';
+    });
+    guildRegionSelect.addEventListener('change', function() {
+      guildHiddenRegion.value = this.value;
+      if (guildInput.value.trim().length >= 2) searchGuilds(guildInput.value.trim());
     });
 
-    searchInput.addEventListener('focus', function() {
-      if (resultsDiv.children.length > 0 && this.value.trim().length >= 2) resultsDiv.style.display = 'block';
-    });
-
-    document.addEventListener('click', function(e) {
-      if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) resultsDiv.style.display = 'none';
-    });
-
-    regionSelect.addEventListener('change', function() {
-      hiddenRegion.value = this.value;
-      if (searchInput.value.trim().length >= 2) doSearch(searchInput.value.trim());
-    });
-
-    function doSearch(query) {
-      var region = regionSelect.value;
+    function searchGuilds(query) {
+      var region = guildRegionSelect.value;
       fetch('/api/bdo/guilds/search?q=' + encodeURIComponent(query) + '&region=' + encodeURIComponent(region))
         .then(function(r) { return r.json(); })
         .then(function(results) {
-          resultsDiv.innerHTML = '';
+          guildResults.innerHTML = '';
           if (!results.length) {
-            resultsDiv.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:var(--text-sm);">No guilds found</div>';
-            resultsDiv.style.display = 'block';
+            guildResults.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:var(--text-sm);">No guilds found</div>';
+            guildResults.style.display = 'block';
             return;
           }
           results.forEach(function(g) {
             var item = document.createElement('div');
             item.style.cssText = 'padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;';
-            item.innerHTML = '<div><strong style="color:var(--text-primary);">' + escHtml(g.name) + '</strong><div style="font-size:11px;color:var(--text-muted);">' + (g.master ? 'Master: ' + escHtml(g.master) : '') + (g.population ? ' · ' + g.population + ' members' : '') + '</div></div><span style="font-size:11px;color:var(--text-muted);">' + escHtml(g.region) + '</span>';
-            item.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.04)'; });
-            item.addEventListener('mouseleave', function() { this.style.background = 'transparent'; });
-            item.addEventListener('click', function() {
-              searchInput.value = g.name;
-              hiddenName.value = g.name;
-              hiddenRegion.value = g.region;
-              regionSelect.value = g.region;
-              displayText.textContent = g.name + ' (' + g.region + ')';
-              display.style.display = 'block';
-              linkBtn.disabled = false;
-              resultsDiv.style.display = 'none';
-            });
-            resultsDiv.appendChild(item);
+            item.innerHTML = '<div><strong style="color:var(--text-primary);">' + esc(g.name) + '</strong><div style="font-size:11px;color:var(--text-muted);">' + (g.master ? 'Master: ' + esc(g.master) : '') + (g.population ? ' · ' + g.population + ' members' : '') + '</div></div><span style="font-size:11px;color:var(--text-muted);">' + esc(g.region) + '</span>';
+            item.onmouseenter = function() { this.style.background = 'rgba(255,255,255,0.04)'; };
+            item.onmouseleave = function() { this.style.background = 'transparent'; };
+            item.onclick = function() {
+              guildInput.value = g.name;
+              guildHiddenName.value = g.name;
+              guildHiddenRegion.value = g.region;
+              guildRegionSelect.value = g.region;
+              guildDisplayText.textContent = g.name + ' (' + g.region + ')';
+              guildDisplay.style.display = 'block';
+              guildResults.style.display = 'none';
+            };
+            guildResults.appendChild(item);
           });
-          resultsDiv.style.display = 'block';
+          guildResults.style.display = 'block';
         })
-        .catch(function() { resultsDiv.style.display = 'none'; });
+        .catch(function() { guildResults.style.display = 'none'; });
     }
 
-    function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    // ── Player search ──
+    var playerInput = document.getElementById('playerSearchInput');
+    var playerResults = document.getElementById('playerSearchResults');
+    var playerRegionSelect = document.getElementById('playerRegionSelect');
+    var profileDiv = document.getElementById('playerProfile');
+    var playerDebounce = null;
 
-    if (hiddenName.value) {
-      displayText.textContent = hiddenName.value + ' (' + hiddenRegion.value + ')';
-      display.style.display = 'block';
-      linkBtn.disabled = false;
+    playerInput.addEventListener('input', function() {
+      clearTimeout(playerDebounce);
+      var q = this.value.trim();
+      if (q.length < 2) { playerResults.style.display = 'none'; return; }
+      playerDebounce = setTimeout(function() { searchPlayers(q); }, 300);
+    });
+    playerInput.addEventListener('focus', function() {
+      if (playerResults.children.length > 0 && this.value.trim().length >= 2) playerResults.style.display = 'block';
+    });
+
+    function searchPlayers(query) {
+      var region = playerRegionSelect.value;
+      fetch('/api/bdo/players/search?q=' + encodeURIComponent(query) + '&region=' + encodeURIComponent(region))
+        .then(function(r) { return r.json(); })
+        .then(function(results) {
+          playerResults.innerHTML = '';
+          if (!results.length) {
+            playerResults.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:var(--text-sm);">No players found</div>';
+            playerResults.style.display = 'block';
+            return;
+          }
+          results.forEach(function(p) {
+            var item = document.createElement('div');
+            item.style.cssText = 'padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.15s;';
+            var guildText = p.guild ? '<span style="color:var(--text-muted);font-size:11px;"> · ' + esc(p.guild) + '</span>' : '';
+            var mainText = p.mainCharacter ? '<div style="font-size:11px;color:var(--text-muted);">' + esc(p.mainCharacter) + '</div>' : '';
+            item.innerHTML = '<div><strong style="color:var(--text-primary);">' + esc(p.familyName) + '</strong>' + guildText + mainText + '</div>';
+            item.onmouseenter = function() { this.style.background = 'rgba(255,255,255,0.04)'; };
+            item.onmouseleave = function() { this.style.background = 'transparent'; };
+            item.onclick = function() {
+              playerResults.style.display = 'none';
+              playerInput.value = p.familyName;
+              loadProfile(p.profileTarget, region);
+            };
+            playerResults.appendChild(item);
+          });
+          playerResults.style.display = 'block';
+        })
+        .catch(function() { playerResults.style.display = 'none'; });
     }
+
+    function loadProfile(profileTarget, region) {
+      profileDiv.style.display = 'block';
+      profileDiv.innerHTML = '<div style="padding:var(--space-6);text-align:center;color:var(--text-muted);">Loading profile...</div>';
+
+      fetch('/api/bdo/players/' + encodeURIComponent(profileTarget) + '?region=' + encodeURIComponent(region))
+        .then(function(r) { return r.json(); })
+        .then(function(p) {
+          if (p.error) { profileDiv.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--text-muted);">' + esc(p.error) + '</div>'; return; }
+
+          var chars = '';
+          if (p.characters && p.characters.length) {
+            chars = '<div style="margin-top:var(--space-3);"><h4 style="margin:0 0 var(--space-2);font-size:var(--text-xs);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Characters</h4><div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">' +
+              p.characters.map(function(c) {
+                var badge = c.main ? ' <span style="font-size:10px;background:rgba(34,197,94,0.15);color:var(--color-green,#22c55e);padding:1px 6px;border-radius:99px;">MAIN</span>' : '';
+                return '<div style="padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--text-sm);"><strong>' + esc(c.name) + '</strong>' + badge + '<div style="font-size:11px;color:var(--text-muted);">' + esc(c.class) + (c.level ? ' · Lv.' + c.level : '') + '</div></div>';
+              }).join('') + '</div></div>';
+          }
+
+          var statsItems = [];
+          if (p.gs) statsItems.push({ l: 'GS', v: String(p.gs) });
+          if (p.combatFame) statsItems.push({ l: 'Combat Fame', v: String(p.combatFame) });
+          if (p.lifeFame) statsItems.push({ l: 'Life Fame', v: String(p.lifeFame) });
+          if (p.contributionPoints) statsItems.push({ l: 'Contrib', v: String(p.contributionPoints) });
+          if (p.energy) statsItems.push({ l: 'Energy', v: String(p.energy) });
+          var stats = statsItems.length ? '<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);">' + statsItems.map(function(s) {
+            return '<div style="padding:6px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;min-width:80px;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">' + esc(s.l) + '</div><div style="font-weight:700;">' + esc(s.v) + '</div></div>';
+          }).join('') + '</div>' : '';
+
+          var createdDate = p.createdOn ? new Date(p.createdOn).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+          var profileUrl = region === 'ASIA'
+            ? 'https://blackdesert.pearlabyss.com/Asia/en-US/Game/Profile/Search?_keyword=' + encodeURIComponent(p.familyName)
+            : 'https://www.naeu.playblackdesert.com/en-US/Profile?_target=' + encodeURIComponent(p.profileTarget);
+
+          profileDiv.innerHTML =
+            '<div style="padding:var(--space-4);background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:var(--radius-md);">' +
+              '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+                '<div>' +
+                  '<div style="font-size:var(--text-lg);font-weight:700;">' + esc(p.familyName) + '</div>' +
+                  '<div style="margin-top:2px;display:flex;gap:var(--space-3);color:var(--text-muted);font-size:var(--text-sm);">' +
+                    (p.guild ? '<span>Guild: <strong style="color:var(--text-primary);">' + esc(p.guild) + '</strong></span>' : '') +
+                    '<span>' + esc(p.region) + '</span>' +
+                    (createdDate ? '<span>Joined ' + createdDate + '</span>' : '') +
+                  '</div>' +
+                '</div>' +
+                '<a href="' + profileUrl + '" target="_blank" rel="noopener" class="button button-ghost button-sm" style="text-decoration:none;font-size:var(--text-xs);">PA Profile ↗</a>' +
+              '</div>' +
+              chars + stats +
+            '</div>';
+        })
+        .catch(function() { profileDiv.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--text-muted);">Failed to load profile</div>'; });
+    }
+
+    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    document.addEventListener('click', function(e) {
+      if (!guildInput.contains(e.target) && !guildResults.contains(e.target)) guildResults.style.display = 'none';
+      if (!playerInput.contains(e.target) && !playerResults.contains(e.target)) playerResults.style.display = 'none';
+    });
   })();
   </script>`;
+
+  return renderApp(`Guild Activity — ${guild.name}`, content, { session, summaries, activeNav: "dashboard" });
+}
+
+/* ── Guild profile stats card ────────────────────────────────── */
+
+function renderGuildProfileCard(profile: BdoGuildProfile): string {
+  const memberCount = profile.population ?? 0;
+  return `<div class="guild-stats-grid">
+    <article class="stat-card"><span>Members</span><strong>${memberCount}</strong></article>
+    <article class="stat-card"><span>Master</span><strong>${profile.master ? escapeHtml(profile.master.familyName) : "—"}</strong></article>
+    <article class="stat-card"><span>Territory</span><strong>${profile.occupying ? escapeHtml(profile.occupying) : "None"}</strong></article>
+    <article class="stat-card"><span>Region</span><strong>${escapeHtml(profile.region)}</strong></article>
+  </div>`;
 }

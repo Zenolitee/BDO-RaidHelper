@@ -82,7 +82,7 @@ export function renderStatsPage(
       </button>`
     : "";
 
-  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a><a class="button button-ghost button-sm" href="/stats/compare?guild=${enc(guild.id)}">Compare</a><a class="button button-ghost button-sm" href="/stats/players/search?guild=${enc(guild.id)}">Player Search</a><a class="button button-ghost button-sm" href="/stats/export.csv?guild=${enc(guild.id)}">Export CSV</a>${uploadButton}`;
+  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a><a class="button button-ghost button-sm" href="/stats/compare?guild=${enc(guild.id)}">Compare</a><a class="button button-ghost button-sm" href="/stats/export.csv?guild=${enc(guild.id)}">Export CSV</a>${uploadButton}`;
 
   const content = [
     `<div class="dashboard athena-data-page">
