@@ -17,13 +17,6 @@ import type { ScoreReport, ScoreReportResult } from "./score-types.js";
 // ---------------------------------------------------------------------------
 
 export const ATHENA_GOLD = 0xc99a2e;
-export const ATHENA_DARK = 0x1a1a2e;
-
-const RESULT_EMOJI: Record<ScoreReportResult, string> = {
-  win: "✅",
-  loss: "❌",
-  unknown: "❓",
-};
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -81,9 +74,6 @@ export interface AthenaPlayerRanking {
   rank: number;
   player: PlayerScoreAggregate;
   kd: string;
-  killsFmt: string;
-  deathsFmt: string;
-  damageFmt: string;
 }
 
 export interface AthenaMvp {
@@ -91,20 +81,11 @@ export interface AthenaMvp {
   score: number;
 }
 
-export interface AthenaCategoryLeaders {
-  mostKills: PlayerScoreAggregate;
-  mostDeaths: PlayerScoreAggregate;
-  highestKd: PlayerScoreAggregate;
-  highestDamage: PlayerScoreAggregate;
-}
-
 export interface AthenaFullReport {
   /** Sorted player rankings (all players). */
   rankings: AthenaPlayerRanking[];
   /** MVP winner and composite score. */
   mvp: AthenaMvp | null;
-  /** Category leaders. */
-  leaders: AthenaCategoryLeaders | null;
   /** Aggregate guild stats. */
   totalKills: number;
   totalDeaths: number;
@@ -138,23 +119,18 @@ export function prepareAthenaReport(params: {
     rank: i + 1,
     player,
     kd: kdRatio(player),
-    killsFmt: formatStat(player.kills),
-    deathsFmt: formatStat(player.deaths),
-    damageFmt: formatStat(player.damageDealt),
   }));
 
   const mvp = calculateMvp(players);
-  const leaders = players.length >= 2 ? findCategoryLeaders(players) : null;
 
   return {
     rankings,
     mvp,
-    leaders,
     totalKills,
     totalDeaths,
-    guildKd: totalDeaths
+    guildKd: totalDeaths > 0
       ? (totalKills / totalDeaths).toFixed(2)
-      : String(totalKills),
+      : "0.00",
     playerCount: players.length,
     reportCount: reports.length,
     latestTitle: latest.title ?? formatDate(latest.warDate),
@@ -198,28 +174,6 @@ function calculateMvp(
   }
 
   return { player: best, score: bestScore };
-}
-
-// ---------------------------------------------------------------------------
-// Category leaders
-// ---------------------------------------------------------------------------
-
-function findCategoryLeaders(
-  players: PlayerScoreAggregate[]
-): AthenaCategoryLeaders {
-  let mostKills = players[0];
-  let mostDeaths = players[0];
-  let highestKd = players[0];
-  let highestDamage = players[0];
-
-  for (const p of players) {
-    if (p.kills > mostKills.kills) mostKills = p;
-    if (p.deaths > mostDeaths.deaths) mostDeaths = p;
-    if (kdValue(p) > kdValue(highestKd)) highestKd = p;
-    if (p.damageDealt > highestDamage.damageDealt) highestDamage = p;
-  }
-
-  return { mostKills, mostDeaths, highestKd, highestDamage };
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +329,7 @@ function buildTableCodeBlock(report: AthenaFullReport): string {
       padStart(String(entry.player.kills), TABLE_KILLS) + SEP +
       padStart(String(entry.player.deaths), TABLE_DEATHS) + SEP +
       padStart(entry.kd, TABLE_KD) + SEP +
-      padStart(entry.damageFmt, TABLE_DMG) + SEP +
+      padStart(formatStat(entry.player.damageDealt), TABLE_DMG) + SEP +
       padStart(String(entry.player.participations), TABLE_WARS)
     );
   }
@@ -390,47 +344,3 @@ function buildTableCodeBlock(report: AthenaFullReport): string {
 function truncate(value: string, max: number): string {
   return value.length > max ? value.slice(0, Math.max(0, max - 1)) + "\u2026" : value;
 }
-
-// ---------------------------------------------------------------------------
-// Future extension points (DO NOT IMPLEMENT — architectural placeholders)
-// ---------------------------------------------------------------------------
-
-// export interface AthenaImageReport {
-//   mvpBanner: Buffer;
-//   topPlayerCards: Buffer[];
-//   fullReportCard: Buffer;
-// }
-//
-// export function buildAthenaImageReport(report: AthenaFullReport): Promise<AthenaImageReport> {
-//   throw new Error("Not yet implemented");
-// }
-//
-// export interface AthenaTrendReport {
-//   killsTrend: { date: string; value: number }[];
-//   kdTrend: { date: string; value: number }[];
-//   damageTrend: { date: string; value: number }[];
-// }
-//
-// export function buildAthenaTrendReport(
-//   current: AthenaFullReport,
-//   historical: ScoreReport[]
-// ): AthenaTrendReport {
-//   throw new Error("Not yet implemented");
-// }
-//
-// export function buildAthenaComparisonEmbed(
-//   current: AthenaFullReport,
-//   previous: AthenaFullReport
-// ): EmbedBuilder {
-//   throw new Error("Not yet implemented");
-// }
-//
-// export function buildAthenaClassStats(report: AthenaFullReport): EmbedBuilder {
-//   throw new Error("Not yet implemented");
-// }
-//
-// export function buildAthenaAttendanceReport(
-//   reports: ScoreReport[]
-// ): EmbedBuilder {
-//   throw new Error("Not yet implemented");
-// }
