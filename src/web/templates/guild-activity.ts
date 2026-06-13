@@ -252,10 +252,12 @@ export function renderGuildActivityPage(
           }
 
           var statsItems = [];
-          if (p.gs) statsItems.push({ l: 'GS', v: String(p.gs) });
+          var gs = p.gs || p.gearScore;
+          var contrib = p.contributionPoints || p.contribution;
+          if (gs) statsItems.push({ l: 'GS', v: String(gs) });
           if (p.combatFame) statsItems.push({ l: 'Combat Fame', v: String(p.combatFame) });
           if (p.lifeFame) statsItems.push({ l: 'Life Fame', v: String(p.lifeFame) });
-          if (p.contributionPoints) statsItems.push({ l: 'Contrib', v: String(p.contributionPoints) });
+          if (contrib) statsItems.push({ l: 'Contrib', v: String(contrib) });
           if (p.energy) statsItems.push({ l: 'Energy', v: String(p.energy) });
           var stats = statsItems.length ? '<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3);">' + statsItems.map(function(s) {
             return '<div style="padding:6px 12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-sm);text-align:center;min-width:80px;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">' + esc(s.l) + '</div><div style="font-weight:700;">' + esc(s.v) + '</div></div>';

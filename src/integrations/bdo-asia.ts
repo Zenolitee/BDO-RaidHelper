@@ -23,6 +23,9 @@ export interface AsiaPlayerProfile {
   guildName: string | null;
   createdOn: string | null;
   characters: Array<{ name: string; class: string; level: number | null; main?: boolean }>;
+  gearScore: number | null;
+  energy: number | null;
+  contribution: number | null;
 }
 
 export interface AsiaGuildProfile {
@@ -146,10 +149,31 @@ function parsePlayerProfile(html: string): AsiaPlayerProfile | null {
     || html.match(/Joined Guild\s+([^\s<]+)/i);
   const guildName = guildMatch ? decodeHtmlEntities(guildMatch[1]) : null;
 
+  // Extract stats from profile_detail section
+  const detailSection = html.match(/profile_detail[\s\S]*?(?=footer|<\/main)/i)?.[0] ?? html;
+
+  // Max Gear Score — appears as text content after the "Max Gear Score" label
+  let gearScore: number | null = null;
+  const gsMatch = detailSection.match(/Max Gear Score[\s\S]*?(\d{2,})/i)
+    || detailSection.match(/gear.score[^>]*>\s*(\d{2,})/i);
+  if (gsMatch) gearScore = parseInt(gsMatch[1], 10) || null;
+
+  // Energy
+  let energy: number | null = null;
+  const energyMatch = detailSection.match(/Energy[\s\S]*?(\d{1,4})/i)
+    || detailSection.match(/energy[^>]*>\s*(\d{1,4})/i);
+  if (energyMatch) energy = parseInt(energyMatch[1], 10) || null;
+
+  // Contribution Points
+  let contribution: number | null = null;
+  const contribMatch = detailSection.match(/(?:Max )?Contribution Points[\s\S]*?(\d{1,4})/i)
+    || detailSection.match(/contribution[^>]*>\s*(\d{1,4})/i);
+  if (contribMatch) contribution = parseInt(contribMatch[1], 10) || null;
+
   // Extract characters from profile_list section
   const characters = parseCharacterList(html);
 
-  return { familyName, guildName, createdOn, characters };
+  return { familyName, guildName, createdOn, characters, gearScore, energy, contribution };
 }
 
 function parseCharacterList(html: string): Array<{ name: string; class: string; level: number | null; main?: boolean }> {
