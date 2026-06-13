@@ -478,7 +478,10 @@ export class SupabaseScoreStore implements ScoreStore {
       .eq("guild_id", guildId)
       .ilike("family_name", escapePostgrestLike(playerName.trim()))
       .maybeSingle<{ class_key: string }>();
-    if (error) throw new Error(`Player class read failed: ${error.message}`);
+    if (error) {
+      if (error.code === "42P01" || error.message?.includes("does not exist")) return null;
+      throw new Error(`Player class read failed: ${error.message}`);
+    }
     return data?.class_key ?? null;
   }
 
@@ -488,14 +491,18 @@ export class SupabaseScoreStore implements ScoreStore {
       const { error } = await this.supabase
         .from("player_classes")
         .upsert({ guild_id: guildId, family_name: cleanedName, class_key: classKey }, { onConflict: "guild_id,family_name" });
-      if (error) throw new Error(`Player class write failed: ${error.message}`);
+      if (error && error.code !== "42P01" && !error.message?.includes("does not exist")) {
+        throw new Error(`Player class write failed: ${error.message}`);
+      }
     } else {
       const { error } = await this.supabase
         .from("player_classes")
         .delete()
         .eq("guild_id", guildId)
         .ilike("family_name", escapePostgrestLike(cleanedName));
-      if (error) throw new Error(`Player class delete failed: ${error.message}`);
+      if (error && error.code !== "42P01" && !error.message?.includes("does not exist")) {
+        throw new Error(`Player class delete failed: ${error.message}`);
+      }
     }
   }
 
@@ -505,7 +512,10 @@ export class SupabaseScoreStore implements ScoreStore {
       .select("family_name, class_key")
       .eq("guild_id", guildId)
       .returns<Array<{ family_name: string; class_key: string }>>();
-    if (error) throw new Error(`Player classes read failed: ${error.message}`);
+    if (error) {
+      if (error.code === "42P01" || error.message?.includes("does not exist")) return {};
+      throw new Error(`Player classes read failed: ${error.message}`);
+    }
     const map: Record<string, string> = {};
     for (const row of data ?? []) {
       map[row.family_name.toLowerCase()] = row.class_key;
