@@ -87,6 +87,11 @@ export function renderGuildActivityPage(
     .tab-btn { display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:var(--text-sm);font-weight:500;cursor:pointer;transition:all 0.15s; }
     .tab-btn:hover { background:rgba(255,255,255,0.04);color:var(--text-primary); }
     .tab-btn.active { background:rgba(255,255,255,0.06);color:var(--text-primary);border-color:rgba(255,255,255,0.12); }
+    .char-card { transition: border-color 0.15s, background 0.15s; }
+    .char-card:hover { background: #1a2030; }
+    .char-card.main-card:hover { border-color: #c99a2e; }
+    .pa-link { transition: background 0.15s; }
+    .pa-link:hover { background: rgba(242,184,75,0.2) !important; }
   </style>
 
   <script>
@@ -177,7 +182,7 @@ export function renderGuildActivityPage(
                       '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Founded ' + createdDate + '</span>' +
                     '</div>' +
                   '</div>' +
-                  (region === 'ASIA' ? '<a href="' + guildUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:rgba(201,154,46,0.1);border:1px solid rgba(201,154,46,0.3);border-radius:var(--radius-md);color:#c99a2e;font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseenter="this.style.background=\'rgba(242,184,75,0.2)\'" onmouseleave="this.style.background=\'rgba(201,154,46,0.1)\'">View on PA <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>' : '') +
+                  (region === 'ASIA' ? '<a href="' + guildUrl + '" target="_blank" rel="noopener" class="pa-link" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:rgba(201,154,46,0.1);border:1px solid rgba(201,154,46,0.3);border-radius:var(--radius-md);color:#c99a2e;font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;">View on PA <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>' : '') +
                 '</div>' +
               '</div>' +
               '<div style="padding:var(--space-5);display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--space-3);">' +
@@ -305,8 +310,7 @@ export function renderGuildActivityPage(
                 sorted.map(function(c) {
                   var mainBadge = c.main ? '<span style="display:inline-block;font-size:9px;font-weight:700;background:linear-gradient(135deg,rgba(34,197,94,0.18),rgba(34,197,94,0.08));color:#22c55e;padding:1px 6px;border-radius:99px;margin-left:6px;letter-spacing:0.04em;vertical-align:middle;">MAIN</span>' : '';
                   var levelBar = c.level ? '<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:#3a2b18;border-radius:0 0 6px 6px;overflow:hidden;"><div style="height:100%;width:' + Math.min(100, (c.level / 70) * 100) + '%;background:linear-gradient(90deg,#c99a2e,#f2b84b);border-radius:0 0 6px 6px;"></div></div>' : '';
-                  var hoverColor = c.main ? '#c99a2e' : '#524020';
-                  return '<div class="char-card" data-hover-border="' + hoverColor + '" style="position:relative;padding:var(--space-3) var(--space-3) var(--space-3);background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;transition:border-color 0.15s,background 0.15s;cursor:default;" onmouseenter="this.style.borderColor=this.dataset.hoverBorder;this.style.background=\'#1a2030\'" onmouseleave="this.style.borderColor=\'#3a2b18\';this.style.background=\'#121722\'">' +
+                  return '<div class="char-card' + (c.main ? ' main-card' : '') + '" style="position:relative;padding:var(--space-3);background:#121722;border:1px solid #3a2b18;border-radius:var(--radius-sm);overflow:hidden;cursor:default;">' +
                     '<div style="display:flex;justify-content:space-between;align-items:center;">' +
                       '<div style="min-width:0;">' +
                         '<div style="font-weight:600;font-size:var(--text-sm);color:#f5f7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.name) + mainBadge + '</div>' +
@@ -335,7 +339,7 @@ export function renderGuildActivityPage(
                       (createdDate ? '<span style="display:inline-flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(createdDate) + '</span>' : '') +
                     '</div>' +
                   '</div>' +
-                  '<a href="' + profileUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:rgba(201,154,46,0.1);border:1px solid rgba(201,154,46,0.3);border-radius:var(--radius-md);color:#c99a2e;font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseenter="this.style.background=\'rgba(242,184,75,0.2)\'" onmouseleave="this.style.background=\'rgba(201,154,46,0.1)\'">' +
+                  '<a href="' + profileUrl + '" target="_blank" rel="noopener" class="pa-link" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;background:rgba(201,154,46,0.1);border:1px solid rgba(201,154,46,0.3);border-radius:var(--radius-md);color:#c99a2e;font-size:var(--text-xs);font-weight:600;text-decoration:none;white-space:nowrap;">' +
                     'View on PA <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
                   '</a>' +
                 '</div>' +
