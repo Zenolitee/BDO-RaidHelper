@@ -60,9 +60,10 @@ import { renderScoreHistoryPage } from "./web/templates/score-history.js";
 import { renderGuildActivityPage } from "./web/templates/guild-activity.js";
 import { renderGuildPerformancePage } from "./web/templates/guild-performance.js";
 import { renderAttendancePage } from "./web/templates/attendance.js";
-import { getAsiaGuild } from "./integrations/bdo-asia.js";
+import { renderPlayerSearchPage } from "./web/templates/player-search.js";
+import { getAsiaGuild, searchAsiaGuilds, searchAsiaPlayers } from "./integrations/bdo-asia.js";
 import { renderDocsPage } from "./web/templates/docs.js";
-import { getBdoGuild, type BdoGuildProfile } from "./integrations/bdo-community.js";
+import { getBdoGuild, searchBdoGuilds, searchBdoAdventurers, getBdoAdventurer, type BdoGuildProfile } from "./integrations/bdo-community.js";
 import { renderCreateServerPickerPage, renderCreateRaidPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
 import type { ScoreReport } from "./score-types.js";
 import { normalizePlayerName } from "./web/score.js";
@@ -400,6 +401,85 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     response.json(classes);
   });
 
+  // BDO Guild search API
+  app.get("/api/bdo/guilds/search", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) { response.status(403).json({ error: "Login required" }); return; }
+    const query = typeof request.query.q === "string" ? request.query.q.trim() : "";
+    const region = typeof request.query.region === "string" ? request.query.region.toUpperCase() : "NA";
+    if (!query || query.length < 2) { response.json([]); return; }
+    try {
+      if (region === "ASIA") {
+        const results = await searchAsiaGuilds(query);
+        response.json(results.map((g) => ({ name: g.name, region: "ASIA", master: g.master?.familyName ?? null, population: g.population ?? 0, createdOn: g.createdOn ?? null })));
+      } else {
+        const results = await searchBdoGuilds(query, region as "EU" | "NA" | "SA" | "KR");
+        response.json(results.map((g) => ({ name: g.name, region: g.region, master: g.master?.familyName ?? null, population: g.population ?? 0, createdOn: g.createdOn ?? null })));
+      }
+    } catch {
+      response.json([]);
+    }
+  });
+
+  // BDO Player search API
+  app.get("/api/bdo/players/search", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) { response.status(403).json({ error: "Login required" }); return; }
+    const query = typeof request.query.q === "string" ? request.query.q.trim() : "";
+    const region = typeof request.query.region === "string" ? request.query.region.toUpperCase() : "NA";
+    const type = typeof request.query.type === "string" && request.query.type === "characterName" ? "characterName" : "familyName";
+    if (!query || query.length < 2) { response.json([]); return; }
+    try {
+      if (region === "ASIA") {
+        const results = await searchAsiaPlayers(query, type);
+        response.json(results.map((p) => ({ familyName: p.familyName, guild: p.guildName, mainCharacter: p.mainCharacter, profileTarget: p.profileTarget, region: "ASIA" })));
+      } else {
+        const results = await searchBdoAdventurers(query, region as "EU" | "NA" | "SA" | "KR", type);
+        response.json(results.map((p) => ({ familyName: p.familyName, guild: p.guild?.name ?? null, mainCharacter: null, profileTarget: p.profileTarget, region: p.region })));
+      }
+    } catch {
+      response.json([]);
+    }
+  });
+
+  // BDO Player profile API
+  app.get("/api/bdo/players/:profileTarget", async (request, response) => {
+    const session = await getSession(request, sessions);
+    if (!session) { response.status(403).json({ error: "Login required" }); return; }
+    const region = typeof request.query.region === "string" ? request.query.region.toUpperCase() : "NA";
+    const profileTarget = decodeURIComponent(request.params.profileTarget);
+    try {
+      if (region === "ASIA") {
+        const { searchAsiaPlayers } = await import("./integrations/bdo-asia.js");
+        const results = await searchAsiaPlayers(profileTarget, "familyName");
+        const match = results.find((p) => p.profileTarget === profileTarget);
+        if (match) {
+          response.json({ familyName: match.familyName, guild: match.guildName, mainCharacter: match.mainCharacter, profileTarget: match.profileTarget, region: "ASIA" });
+        } else {
+          response.status(404).json({ error: "Player not found" });
+        }
+      } else {
+        const profile = await getBdoAdventurer(profileTarget, region as "EU" | "NA" | "SA" | "KR");
+        response.json({
+          familyName: profile.familyName,
+          guild: profile.guild?.name ?? null,
+          mainCharacter: profile.characters.find((c) => c.main)?.name ?? profile.characters[0]?.name ?? null,
+          characters: profile.characters,
+          contributionPoints: profile.contributionPoints,
+          lifeFame: profile.lifeFame,
+          combatFame: profile.combatFame,
+          energy: profile.energy,
+          gs: profile.gs,
+          createdOn: profile.createdOn,
+          region: profile.region,
+          profileTarget,
+        });
+      }
+    } catch {
+      response.status(404).json({ error: "Player not found" });
+    }
+  });
+
   // War comparison page
   app.get("/stats/compare", async (request, response) => {
     const session = await getSession(request, sessions);
@@ -431,6 +511,33 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const reports = await options.scoreStore.listReports(guild.id);
     const { renderWarComparePage } = await import("./web/templates/war-compare.js");
     response.type("html").send(renderWarComparePage(guild, session, reports, warAId, warBId, summaries));
+  });
+
+  // Player search page
+  app.get("/stats/players/search", async (request, response) => {
+    const session = await getSession(request, sessions);
+    const isTestMode = request.query.test === "1";
+    const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+
+    if (isTestMode) {
+      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
+      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
+      response.type("html").send(renderPlayerSearchPage(mockGuild, mockSession));
+      return;
+    }
+
+    if (!session) {
+      response.status(403).type("html").send(renderLoginRequiredPage());
+      return;
+    }
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
+    if (!guild) {
+      response.status(404).type("html").send(renderWebError(new Error("Server not found.")));
+      return;
+    }
+    const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
+    const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
+    response.type("html").send(renderPlayerSearchPage(guild, session, summaries));
   });
 
   // CSV export endpoint

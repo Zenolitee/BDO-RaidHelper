@@ -90,44 +90,127 @@ function renderNoGuildModal(
   configuredRegion: string | null,
   backLink: string
 ): string {
+  const regionOptions = ["EU", "NA", "SA", "KR", "ASIA"].map((r) =>
+    `<option value="${r}" ${configuredRegion === r ? "selected" : ""}>${r === "ASIA" ? "ASIA (TH/SEA)" : r}</option>`
+  ).join("");
+
   return `<section class="page-content dash-layout" style="max-width:680px;">
     <div class="dash-header">
       ${backLink}
       <p class="landing-kicker" style="margin-top:var(--space-4);">Guild Activity</p>
       <h1>No guild linked</h1>
-      <p style="color:var(--text-muted);margin-top:var(--space-2);">No BDO guild is associated with <strong>${escapeHtml(guild.name)}</strong> yet. Enter your BDO guild name to pull profile data from the community API.</p>
+      <p style="color:var(--text-muted);margin-top:var(--space-2);">No BDO guild is associated with <strong>${escapeHtml(guild.name)}</strong> yet. Search for your guild below.</p>
     </div>
 
     <div class="card guild-link-modal" style="margin-top:var(--space-6);">
       <div style="padding:var(--space-6);">
         <h3 style="margin:0 0 var(--space-2);font-size:var(--text-lg);">Link a BDO Guild</h3>
-        <p style="color:var(--text-muted);margin:0 0 var(--space-5);font-size:var(--text-sm);">Search results require an exact guild name match.</p>
+        <p style="color:var(--text-muted);margin:0 0 var(--space-5);font-size:var(--text-sm);">Start typing to search for your guild across all regions.</p>
 
-        <form method="POST" action="/guilds/${encodeURIComponent(guild.id)}/activity">
+        <form method="POST" action="/guilds/${encodeURIComponent(guild.id)}/activity" id="guild-link-form">
           <input type="hidden" name="csrfToken" value="${escapeHtml(session.csrfToken)}">
+          <input type="hidden" name="bdoGuildName" id="selectedGuildName" value="${configuredGuildName ? escapeHtml(configuredGuildName) : ""}">
+          <input type="hidden" name="region" id="selectedGuildRegion" value="${configuredRegion ? escapeHtml(configuredRegion) : "NA"}">
 
-          <div class="form-group">
-            <label class="label" for="bdoGuildName">BDO Guild Name</label>
-            <input type="text" id="bdoGuildName" name="bdoGuildName" class="input" placeholder="Enter exact guild name..." value="${configuredGuildName ? escapeHtml(configuredGuildName) : ""}" required autofocus>
+          <div class="form-group" style="position:relative;">
+            <label class="label" for="guildSearchInput">Search Guild</label>
+            <input type="text" id="guildSearchInput" class="input" placeholder="Type guild name..." value="${configuredGuildName ? escapeHtml(configuredGuildName) : ""}" autocomplete="off" autofocus>
+            <div id="guildSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:240px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
           </div>
 
           <div class="form-group">
-            <label class="label" for="region">Region</label>
-            <select id="region" name="region" class="select">
-              <option value="EU" ${configuredRegion === "EU" ? "selected" : ""}>EU</option>
-              <option value="NA" ${configuredRegion === "NA" ? "selected" : ""}>NA</option>
-              <option value="SA" ${configuredRegion === "SA" ? "selected" : ""}>SA</option>
-              <option value="KR" ${configuredRegion === "KR" ? "selected" : ""}>KR</option>
-              <option value="ASIA" ${configuredRegion === "ASIA" ? "selected" : ""}>ASIA (TH/SEA)</option>
+            <label class="label" for="regionSelect">Region</label>
+            <select id="regionSelect" class="select" onchange="document.getElementById('selectedGuildRegion').value=this.value">
+              ${regionOptions}
             </select>
           </div>
 
+          <div id="selectedGuildDisplay" style="display:none;padding:var(--space-3);background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius-md);margin-top:var(--space-3);">
+            <span style="color:var(--color-green,#22c55e);font-size:var(--text-sm);">✓ Selected: <strong id="selectedGuildText"></strong></span>
+          </div>
+
           <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
-            <button type="submit" class="button button-primary">Link Guild</button>
+            <button type="submit" class="button button-primary" id="linkGuildBtn" disabled>Link Guild</button>
             <a href="/dashboard" class="button button-ghost">Cancel</a>
           </div>
         </form>
       </div>
     </div>
-  </section>`;
+  </section>
+
+  <script>
+  (function() {
+    var searchInput = document.getElementById('guildSearchInput');
+    var resultsDiv = document.getElementById('guildSearchResults');
+    var hiddenName = document.getElementById('selectedGuildName');
+    var hiddenRegion = document.getElementById('selectedGuildRegion');
+    var regionSelect = document.getElementById('regionSelect');
+    var display = document.getElementById('selectedGuildDisplay');
+    var displayText = document.getElementById('selectedGuildText');
+    var linkBtn = document.getElementById('linkGuildBtn');
+    var debounceTimer = null;
+
+    searchInput.addEventListener('input', function() {
+      clearTimeout(debounceTimer);
+      var query = this.value.trim();
+      if (query.length < 2) { resultsDiv.style.display = 'none'; return; }
+      debounceTimer = setTimeout(function() { doSearch(query); }, 300);
+    });
+
+    searchInput.addEventListener('focus', function() {
+      if (resultsDiv.children.length > 0 && this.value.trim().length >= 2) resultsDiv.style.display = 'block';
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) resultsDiv.style.display = 'none';
+    });
+
+    regionSelect.addEventListener('change', function() {
+      hiddenRegion.value = this.value;
+      if (searchInput.value.trim().length >= 2) doSearch(searchInput.value.trim());
+    });
+
+    function doSearch(query) {
+      var region = regionSelect.value;
+      fetch('/api/bdo/guilds/search?q=' + encodeURIComponent(query) + '&region=' + encodeURIComponent(region))
+        .then(function(r) { return r.json(); })
+        .then(function(results) {
+          resultsDiv.innerHTML = '';
+          if (!results.length) {
+            resultsDiv.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:var(--text-sm);">No guilds found</div>';
+            resultsDiv.style.display = 'block';
+            return;
+          }
+          results.forEach(function(g) {
+            var item = document.createElement('div');
+            item.style.cssText = 'padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;';
+            item.innerHTML = '<div><strong style="color:var(--text-primary);">' + escHtml(g.name) + '</strong><div style="font-size:11px;color:var(--text-muted);">' + (g.master ? 'Master: ' + escHtml(g.master) : '') + (g.population ? ' · ' + g.population + ' members' : '') + '</div></div><span style="font-size:11px;color:var(--text-muted);">' + escHtml(g.region) + '</span>';
+            item.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.04)'; });
+            item.addEventListener('mouseleave', function() { this.style.background = 'transparent'; });
+            item.addEventListener('click', function() {
+              searchInput.value = g.name;
+              hiddenName.value = g.name;
+              hiddenRegion.value = g.region;
+              regionSelect.value = g.region;
+              displayText.textContent = g.name + ' (' + g.region + ')';
+              display.style.display = 'block';
+              linkBtn.disabled = false;
+              resultsDiv.style.display = 'none';
+            });
+            resultsDiv.appendChild(item);
+          });
+          resultsDiv.style.display = 'block';
+        })
+        .catch(function() { resultsDiv.style.display = 'none'; });
+    }
+
+    function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    if (hiddenName.value) {
+      displayText.textContent = hiddenName.value + ' (' + hiddenRegion.value + ')';
+      display.style.display = 'block';
+      linkBtn.disabled = false;
+    }
+  })();
+  </script>`;
 }
