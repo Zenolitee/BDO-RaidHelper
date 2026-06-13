@@ -204,7 +204,8 @@ export class JsonScoreStore implements ScoreStore {
 
   async getPlayerClass(guildId: string, playerName: string): Promise<string | null> {
     const data = await this.read();
-    return data.playerClasses?.[guildId]?.[playerName.toLowerCase()] ?? null;
+    const raw = data.playerClasses?.[guildId]?.[playerName.toLowerCase()] ?? null;
+    return raw ? migrateClassKey(raw) : null;
   }
 
   async setPlayerClass(guildId: string, playerName: string, classKey: string | null): Promise<void> {
@@ -222,7 +223,20 @@ export class JsonScoreStore implements ScoreStore {
 
   async getPlayerClasses(guildId: string): Promise<Record<string, string>> {
     const data = await this.read();
-    return data.playerClasses?.[guildId] ?? {};
+    const raw = data.playerClasses?.[guildId] ?? {};
+    let migrated = false;
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const fixed = migrateClassKey(v);
+      result[k] = fixed;
+      if (fixed !== v) migrated = true;
+    }
+    if (migrated) {
+      if (!data.playerClasses) data.playerClasses = {};
+      data.playerClasses[guildId] = result;
+      await this.write(data);
+    }
+    return result;
   }
 
   private async read(): Promise<ScoreStoreData> {
@@ -482,7 +496,7 @@ export class SupabaseScoreStore implements ScoreStore {
       if (error.code === "42P01" || error.message?.includes("does not exist")) return null;
       throw new Error(`Player class read failed: ${error.message}`);
     }
-    return data?.class_key ?? null;
+    return data?.class_key ? migrateClassKey(data.class_key) : null;
   }
 
   async setPlayerClass(guildId: string, playerName: string, classKey: string | null): Promise<void> {
@@ -518,7 +532,7 @@ export class SupabaseScoreStore implements ScoreStore {
     }
     const map: Record<string, string> = {};
     for (const row of data ?? []) {
-      map[row.family_name.toLowerCase()] = row.class_key;
+      map[row.family_name.toLowerCase()] = migrateClassKey(row.class_key);
     }
     return map;
   }
@@ -617,4 +631,18 @@ function safeFileName(fileName: string): string {
 
 function escapePostgrestLike(value: string): string {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+const VALID_CLASS_KEYS = new Set([
+  "pa_warrior","pa_ranger","pa_sorceress","pa_berserker","pa_tamer","pa_musa","pa_maehwa",
+  "pa_valkyrie","pa_kunoichi","pa_ninja","pa_wizard","pa_witch","pa_darkknight","pa_striker",
+  "pa_mystic","pa_lahn","pa_archer","pa_shai","pa_guardian","pa_hashashin","pa_nova","pa_sage",
+  "pa_corsair","pa_drakania","pa_woosa","pa_maegu","pa_scholar","pa_dusa","pa_deadeye",
+  "pa_wukong","pa_seraph"
+]);
+
+function migrateClassKey(key: string): string {
+  if (VALID_CLASS_KEYS.has(key)) return key;
+  const prefixed = `pa_${key}`;
+  return VALID_CLASS_KEYS.has(prefixed) ? prefixed : key;
 }
