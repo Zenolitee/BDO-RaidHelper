@@ -448,11 +448,13 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     if (!session) { response.status(403).json({ error: "Login required" }); return; }
     const region = typeof request.query.region === "string" ? request.query.region.toUpperCase() : "NA";
     const profileTarget = decodeURIComponent(request.params.profileTarget);
+    // For ASIA, profileTarget is actually the family name (since the real profileTarget is an encrypted blob)
+    const familyNameOrTarget = typeof request.query.name === "string" ? request.query.name : profileTarget;
     try {
       if (region === "ASIA") {
         const { searchAsiaPlayers } = await import("./integrations/bdo-asia.js");
-        const results = await searchAsiaPlayers(profileTarget, "familyName");
-        const match = results.find((p) => p.familyName.toLowerCase() === profileTarget.toLowerCase()) ?? results[0];
+        const results = await searchAsiaPlayers(familyNameOrTarget, "familyName");
+        const match = results.find((p) => p.familyName.toLowerCase() === familyNameOrTarget.toLowerCase()) ?? results[0];
         if (match) {
           response.json({ familyName: match.familyName, guild: match.guildName, mainCharacter: match.mainCharacter, profileTarget: match.profileTarget, region: "ASIA", characters: [] });
         } else {

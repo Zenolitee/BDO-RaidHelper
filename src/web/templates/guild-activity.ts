@@ -221,7 +221,9 @@ export function renderGuildActivityPage(
             item.onclick = function() {
               playerResults.style.display = 'none';
               playerInput.value = p.familyName;
-              loadProfile(p.profileTarget, region);
+              // For ASIA, pass family name instead of encrypted profileTarget
+              var target = region === 'ASIA' ? p.familyName : p.profileTarget;
+              loadProfile(target, region, p.familyName);
             };
             playerResults.appendChild(item);
           });
@@ -230,11 +232,12 @@ export function renderGuildActivityPage(
         .catch(function() { playerResults.style.display = 'none'; });
     }
 
-    function loadProfile(profileTarget, region) {
+    function loadProfile(profileTarget, region, familyName) {
       profileDiv.style.display = 'block';
       profileDiv.innerHTML = '<div style="padding:var(--space-6);text-align:center;color:var(--text-muted);">Loading profile...</div>';
 
-      fetch('/api/bdo/players/' + encodeURIComponent(profileTarget) + '?region=' + encodeURIComponent(region))
+      var nameParam = familyName ? '&name=' + encodeURIComponent(familyName) : '';
+      fetch('/api/bdo/players/' + encodeURIComponent(profileTarget) + '?region=' + encodeURIComponent(region) + nameParam)
         .then(function(r) { return r.json(); })
         .then(function(p) {
           if (p.error) { profileDiv.innerHTML = '<div style="padding:var(--space-4);text-align:center;color:var(--text-muted);">' + esc(p.error) + '</div>'; return; }

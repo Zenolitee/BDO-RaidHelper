@@ -59,11 +59,21 @@ function endpoint(path: string, params: Record<string, string | undefined>): str
 }
 
 async function readJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) {
-    throw new Error(`BDO REST API request failed with ${response.status} ${response.statusText}`);
+  const maxAttempts = 10;
+  const delayMs = 1500;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      throw new Error(`BDO REST API request failed with ${response.status} ${response.statusText}`);
+    }
+    const data = (await response.json()) as T & { status?: string };
+    if (data && typeof data === "object" && "status" in data && data.status === "started") {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+    return data;
   }
-  return response.json() as Promise<T>;
+  throw new Error(`BDO REST API timed out after ${maxAttempts} attempts`);
 }
 
 export function searchBdoAdventurers(query: string, region: BdoRegion = "NA", searchType: BdoAdventurerSearchType = "familyName") {
