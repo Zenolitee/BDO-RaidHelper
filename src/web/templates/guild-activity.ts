@@ -18,67 +18,77 @@ export function renderGuildActivityPage(
     `<option value="${r}" ${(configuredRegion ?? "NA") === r ? "selected" : ""}>${r === "ASIA" ? "ASIA (TH/SEA)" : r}</option>`
   ).join("");
 
-  const content = `<section class="page-content dash-layout" style="max-width:860px;">
-    <div class="dash-header" style="text-align:left;">
-      ${backLink}
-      <p class="landing-kicker" style="margin-top:var(--space-4);">Look Up</p>
-      <h1>Guild / Player</h1>
-      <p style="color:var(--text-muted);margin-top:var(--space-2);">Search for any BDO guild or player across all regions.</p>
-    </div>
-
-    <!-- Tab Switcher -->
-    <div style="display:flex;gap:var(--space-2);margin-top:var(--space-6);">
-      <button class="tab-btn active" data-tab="guild" onclick="switchTab('guild')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        Guild
-      </button>
-      <button class="tab-btn" data-tab="player" onclick="switchTab('player')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Player
-      </button>
-    </div>
-
-    <!-- Guild Tab -->
-    <div id="tab-guild" class="tab-panel active" style="margin-top:var(--space-4);">
-      <div class="card" style="padding:var(--space-5);">
-        <h3 style="margin:0 0 var(--space-1);font-size:var(--text-base);font-weight:600;">Search Guild</h3>
-        <p style="color:var(--text-muted);margin:0 0 var(--space-4);font-size:var(--text-sm);">Type a guild name to search across all regions.</p>
-
-        <div style="display:flex;gap:var(--space-3);align-items:flex-end;">
-          <div style="flex:1;position:relative;">
-            <label class="label" for="guildSearchInput">Guild Name</label>
-            <input type="text" id="guildSearchInput" class="input" placeholder="Type guild name..." autocomplete="off" autofocus>
-            <div id="guildSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:280px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
-          </div>
-          <div style="width:130px;">
-            <label class="label" for="guildRegionSelect">Region</label>
-            <select id="guildRegionSelect" class="select">${regionOptions}</select>
-          </div>
-        </div>
-
-        <div id="guildProfile" style="display:none;margin-top:var(--space-4);"></div>
+  const content = `<section class="guild-activity-page" style="min-height:100vh;background:linear-gradient(180deg,rgba(9,11,16,0.3) 0%,rgba(9,11,16,0.6) 40%,rgba(9,11,16,0.95) 100%),url('/assets/bg.png') center / cover no-repeat;padding:var(--space-8);overflow:hidden;">
+    <div style="max-width:860px;margin:0 auto;">
+      <div class="dash-header" style="text-align:left;">
+        ${backLink}
+        <p class="landing-kicker" style="margin-top:var(--space-4);animation:floatIn 0.7s ease-out both;">Look Up</p>
+        <h1 style="animation:floatIn 0.7s ease-out 0.15s both;">Guild / Player</h1>
+        <p style="color:var(--text-muted);margin-top:var(--space-2);animation:floatIn 0.7s ease-out 0.3s both;">Search for any BDO guild or player across all regions.</p>
       </div>
-    </div>
 
-    <!-- Player Tab -->
-    <div id="tab-player" class="tab-panel" style="display:none;margin-top:var(--space-4);">
-      <div class="card" style="padding:var(--space-5);">
-        <h3 style="margin:0 0 var(--space-1);font-size:var(--text-base);font-weight:600;">Search Player</h3>
-        <p style="color:var(--text-muted);margin:0 0 var(--space-4);font-size:var(--text-sm);">Search for any BDO player by family name.</p>
+      <!-- Tab Switcher -->
+      <div style="display:flex;gap:var(--space-2);margin-top:var(--space-6);animation:floatIn 0.7s ease-out 0.4s both;">
+        <button class="tab-btn active" data-tab="guild" onclick="switchTab('guild')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 1-2 2H5a2 2 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Guild
+        </button>
+        <button class="tab-btn" data-tab="player" onclick="switchTab('player')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0-4-4H8a4 4 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Player
+        </button>
+      </div>
 
-        <div style="display:flex;gap:var(--space-3);align-items:flex-end;">
-          <div style="flex:1;position:relative;">
-            <label class="label" for="playerSearchInput">Family Name</label>
-            <input type="text" id="playerSearchInput" class="input" placeholder="Enter family name..." autocomplete="off">
-            <div id="playerSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:280px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+      <!-- Guild Tab -->
+      <div id="tab-guild" class="tab-panel active" style="margin-top:var(--space-4);animation:floatIn 0.7s ease-out 0.5s both;">
+        <div class="card" style="padding:var(--space-5);backdrop-filter:blur(12px);background:rgba(12,15,21,0.78);border:1px solid rgba(201,154,46,0.22);">
+          <h3 style="margin:0 0 var(--space-1);font-size:var(--text-base);font-weight:600;">Search Guild</h3>
+          <p style="color:var(--text-muted);margin:0 0 var(--space-4);font-size:var(--text-sm);">Type a guild name to search across all regions.</p>
+
+          <div style="display:flex;gap:var(--space-3);align-items:flex-end;">
+            <div style="width:130px;flex-shrink:0;">
+              <label class="label" for="guildRegionSelect">Region</label>
+              <select id="guildRegionSelect" class="select">${regionOptions}</select>
+            </div>
+            <div style="flex:1;position:relative;">
+              <label class="label" for="guildSearchInput">Guild Name</label>
+              <input type="text" id="guildSearchInput" class="input" placeholder="Type guild name..." autocomplete="off" autofocus>
+              <div id="guildSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:280px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+            </div>
+            <button type="button" class="button button-primary" style="height:42px;padding:0 20px;flex-shrink:0;white-space:nowrap;" onclick="triggerGuildSearch()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              Search
+            </button>
           </div>
-          <div style="width:130px;">
-            <label class="label" for="playerRegionSelect">Region</label>
-            <select id="playerRegionSelect" class="select">${regionOptions}</select>
-          </div>
+
+          <div id="guildProfile" style="display:none;margin-top:var(--space-4);"></div>
         </div>
+      </div>
 
-        <div id="playerProfile" style="display:none;margin-top:var(--space-4);"></div>
+      <!-- Player Tab -->
+      <div id="tab-player" class="tab-panel" style="display:none;margin-top:var(--space-4);">
+        <div class="card" style="padding:var(--space-5);backdrop-filter:blur(12px);background:rgba(12,15,21,0.78);border:1px solid rgba(201,154,46,0.22);">
+          <h3 style="margin:0 0 var(--space-1);font-size:var(--text-base);font-weight:600;">Search Player</h3>
+          <p style="color:var(--text-muted);margin:0 0 var(--space-4);font-size:var(--text-sm);">Search for any BDO player by family name.</p>
+
+          <div style="display:flex;gap:var(--space-3);align-items:flex-end;">
+            <div style="width:130px;flex-shrink:0;">
+              <label class="label" for="playerRegionSelect">Region</label>
+              <select id="playerRegionSelect" class="select">${regionOptions}</select>
+            </div>
+            <div style="flex:1;position:relative;">
+              <label class="label" for="playerSearchInput">Family Name</label>
+              <input type="text" id="playerSearchInput" class="input" placeholder="Enter family name..." autocomplete="off">
+              <div id="playerSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-card,#1a1a2e);border:1px solid var(--border);border-radius:var(--radius-md);max-height:280px;overflow-y:auto;z-index:50;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+            </div>
+            <button type="button" class="button button-primary" style="height:42px;padding:0 20px;flex-shrink:0;white-space:nowrap;" onclick="triggerPlayerSearch()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              Search
+            </button>
+          </div>
+
+          <div id="playerProfile" style="display:none;margin-top:var(--space-4);"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -92,6 +102,9 @@ export function renderGuildActivityPage(
     .char-card.main-card:hover { border-color: #c99a2e; }
     .pa-link { transition: background 0.15s; }
     .pa-link:hover { background: rgba(242,184,75,0.2) !important; }
+    @media (prefers-reduced-motion: reduce) {
+      .guild-activity-page * { animation: none !important; }
+    }
   </style>
 
   <script>
@@ -104,6 +117,36 @@ export function renderGuildActivityPage(
       // Focus the search input in the active tab
       var input = document.getElementById(tab === 'guild' ? 'guildSearchInput' : 'playerSearchInput');
       if (input) setTimeout(function() { input.focus(); }, 50);
+    };
+    // ── Class image mapping ──
+    var classImageMap = {
+      'Archer': 'pa_archer.png', 'Berserker': 'pa_berserker.png', 'Corsair': 'pa_corsair.png',
+      'Dark Knight': 'pa_darkknight.png', 'Dusa': 'pa_dusa.png', 'Drakania': 'pa_drakania.png',
+      'Deadeye': 'pa_deadeye.png', 'Guardian': 'pa_guardian.png', 'Hashashin': 'pa_hashashin.png',
+      'Kunoichi': 'pa_kunoichi.png', 'Lahn': 'pa_lahn.png', 'Maehwa': 'pa_maehwa.png',
+      'Maegu': 'pa_maegu.png', 'Musa': 'pa_musa.png', 'Mystic': 'pa_mystic.png',
+      'Ninja': 'pa_ninja.png', 'Nova': 'pa_nova.png', 'Ranger': 'pa_ranger.png',
+      'Sage': 'pa_sage.png', 'Scholar': 'pa_scholar.png', 'Seraph': 'pa_seraph.png',
+      'Shai': 'pa_shai.png', 'Sorceress': 'pa_sorceress.png', 'Striker': 'pa_striker.png',
+      'Tamer': 'pa_tamer.png', 'Valkyrie': 'pa_valkyrie.png', 'Warrior': 'pa_warrior.png',
+      'Witch': 'pa_witch.png', 'Wizard': 'pa_wizard.png', 'Wukong': 'pa_wukong.png',
+      'Woosa': 'pa_woosa.png'
+    };
+    function getClassImage(cls) {
+      return classImageMap[cls] ? '/images/classes/' + classImageMap[cls] : null;
+    }
+    // ── Immediate search triggers (for Search button) ──
+    window.triggerGuildSearch = function() {
+      clearTimeout(guildDebounce);
+      var q = guildInput.value.trim();
+      if (q.length < 2) { guildResults.style.display = 'none'; return; }
+      searchGuilds(q);
+    };
+    window.triggerPlayerSearch = function() {
+      clearTimeout(playerDebounce);
+      var q = playerInput.value.trim();
+      if (q.length < 2) { playerResults.style.display = 'none'; return; }
+      searchPlayers(q);
     };
 
     // ── Guild search ──
@@ -310,13 +353,18 @@ export function renderGuildActivityPage(
                 sorted.map(function(c) {
                   var mainBadge = c.main ? '<span style="display:inline-block;font-size:9px;font-weight:700;background:linear-gradient(135deg,rgba(34,197,94,0.18),rgba(34,197,94,0.08));color:#22c55e;padding:1px 6px;border-radius:99px;margin-left:6px;letter-spacing:0.04em;vertical-align:middle;">MAIN</span>' : '';
                   var levelBar = c.level ? '<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:#3a2b18;border-radius:0 0 6px 6px;overflow:hidden;"><div style="height:100%;width:' + Math.min(100, (c.level / 70) * 100) + '%;background:linear-gradient(90deg,#c99a2e,#f2b84b);border-radius:0 0 6px 6px;"></div></div>' : '';
+                  var classImg = getClassImage(c.class);
+                  var imgHtml = classImg ? '<img src="' + classImg + '" alt="' + esc(c.class) + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;opacity:0.9;">' : '';
                   return '<div class="char-card' + (c.main ? ' main-card' : '') + '" style="position:relative;padding:var(--space-3);background:#121722;border:1px solid #3a2b18;border-radius:var(--radius-sm);overflow:hidden;cursor:default;">' +
-                    '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-                      '<div style="min-width:0;">' +
-                        '<div style="font-weight:600;font-size:var(--text-sm);color:#f5f7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.name) + mainBadge + '</div>' +
-                        '<div style="font-size:11px;color:#6d7580;margin-top:1px;">' + esc(c.class) + '</div>' +
+                    '<div style="display:flex;gap:10px;align-items:center;">' +
+                      imgHtml +
+                      '<div style="display:flex;justify-content:space-between;align-items:center;flex:1;min-width:0;">' +
+                        '<div style="min-width:0;">' +
+                          '<div style="font-weight:600;font-size:var(--text-sm);color:#f5f7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(c.name) + mainBadge + '</div>' +
+                          '<div style="font-size:11px;color:#6d7580;margin-top:1px;">' + esc(c.class) + '</div>' +
+                        '</div>' +
+                        (c.level ? '<div style="font-size:var(--text-sm);font-weight:700;color:#c99a2e;white-space:nowrap;">Lv. ' + c.level + '</div>' : '') +
                       '</div>' +
-                      (c.level ? '<div style="font-size:var(--text-sm);font-weight:700;color:#c99a2e;white-space:nowrap;">Lv. ' + c.level + '</div>' : '') +
                     '</div>' +
                     levelBar +
                   '</div>';

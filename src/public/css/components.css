@@ -1075,12 +1075,17 @@ a.card:focus-visible {
   border-radius: 50%;
   margin-bottom: var(--space-4);
   filter: drop-shadow(0 0 40px rgba(201, 154, 46, 0.3));
-  animation: logoGlow 4s ease-in-out infinite alternate;
+  animation: floatIn 0.8s ease-out both, logoGlow 4s ease-in-out 1.2s infinite alternate;
 }
 
 @keyframes logoGlow {
   from { filter: drop-shadow(0 0 30px rgba(201, 154, 46, 0.2)); }
   to { filter: drop-shadow(0 0 50px rgba(201, 154, 46, 0.4)); }
+}
+
+@keyframes floatIn {
+  from { opacity: 0; transform: translateY(36px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .athena-hero-kicker {
@@ -1090,6 +1095,7 @@ a.card:focus-visible {
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: var(--space-2);
+  animation: floatIn 0.7s ease-out 0.15s both;
 }
 
 .athena-hero-title {
@@ -1102,6 +1108,7 @@ a.card:focus-visible {
   white-space: nowrap;
   text-transform: uppercase;
   text-shadow: 0 0 32px rgba(201, 154, 46, 0.26), 0 2px 0 rgba(0, 0, 0, 0.35);
+  animation: floatIn 0.7s ease-out 0.3s both;
 }
 
 .athena-hero-sub {
@@ -1111,6 +1118,7 @@ a.card:focus-visible {
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: var(--space-6);
+  animation: floatIn 0.7s ease-out 0.45s both;
 }
 
 .athena-hero-desc {
@@ -1119,6 +1127,7 @@ a.card:focus-visible {
   line-height: 1.6;
   max-width: 420px;
   margin-bottom: var(--space-8);
+  animation: floatIn 0.7s ease-out 0.6s both;
 }
 
 .athena-hero-actions {
@@ -1126,6 +1135,7 @@ a.card:focus-visible {
   z-index: 1;
   display: flex;
   gap: var(--space-3);
+  animation: floatIn 0.7s ease-out 0.75s both;
 }
 
 
@@ -1231,6 +1241,41 @@ a.card:focus-visible {
   color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
+}
+/* ── Scroll-triggered feature reveal ─────────────────────────── */
+.athena-section-heading,
+.athena-feature-grid article,
+.athena-support-panel {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+.athena-section-heading.in-view,
+.athena-feature-grid article.in-view,
+.athena-support-panel.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+.athena-feature-grid article:nth-child(2) { transition-delay: 0.1s; }
+.athena-feature-grid article:nth-child(3) { transition-delay: 0.2s; }
+.athena-feature-grid article:nth-child(4) { transition-delay: 0.3s; }
+.athena-support-panel { transition-delay: 0.15s; }
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .athena-hero-logo,
+  .athena-hero-kicker,
+  .athena-hero-title,
+  .athena-hero-sub,
+  .athena-hero-desc,
+  .athena-hero-actions,
+  .athena-section-heading,
+  .athena-feature-grid article,
+  .athena-support-panel {
+    animation: none;
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .athena-footer {

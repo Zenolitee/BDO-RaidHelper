@@ -111,6 +111,21 @@ export function renderApp(title: string, body: string, opts: {
           alert('Network error: ' + (err && err.message ? err.message : err));
         });
       });
+      // ── Scroll-triggered feature reveal ──
+      if ('IntersectionObserver' in window) {
+        var revealEls = document.querySelectorAll('.athena-section-heading, .athena-feature-grid article, .athena-support-panel');
+        if (revealEls.length) {
+          var observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add('in-view');
+                observer.unobserve(entry.target);
+              }
+            });
+          }, { threshold: 0.15 });
+          revealEls.forEach(function (el) { observer.observe(el); });
+        }
+      }
     })();
   </script>
 </body>

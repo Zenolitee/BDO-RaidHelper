@@ -483,6 +483,7 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--accent);
+  animation: floatIn 0.7s ease-out both;
 }
 
 .dash-hero h1 {
@@ -493,6 +494,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-primary);
+  animation: floatIn 0.7s ease-out 0.15s both;
 }
 
 .dash-hero h1::first-line {
@@ -503,6 +505,7 @@
   max-width: 520px;
   color: var(--text-secondary);
   line-height: var(--leading-normal);
+  animation: floatIn 0.7s ease-out 0.3s both;
 }
 
 .dash-hero-actions {
@@ -523,6 +526,7 @@
 
 .dash-overview {
   padding: var(--space-5);
+  animation: floatIn 0.7s ease-out 0.2s both;
 }
 
 .dash-overview h2,
@@ -664,6 +668,7 @@
   border-top: 0;
   max-width: 1120px;
   margin-inline: auto;
+  animation: floatIn 0.7s ease-out 0.4s both;
 }
 
 .dash-section-head {
