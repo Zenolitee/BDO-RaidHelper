@@ -452,9 +452,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       if (region === "ASIA") {
         const { searchAsiaPlayers } = await import("./integrations/bdo-asia.js");
         const results = await searchAsiaPlayers(profileTarget, "familyName");
-        const match = results.find((p) => p.profileTarget === profileTarget);
+        const match = results.find((p) => p.familyName.toLowerCase() === profileTarget.toLowerCase()) ?? results[0];
         if (match) {
-          response.json({ familyName: match.familyName, guild: match.guildName, mainCharacter: match.mainCharacter, profileTarget: match.profileTarget, region: "ASIA" });
+          response.json({ familyName: match.familyName, guild: match.guildName, mainCharacter: match.mainCharacter, profileTarget: match.profileTarget, region: "ASIA", characters: [] });
         } else {
           response.status(404).json({ error: "Player not found" });
         }
