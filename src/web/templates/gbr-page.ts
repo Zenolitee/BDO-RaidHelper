@@ -140,7 +140,7 @@ export function renderCreateGBRPage(
     </div>
   `;
 
-  return renderApp("Create GBR", content, { session, bodyClass: "gbr-create-body" })
+  return renderApp("Create GBR", content, { session, bodyClass: "gbr-create-body", headExtra: '<link rel="stylesheet" href="/assets/css/gbr.css">' })
     + renderGBRScript();
 }
 
