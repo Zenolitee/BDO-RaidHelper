@@ -230,6 +230,10 @@ export function renderEditRaidPage(event: WarEvent, csrfToken: string, session: 
   return renderApp("Edit — " + event.title, content, { session }) + renderRecurrenceDayScript() + renderAllocationScript(false);
 }
 
+/* ── Node War New (stub — delegates to existing raid page) ──── */
+
+export { renderCreateRaidPage as renderCreateNodeWarNewPage };
+
 /* ── Delivery Editor ───────────────────────────────────────── */
 
 export function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {

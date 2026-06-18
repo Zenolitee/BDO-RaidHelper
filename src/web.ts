@@ -23,6 +23,7 @@ import {
   parseScoreResult,
   parseScoreRowsFromForm,
   parseTier,
+  parseTimezone,
   isAllowedScoreImage,
 } from "./web/parsers.js";
 import {
@@ -64,7 +65,10 @@ import { renderPlayerSearchPage } from "./web/templates/player-search.js";
 import { getAsiaGuild, searchAsiaGuilds, searchAsiaPlayers } from "./integrations/bdo-asia.js";
 import { renderDocsPage } from "./web/templates/docs.js";
 import { getBdoGuild, searchBdoGuilds, searchBdoAdventurers, getBdoAdventurer, type BdoGuildProfile } from "./integrations/bdo-community.js";
-import { renderCreateServerPickerPage, renderCreateRaidPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
+import { renderCreateServerPickerPage, renderCreateRaidPage, renderCreateNodeWarNewPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
+import { renderCreateGBRPage } from "./web/templates/gbr-page.js";
+import { renderEventTypePickerPage } from "./web/templates/event-type-picker.js";
+import { DEFAULT_BOSS_ORDER, buildGBRTitle } from "./gbr.js";
 import type { ScoreReport } from "./score-types.js";
 import { normalizePlayerName } from "./web/score.js";
 
@@ -105,6 +109,13 @@ function formatUploader(session: WebSession): string {
   return `${name} (${session.user.id})`;
 }
 
+function parseBossOrder(value: unknown): string[] {
+  if (typeof value !== "string") return DEFAULT_BOSS_ORDER;
+  const parsed = value.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parsed.length !== 5) return DEFAULT_BOSS_ORDER;
+  return parsed;
+}
+
 
 /**
  * Creates the Express dashboard with Discord OAuth, public roster pages,
@@ -114,6 +125,14 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   const app = express();
   const oauthStates = new Map<string, number>();
   const sessions = createWebSessionStore(config.supabaseUrl, config.supabaseServiceRoleKey, validateWebSession);
+
+  /** Remove expired OAuth state entries to prevent unbounded memory growth. */
+  function cleanupExpiredOAuthStates() {
+    const now = Date.now();
+    for (const [key, expiresAt] of oauthStates) {
+      if (expiresAt < now) oauthStates.delete(key);
+    }
+  }
 
   app.disable("x-powered-by");
   app.use(setSecurityHeaders);
@@ -308,16 +327,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   app.get("/stats/history", async (request, response) => {
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
-
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
-      const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
-      response.type("html").send(renderScoreHistoryPage(mockGuild, mockSession, mockReports, true));
-      return;
-    }
 
     if (!session) {
       response.status(403).type("html").send(renderLoginRequiredPage());
@@ -336,18 +346,8 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   // Player detail page
   app.get("/stats/players/:name", async (request, response) => {
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     const playerName = decodeURIComponent(request.params.name);
-
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
-      const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
-      const { renderPlayerDetailPage } = await import("./web/templates/player-detail.js");
-      response.type("html").send(renderPlayerDetailPage(mockGuild, mockSession, playerName, mockReports));
-      return;
-    }
 
     if (!session) {
       response.status(403).type("html").send(renderLoginRequiredPage());
@@ -503,19 +503,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   // War comparison page
   app.get("/stats/compare", async (request, response) => {
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
     const warAId = typeof request.query.warA === "string" ? request.query.warA : undefined;
     const warBId = typeof request.query.warB === "string" ? request.query.warB : undefined;
-
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
-      const mockReports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
-      const { renderWarComparePage } = await import("./web/templates/war-compare.js");
-      response.type("html").send(renderWarComparePage(mockGuild, mockSession, mockReports, warAId, warBId));
-      return;
-    }
 
     if (!session) {
       response.status(403).type("html").send(renderLoginRequiredPage());
@@ -536,15 +526,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   // Player search page
   app.get("/stats/players/search", async (request, response) => {
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
-
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
-      response.type("html").send(renderPlayerSearchPage(mockGuild, mockSession));
-      return;
-    }
 
     if (!session) {
       response.status(403).type("html").send(renderLoginRequiredPage());
@@ -563,23 +545,13 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   // CSV export endpoint
   app.get("/stats/export.csv", async (request, response) => {
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
 
-    let reports: ScoreReport[];
-    let guildName: string;
-
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      reports = options.scoreStore ? await options.scoreStore.listReports(mockGuild.id) : [];
-      guildName = mockGuild.name;
-    } else {
-      if (!session) { response.status(403).send("Not authorized."); return; }
-      const guild = session.guilds.find((candidate) => candidate.id === guildId);
-      if (!guild || !options.scoreStore) { response.status(404).send("Server not found."); return; }
-      reports = await options.scoreStore.listReports(guild.id);
-      guildName = guild.name;
-    }
+    if (!session) { response.status(403).send("Not authorized."); return; }
+    const guild = session.guilds.find((candidate) => candidate.id === guildId);
+    if (!guild || !options.scoreStore) { response.status(404).send("Server not found."); return; }
+    const reports = await options.scoreStore.listReports(guild.id);
+    const guildName = guild.name;
 
     // Aggregate all player data
     const { aggregateScoreRows } = await import("./web/score.js");
@@ -613,40 +585,6 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
 
   async function sendStatsDashboard(request: Request, response: express.Response, guildId?: string): Promise<void> {
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
-      const mockReports = [
-        { id: "r1", guildId: mockGuild.id, warDate: "2026-06-01", result: "win" as const, title: "Node War - Sunday", uploadedBy: "testuser", imageBucket: "", imagePath: "", imageMimeType: "", ocrEngine: "test", ocrConfidence: 95, rawOcrText: "", createdAt: new Date().toISOString(), rows: [
-          { guildId: mockGuild.id, familyName: "DynastyRedSuns", kills: 45, deaths: 12, assists: 30, damageDealt: 4200000, damageTaken: 1800000, crowdControls: 85, hpHealed: 0, allySupport: 1200000, structureDamage: 350000, lynchCannonKills: 0, siegeAssists: 2, resurrections: 0, siegeDeaths: 0, specialKills: 1, timeAlive: "25:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "Umihotaru", kills: 38, deaths: 8, assists: 25, damageDealt: 3100000, damageTaken: 900000, crowdControls: 60, hpHealed: 0, allySupport: 800000, structureDamage: 200000, lynchCannonKills: 0, siegeAssists: 1, resurrections: 0, siegeDeaths: 0, specialKills: 0, timeAlive: "28:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "ValkyrieQueen", kills: 32, deaths: 15, assists: 40, damageDealt: 2800000, damageTaken: 2100000, crowdControls: 95, hpHealed: 500000, allySupport: 2000000, structureDamage: 150000, lynchCannonKills: 0, siegeAssists: 3, resurrections: 2, siegeDeaths: 0, specialKills: 0, timeAlive: "22:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "ShadowBlade", kills: 28, deaths: 20, assists: 18, damageDealt: 2200000, damageTaken: 2500000, crowdControls: 40, hpHealed: 0, allySupport: 500000, structureDamage: 400000, lynchCannonKills: 1, siegeAssists: 0, resurrections: 0, siegeDeaths: 1, specialKills: 2, timeAlive: "20:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "IronWall", kills: 15, deaths: 5, assists: 50, damageDealt: 1500000, damageTaken: 3200000, crowdControls: 120, hpHealed: 2000000, allySupport: 3000000, structureDamage: 100000, lynchCannonKills: 0, siegeAssists: 5, resurrections: 4, siegeDeaths: 0, specialKills: 0, timeAlive: "29:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "StormCaller", kills: 22, deaths: 18, assists: 35, damageDealt: 1900000, damageTaken: 1700000, crowdControls: 75, hpHealed: 300000, allySupport: 1500000, structureDamage: 250000, lynchCannonKills: 0, siegeAssists: 2, resurrections: 1, siegeDeaths: 0, specialKills: 0, timeAlive: "21:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "FrostByte", kills: 30, deaths: 10, assists: 20, damageDealt: 2600000, damageTaken: 1100000, crowdControls: 55, hpHealed: 100000, allySupport: 900000, structureDamage: 180000, lynchCannonKills: 0, siegeAssists: 1, resurrections: 0, siegeDeaths: 0, specialKills: 1, timeAlive: "26:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "BlazeFist", kills: 25, deaths: 22, assists: 15, damageDealt: 1800000, damageTaken: 2800000, crowdControls: 30, hpHealed: 0, allySupport: 300000, structureDamage: 300000, lynchCannonKills: 0, siegeAssists: 0, resurrections: 0, siegeDeaths: 2, specialKills: 0, timeAlive: "18:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "WindWalker", kills: 18, deaths: 14, assists: 45, damageDealt: 1400000, damageTaken: 1500000, crowdControls: 70, hpHealed: 800000, allySupport: 1800000, structureDamage: 120000, lynchCannonKills: 0, siegeAssists: 4, resurrections: 3, siegeDeaths: 0, specialKills: 0, timeAlive: "23:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "EarthShaker", kills: 20, deaths: 16, assists: 30, damageDealt: 1600000, damageTaken: 2000000, crowdControls: 90, hpHealed: 400000, allySupport: 1200000, structureDamage: 500000, lynchCannonKills: 0, siegeAssists: 3, resurrections: 1, siegeDeaths: 0, specialKills: 0, timeAlive: "22:00", totalWarTime: "30:00" },
-        ]},
-        { id: "r2", guildId: mockGuild.id, warDate: "2026-05-28", result: "loss" as const, title: "Node War - Thursday", uploadedBy: "testuser", imageBucket: "", imagePath: "", imageMimeType: "", ocrEngine: "test", ocrConfidence: 90, rawOcrText: "", createdAt: new Date().toISOString(), rows: [
-          { guildId: mockGuild.id, familyName: "DynastyRedSuns", kills: 35, deaths: 18, assists: 20, damageDealt: 3500000, damageTaken: 2200000, crowdControls: 70, hpHealed: 0, allySupport: 900000, structureDamage: 200000, lynchCannonKills: 0, siegeAssists: 1, resurrections: 0, siegeDeaths: 1, specialKills: 0, timeAlive: "22:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "Umihotaru", kills: 30, deaths: 12, assists: 22, damageDealt: 2800000, damageTaken: 1200000, crowdControls: 50, hpHealed: 0, allySupport: 700000, structureDamage: 150000, lynchCannonKills: 0, siegeAssists: 0, resurrections: 0, siegeDeaths: 0, specialKills: 0, timeAlive: "25:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "ValkyrieQueen", kills: 28, deaths: 20, assists: 35, damageDealt: 2400000, damageTaken: 2800000, crowdControls: 80, hpHealed: 400000, allySupport: 1800000, structureDamage: 100000, lynchCannonKills: 0, siegeAssists: 2, resurrections: 1, siegeDeaths: 0, specialKills: 0, timeAlive: "19:00", totalWarTime: "30:00" },
-        ]},
-        { id: "r3", guildId: mockGuild.id, warDate: "2026-05-25", result: "win" as const, title: "Node War - Sunday", uploadedBy: "testuser", imageBucket: "", imagePath: "", imageMimeType: "", ocrEngine: "test", ocrConfidence: 88, rawOcrText: "", createdAt: new Date().toISOString(), rows: [
-          { guildId: mockGuild.id, familyName: "DynastyRedSuns", kills: 50, deaths: 8, assists: 35, damageDealt: 5000000, damageTaken: 1000000, crowdControls: 100, hpHealed: 0, allySupport: 1500000, structureDamage: 400000, lynchCannonKills: 1, siegeAssists: 3, resurrections: 0, siegeDeaths: 0, specialKills: 2, timeAlive: "29:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "Umihotaru", kills: 42, deaths: 5, assists: 28, damageDealt: 3800000, damageTaken: 600000, crowdControls: 65, hpHealed: 0, allySupport: 1000000, structureDamage: 250000, lynchCannonKills: 0, siegeAssists: 2, resurrections: 0, siegeDeaths: 0, specialKills: 1, timeAlive: "29:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "ValkyrieQueen", kills: 36, deaths: 10, assists: 45, damageDealt: 3200000, damageTaken: 1500000, crowdControls: 110, hpHealed: 600000, allySupport: 2500000, structureDamage: 180000, lynchCannonKills: 0, siegeAssists: 4, resurrections: 3, siegeDeaths: 0, specialKills: 0, timeAlive: "25:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "ShadowBlade", kills: 32, deaths: 14, assists: 20, damageDealt: 2600000, damageTaken: 1800000, crowdControls: 45, hpHealed: 0, allySupport: 600000, structureDamage: 350000, lynchCannonKills: 0, siegeAssists: 1, resurrections: 0, siegeDeaths: 1, specialKills: 1, timeAlive: "23:00", totalWarTime: "30:00" },
-          { guildId: mockGuild.id, familyName: "IronWall", kills: 18, deaths: 3, assists: 55, damageDealt: 1800000, damageTaken: 3500000, crowdControls: 130, hpHealed: 3000000, allySupport: 3500000, structureDamage: 80000, lynchCannonKills: 0, siegeAssists: 6, resurrections: 5, siegeDeaths: 0, specialKills: 0, timeAlive: "29:00", totalWarTime: "30:00" },
-        ]},
-      ];
-      const sortKey = parseScoreSortKey(request.query.sort);
-      response.type("html").send(renderStatsPage(mockGuild, mockSession, mockReports, undefined, sortKey, true));
-      return;
-    }
 
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     if (!session) {
@@ -810,14 +748,10 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.post("/stats/upload/preview", scoreUpload.single("screenshot"), async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = String(request.body.guildId ?? "");
-    const isTestMode = request.body.testMode === "true" || request.query.test === "1";
-
-    if (!isTestMode) {
-      const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-      if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
-        response.status(403).json({ error: "Not authorized." });
-        return;
-      }
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
+      response.status(403).json({ error: "Not authorized." });
+      return;
     }
 
     try {
@@ -826,9 +760,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
       }
 
-      const geminiQuota = isTestMode
-        ? { allowed: false, reason: "test mode" }
-        : consumeScoreGeminiQuota(session!.user.id, guildId);
+      const geminiQuota = consumeScoreGeminiQuota(session.user.id, guildId);
       const extraction = await extractScoreScreenshot(file.buffer, {
         mimeType: file.mimetype,
         geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
@@ -837,7 +769,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       });
 
       // Cache the image so the save flow can use the real screenshot
-      const cacheKey = `${isTestMode ? "test" : session!.user.id}:${guildId}`;
+      const cacheKey = `${session.user.id}:${guildId}`;
       setPreviewImage(cacheKey, file.buffer, file.mimetype, file.originalname);
 
       // Normalize names
@@ -861,14 +793,10 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.post("/stats/extract-json", scoreUpload.single("screenshot"), async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = typeof request.body.guildId === "string" ? request.body.guildId : undefined;
-    const isTestMode = request.body.testMode === "true";
-
-    if (!isTestMode) {
-      const guild = session?.guilds.find((candidate) => candidate.id === guildId);
-      if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
-        response.status(403).json({ error: "Not authorized." });
-        return;
-      }
+    const guild = session?.guilds.find((candidate) => candidate.id === guildId);
+    if (!session || !guild || !canManageGuild(session, guild.id) || !validCsrf(request, session)) {
+      response.status(403).json({ error: "Not authorized." });
+      return;
     }
 
     try {
@@ -877,9 +805,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         throw new Error("Upload a PNG, JPG, or WebP scoreboard screenshot.");
       }
 
-      const geminiQuota = isTestMode
-        ? { allowed: false, reason: "test mode" }
-        : consumeScoreGeminiQuota(session!.user.id, guildId!);
+      const geminiQuota = consumeScoreGeminiQuota(session.user.id, guildId!);
       const extraction = await extractScoreScreenshot(file.buffer, {
         mimeType: file.mimetype,
         geminiApiKey: geminiQuota.allowed ? config.geminiApiKey : undefined,
@@ -1041,21 +967,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.get("/stats/reports/:id/edit", async (request, response) => {
     const reportId = String(request.params.id);
     const session = await getSession(request, sessions);
-    const isTestMode = request.query.test === "1";
     const guildId = typeof request.query.guild === "string" ? request.query.guild : "";
-
-    if (isTestMode) {
-      const mockGuild = { id: guildId ?? "test-guild", name: "Test Server", icon: null } as DiscordGuild;
-      const mockSession: WebSession = { user: { id: "000000000000000000", username: "testuser", global_name: "Test User" }, guilds: [mockGuild], csrfToken: "test-csrf", expiresAt: Date.now() + 3600_000 };
-      if (!options.scoreStore) { response.status(404).send("No score store."); return; }
-      const [report, allReports] = await Promise.all([
-        options.scoreStore.getReport(mockGuild.id, reportId),
-        options.scoreStore.listReports(mockGuild.id)
-      ]);
-      if (!report) { response.status(404).send("Score report not found."); return; }
-      response.type("html").send(renderScoreReportEditorPage(mockGuild, mockSession, report, allReports));
-      return;
-    }
 
     const guild = session?.guilds.find((candidate) => candidate.id === guildId);
     if (!session || !guild || !canManageGuild(session, guild.id) || !options.scoreStore) {
@@ -1234,9 +1146,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.status(503).send("Discord login is not configured.");
       return;
     }
-    for (const [key, expiresAt] of oauthStates) {
-      if (expiresAt < Date.now()) oauthStates.delete(key);
-    }
+    cleanupExpiredOAuthStates();
     const state = randomBytes(24).toString("hex");
     oauthStates.set(state, Date.now() + 10 * 60_000);
     const params = new URLSearchParams({
@@ -1295,6 +1205,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
   app.get("/create", async (request, response) => {
     const session = await getSession(request, sessions);
     const guildId = typeof request.query.guild === "string" ? request.query.guild : undefined;
+    const eventType = typeof request.query.type === "string" ? request.query.type : undefined;
     if (!session) {
       response.status(403).type("html").send(renderLoginRequiredPage());
       return;
@@ -1308,11 +1219,23 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       response.status(403).type("html").send(renderLoginRequiredPage());
       return;
     }
+    // Show event type picker if no type is selected
+    if (!eventType) {
+      response.type("html").send(renderEventTypePickerPage(guildId, session));
+      return;
+    }
     try {
       const [deliveryOptions, settings] = await Promise.all([fetchGuildDeliveryOptions(guildId), store.getSettings()]);
-      response
-        .type("html")
-        .send(renderCreateRaidPage(guildId, session.csrfToken, session, deliveryOptions, settings.nodeWarChannelIds?.[guildId] ?? config.nodeWarChannelId));
+      const configuredChannelId = settings.nodeWarChannelIds?.[guildId] ?? config.nodeWarChannelId;
+      let page: string;
+      if (eventType === "gbr") {
+        page = renderCreateGBRPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
+      } else if (eventType === "nodewar-new") {
+        page = renderCreateNodeWarNewPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
+      } else {
+        page = renderCreateRaidPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
+      }
+      response.type("html").send(page);
     } catch (error) {
       response.status(502).type("html").send(renderWebError(error));
     }
@@ -1327,43 +1250,80 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     }
 
     try {
-      const tier = parseTier(request.body.tier);
       const recurrence = request.body.recurrence === "weekly" ? "weekly" : "once";
       const repeatDays = parseRepeatDays(request.body.repeatDays);
       if (recurrence === "once" && repeatDays.length !== 1) {
         throw new Error("One-time events must use exactly one raid day.");
       }
+      const timezone = parseTimezone(request.body.timezone, config.timezone);
       const deliveryOptions = await fetchGuildDeliveryOptions(guildId);
       const announcementChannelId = parseAnnouncementChannelId(request.body.announcementChannelId, deliveryOptions.channels);
       const announcementRoleIds = parseAnnouncementRoleIds(request.body.announcementRoleIds, deliveryOptions.roles);
       const announcementTime = parseClockTime(request.body.announcementTime);
       const next = nextScheduledRaid(repeatDays);
-      const totalCapacity = getNodeWarCapacity(tier, next.day);
-      const event: WarEvent = {
-        id: nanoid(10),
-        title: buildNodeWarTitle(next.day, tier, totalCapacity),
-        kind: "nodewar",
-        tier,
-        day: next.day,
-        repeatDays: recurrence === "weekly" ? repeatDays : undefined,
-        date: next.date,
-        time: config.nodeWarStartTime,
-        timezone: config.timezone,
-        recurrence,
-        totalCapacity,
-        groups: parseGroupAllocation(request.body.groups, totalCapacity),
-        announcementDate: previousDate(next.date),
-        announcementTime,
-        announcementChannelId,
-        announcementRoleIds,
-        guildId,
-        createdBy: `web:${session.user.id}`,
-        createdAt: new Date().toISOString(),
-        signups: [],
-        closed: false,
-        active: true,
-        autoRepost: recurrence === "weekly"
-      };
+
+      const eventType = request.body.type;
+
+      let event: WarEvent;
+
+      if (eventType === "gbr") {
+        const bossOrder = parseBossOrder(request.body.bossOrder);
+        const bossTime = parseClockTime(request.body.bossTime);
+        event = {
+          id: nanoid(10),
+          title: buildGBRTitle(next.day),
+          kind: "gbr",
+          day: next.day,
+          repeatDays: recurrence === "weekly" ? repeatDays : undefined,
+          date: next.date,
+          time: bossTime,
+          timezone,
+          recurrence,
+          totalCapacity: 0,
+          groups: [],
+          bossOrder,
+          announcementDate: previousDate(next.date),
+          announcementTime,
+          announcementChannelId,
+          announcementRoleIds,
+          guildId,
+          createdBy: `web:${session.user.id}`,
+          createdAt: new Date().toISOString(),
+          signups: [],
+          closed: false,
+          active: true,
+          autoRepost: recurrence === "weekly"
+        };
+      } else {
+        const tier = parseTier(request.body.tier);
+        const totalCapacity = getNodeWarCapacity(tier, next.day);
+        event = {
+          id: nanoid(10),
+          title: buildNodeWarTitle(next.day, tier, totalCapacity),
+          kind: "nodewar",
+          tier,
+          day: next.day,
+          repeatDays: recurrence === "weekly" ? repeatDays : undefined,
+          date: next.date,
+          time: config.nodeWarStartTime,
+          timezone,
+          recurrence,
+          totalCapacity,
+          groups: parseGroupAllocation(request.body.groups, totalCapacity),
+          announcementDate: previousDate(next.date),
+          announcementTime,
+          announcementChannelId,
+          announcementRoleIds,
+          guildId,
+          createdBy: `web:${session.user.id}`,
+          createdAt: new Date().toISOString(),
+          signups: [],
+          closed: false,
+          active: true,
+          autoRepost: recurrence === "weekly"
+        };
+      }
+
       await store.createEvent(event);
       response.redirect(`/events/${event.id}/edit?created=1`);
     } catch (error) {
@@ -1407,6 +1367,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       if (recurrence === "once" && repeatDays.length !== 1) {
         throw new Error("One-time events must use exactly one raid day.");
       }
+      const timezone = parseTimezone(request.body.timezone, event.timezone ?? config.timezone);
       const next = nextScheduledRaid(repeatDays);
       const selectedDay = next.day;
       const date = next.date;
@@ -1422,6 +1383,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         announcementDate !== event.announcementDate ||
         announcementTime !== event.announcementTime ||
         recurrence !== event.recurrence ||
+        timezone !== event.timezone ||
         repeatDaysChanged;
       const updated = await store.updateEventDetails(event.id, {
         groups,
@@ -1431,6 +1393,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
         repeatDays: recurrence === "weekly" ? repeatDays : undefined,
         day: selectedDay,
         date,
+        timezone,
         totalCapacity,
         announcementDate,
         announcementTime,
