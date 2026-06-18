@@ -6,11 +6,11 @@ export interface GbrBoss {
 }
 
 export const GBR_BOSSES: GbrBoss[] = [
-  { key: "khan", name: "Khan", image: "/gbr/khan.jpg", initial: "K" },
-  { key: "ferrid", name: "Ferrid", image: "/gbr/ferrid.png", initial: "F" },
-  { key: "mudster", name: "Mudster", image: "/gbr/mudster.png", initial: "MU" },
-  { key: "moghulis", name: "Moghulis", image: "/gbr/moghulis.jpg", initial: "MO" },
-  { key: "org", name: "Org", image: "/gbr/org.jpg", initial: "O" },
+  { key: "khan", name: "Khan", image: "/assets/gbr/khan.jpg", initial: "K" },
+  { key: "ferrid", name: "Ferrid", image: "/assets/gbr/ferrid.png", initial: "F" },
+  { key: "mudster", name: "Mudster", image: "/assets/gbr/mudster.png", initial: "MU" },
+  { key: "moghulis", name: "Moghulis", image: "/assets/gbr/moghulis.jpg", initial: "MO" },
+  { key: "org", name: "Org", image: "/assets/gbr/org.jpg", initial: "O" },
 ];
 
 export const DEFAULT_BOSS_ORDER: string[] = ["org", "mudster", "ferrid", "moghulis", "khan"];
