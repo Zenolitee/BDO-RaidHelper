@@ -232,7 +232,7 @@ export function renderEditRaidPage(event: WarEvent, csrfToken: string, session: 
 
 /* ── Delivery Editor ───────────────────────────────────────── */
 
-function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {
+export function renderDeliveryEditor(options: GuildDeliveryOptions, configuredChannelId?: string): string {
   return `
     <div class="form-group">
       <label class="label" for="announcementChannelId">Roster channel</label>
