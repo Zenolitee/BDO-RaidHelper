@@ -4,7 +4,8 @@ export const WEEKDAYS = [
   "tuesday",
   "wednesday",
   "thursday",
-  "friday"
+  "friday",
+  "saturday"
 ] as const;
 
 export type GroupKey = string;
@@ -35,7 +36,7 @@ export interface Signup {
 export interface WarEvent {
   id: string;
   title: string;
-  kind: "nodewar" | "siege";
+  kind: "nodewar" | "siege" | "gbr";
   tier?: NodeWarTier;
   day?: WarDay;
   repeatDays?: WarDay[];
@@ -45,6 +46,7 @@ export interface WarEvent {
   recurrence: Recurrence;
   totalCapacity: number;
   groups: GroupConfig[];
+  bossOrder?: string[];
   notes?: string;
   announcementDate?: string;
   announcementTime?: string;
