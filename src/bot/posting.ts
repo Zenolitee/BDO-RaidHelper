@@ -1,12 +1,13 @@
-import { Client, TextChannel } from 'discord.js';
+import { Client } from 'discord.js';
 import { nanoid } from 'nanoid';
 import { config } from '../config.js';
-import { getGroupEmoji } from '../emojis.js';
 import { buildNodeWarTitle, getNodeWarCapacity, getGroupsForPreset, getResponseGroups, getT1DefaultGroups, OPTIONAL_ROLE_PRESETS } from '../nodewar-presets.js';
-import { renderEventEmbed, renderEventComponents } from '../render.js';
+import { renderEventEmbed, renderEventComponents, renderGBREventEmbed, renderGBREventComponents } from '../render.js';
 import { type EventStore } from '../store.js';
+import { dateTimeToDate } from '../timezone.js';
 import { WEEKDAYS, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from '../types.js';
 import { formatClockTime } from '../time-format.js';
+import { createDiscordEmojiResolver } from './discord-emojis.js';
 
 const NODEWAR_DURATION_MS = 60 * 60 * 1000;
 
@@ -30,8 +31,10 @@ function getAnnouncementRoleIds(event: WarEvent): string[] {
 
 /** Returns the fixed one-hour Node War end timestamp for an event. */
 export function eventEndsAt(event: WarEvent): number {
-  const parsed = new Date(`${event.date}T${event.time}:00+08:00`).getTime();
-  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed + NODEWAR_DURATION_MS;
+  const timezone = event.timezone ?? config.timezone;
+  const date = dateTimeToDate(event.date, event.time, timezone);
+  if (!date) return Number.POSITIVE_INFINITY;
+  return date.getTime() + NODEWAR_DURATION_MS;
 }
 
 export function buildNodeWarEvent(input: {
@@ -97,7 +100,9 @@ export async function postEventToChannel(
   const content = roleIds.length ? roleIds.map((roleId) => `<@&${roleId}>`).join(" ") : undefined;
   return channel.send({
     content,
-    ...renderEventMessagePayload(event),
+    ...(event.kind === "gbr"
+      ? renderGBREventMessagePayload(event, createDiscordEmojiResolver(client))
+      : renderEventMessagePayload(event, createDiscordEmojiResolver(client))),
     allowedMentions: roleIds.length ? { roles: roleIds } : undefined
   });
 }
@@ -114,7 +119,11 @@ export async function refreshEventMessage(client: Client, event: WarEvent): Prom
   }
 
   const message = await channel.messages.fetch(event.messageId);
-  await message.edit(renderEventMessagePayload(event));
+  await message.edit(
+    event.kind === "gbr"
+      ? renderGBREventMessagePayload(event, createDiscordEmojiResolver(client))
+      : renderEventMessagePayload(event, createDiscordEmojiResolver(client))
+  );
 }
 
 /** Updates tracked open roster posts after deployment without modifying signup data. */
@@ -127,10 +136,18 @@ export async function refreshOpenEventMessages(client: Client, store: EventStore
   }
 }
 
-export function renderEventMessagePayload(event: WarEvent) {
+export function renderEventMessagePayload(event: WarEvent, resolveEmoji = createDiscordEmojiResolver()) {
   return {
-    embeds: [renderEventEmbed(event, true)],
-    components: renderEventComponents(event),
+    embeds: [renderEventEmbed(event, true, resolveEmoji)],
+    components: renderEventComponents(event, resolveEmoji),
+    attachments: []
+  };
+}
+
+export function renderGBREventMessagePayload(event: WarEvent, resolveEmoji = createDiscordEmojiResolver()) {
+  return {
+    embeds: [renderGBREventEmbed(event, resolveEmoji)],
+    components: renderGBREventComponents(),
     attachments: []
   };
 }

@@ -1,12 +1,16 @@
-import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from "discord.js";
 import { config } from "./config.js";
 import { formatGroupBadge, formatGroupName, getGroupEmoji, getGroupLabel, getSummaryEmoji } from "./emojis.js";
+import { DEFAULT_BOSS_ORDER, formatBossOrderInitials, formatBossOrderNames } from "./gbr.js";
 import { activeRosterCapacity, activeRosterSignupCount, groupSignupCount, isRosterGroup } from "./store.js";
 import { formatClockTime } from "./time-format.js";
+import { dateTimeToUnix } from "./timezone.js";
 import { type WarEvent } from "./types.js";
 
+export type EmojiResolver = (emoji: string) => string;
+
 /** Renders the Discord roster embed for an event's current lifecycle and signup state. */
-export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): EmbedBuilder {
+export function renderEventEmbed(event: WarEvent, _includeThumbnail = false, resolveEmoji: EmojiResolver = (emoji) => emoji): EmbedBuilder {
   const status = event.closed ? "Closed" : "Open";
   const signed = activeRosterSignupCount(event);
   const unix = eventUnixSeconds(event);
@@ -23,9 +27,9 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): Em
       { name: `${getSummaryEmoji("status")} Status`, value: `**${status}**`, inline: true },
       { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: true },
       { name: "\u200b", value: "\u200b", inline: true },
-      ...renderRosterFields(event)
+      ...renderRosterFields(event, resolveEmoji)
     )
-    .setFooter({ text: `NW Helper | Event ${event.id} | If something breaks ask Zenolite` })
+    .setFooter({ text: `Project Athena | Event ${event.id} | If something breaks ask Zenolite` })
     .setTimestamp(new Date(event.createdAt));
 
   return embed;
@@ -33,15 +37,15 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false): Em
 
 
 /** Renders member signup, response-status, and sign-off buttons. */
-export function renderEventComponents(event: WarEvent): Array<ActionRowBuilder<ButtonBuilder>> {
+export function renderEventComponents(event: WarEvent, resolveEmoji: EmojiResolver = (emoji) => emoji): Array<ActionRowBuilder<ButtonBuilder>> {
   const signupDisabled = event.closed;
 
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      signupButton(event, "mainball", "FFA", ButtonStyle.Primary, signupDisabled),
-      signupButton(event, "defense", "DEF", ButtonStyle.Secondary, signupDisabled),
-      signupButton(event, "zerker", "ZERK", ButtonStyle.Secondary, signupDisabled),
-      signupButton(event, "shai", "SHAI", ButtonStyle.Secondary, signupDisabled),
+      signupButton(event, "mainball", "FFA", ButtonStyle.Primary, signupDisabled, resolveEmoji),
+      signupButton(event, "defense", "DEF", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
+      signupButton(event, "zerker", "ZERK", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
+      signupButton(event, "shai", "SHAI", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
       new ButtonBuilder()
         .setCustomId(`event-leave:${event.id}`)
         .setLabel("Sign off")
@@ -49,10 +53,42 @@ export function renderEventComponents(event: WarEvent): Array<ActionRowBuilder<B
         .setDisabled(signupDisabled)
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      signupButton(event, "tentative", "Tentative", ButtonStyle.Secondary, signupDisabled),
-      signupButton(event, "absence", "Absence", ButtonStyle.Secondary, signupDisabled)
+      signupButton(event, "tentative", "Tentative", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
+      signupButton(event, "absence", "Absence", ButtonStyle.Secondary, signupDisabled, resolveEmoji)
     )
   ];
+}
+
+/** Renders the Discord embed for a GBR notification event (no signup buttons). */
+export function renderGBREventEmbed(event: WarEvent, resolveEmoji: EmojiResolver = (emoji) => emoji): EmbedBuilder {
+  const status = event.closed ? "Closed" : "Open";
+  const unix = eventUnixSeconds(event);
+  const relativeTime = unix ? `<t:${unix}:R>` : formatEventDate(event);
+  const bossOrder = event.bossOrder?.length ? event.bossOrder : DEFAULT_BOSS_ORDER;
+  const dayLabel = event.day ? event.day.charAt(0).toUpperCase() + event.day.slice(1) : "Monday";
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Guild Boss Raid - ${dayLabel}`)
+    .setURL(`${config.publicBaseUrl}/events/${event.id}`)
+    .setColor(0xed4245)
+    .addFields(
+      { name: `${getSummaryEmoji("date")} Date`, value: `**${formatEventDate(event)}**`, inline: true },
+      { name: `${getSummaryEmoji("time")} Time`, value: `**${formatEventTime(event)}**`, inline: true },
+      { name: "\ud83d\udce2 Announce", value: `**${event.announcementTime ? formatClockTime(event.announcementTime) : "TBD"}**`, inline: true },
+      { name: `${getSummaryEmoji("status")} Status`, value: `**${status}**`, inline: true },
+      { name: "\u200b", value: "\u200b", inline: true },
+      { name: "\ud83d\udc09 BOSS ORDER", value: `\`${formatBossOrderInitials(bossOrder)}\`\n${formatBossOrderNames(bossOrder)}`, inline: false },
+      { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: false }
+    )
+    .setFooter({ text: `Project Athena | Event ${event.id}` })
+    .setTimestamp(new Date(event.createdAt));
+
+  return embed;
+}
+
+/** GBR events have no signup buttons — notification only. */
+export function renderGBREventComponents(): Array<ActionRowBuilder<ButtonBuilder>> {
+  return [];
 }
 
 function signupButton(
@@ -60,12 +96,13 @@ function signupButton(
   group: string,
   label: string,
   style: ButtonStyle,
-  disabled: boolean
+  disabled: boolean,
+  resolveEmoji: EmojiResolver
 ): ButtonBuilder {
   const button = new ButtonBuilder()
     .setCustomId(`event-signup:${event.id}:${group}`)
     .setLabel(label)
-    .setEmoji(getGroupEmoji(group))
+    .setEmoji(resolveEmoji(getGroupEmoji(group)))
     .setStyle(style)
     .setDisabled(disabled || !event.groups.some((candidate) => candidate.key === group));
   return button;
@@ -75,7 +112,7 @@ function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 3)}...`;
 }
 
-function renderRosterFields(event: WarEvent): Array<{ name: string; value: string; inline: boolean }> {
+function renderRosterFields(event: WarEvent, resolveEmoji: EmojiResolver): Array<{ name: string; value: string; inline: boolean }> {
   return orderedGroups(event).map((group) => {
     const signups = event.signups.filter((signup) => signup.group === group.key);
     const visible = signups.slice(0, 18);
@@ -84,8 +121,8 @@ function renderRosterFields(event: WarEvent): Array<{ name: string; value: strin
       const requestedGroup = event.groups.find((candidate) => candidate.key === signup.requestedGroup);
       const signupEmoji =
         group.key === "bench" && signup.requestedGroup
-          ? getGroupEmoji(signup.requestedGroup, requestedGroup?.emoji)
-          : getGroupEmoji(group.key, group.emoji);
+          ? resolveEmoji(getGroupEmoji(signup.requestedGroup, requestedGroup?.emoji))
+          : resolveEmoji(getGroupEmoji(group.key, group.emoji));
       return `${signupEmoji} \`${index + 1}\` **${truncate(signup.displayName, 32)}**`;
     });
     if (more > 0) {
@@ -93,17 +130,17 @@ function renderRosterFields(event: WarEvent): Array<{ name: string; value: strin
     }
 
     return {
-      name: `__**${renderGroupTitle(event, group)}**__`,
+      name: `__**${renderGroupTitle(event, group, resolveEmoji)}**__`,
       value: names.join("\n") || "No signups yet.",
       inline: true
     };
   });
 }
 
-function renderGroupTitle(event: WarEvent, group: WarEvent["groups"][number]): string {
+function renderGroupTitle(event: WarEvent, group: WarEvent["groups"][number], resolveEmoji: EmojiResolver): string {
   const count = groupSignupCount(event, group.key);
   const label = group.label;
-  const emoji = getGroupEmoji(group.key, group.emoji);
+  const emoji = resolveEmoji(getGroupEmoji(group.key, group.emoji));
   const countText = isRosterGroup(group.key) ? `${count}/${group.capacity}` : String(count);
   return `${emoji} ${label} - (${countText})`;
 }
@@ -142,19 +179,7 @@ function formatEventTime(event: WarEvent): string {
 }
 
 function eventUnixSeconds(event: WarEvent): number | undefined {
-  const [hourValue, minuteValue = "00"] = event.time.split(":");
-  const hour = Number.parseInt(hourValue, 10);
-  const minute = Number.parseInt(minuteValue, 10);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
-    return undefined;
-  }
-
-  const parsed = new Date(`${event.date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+08:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return undefined;
-  }
-
-  return Math.floor(parsed.getTime() / 1000);
+  return dateTimeToUnix(event.date, event.time, event.timezone);
 }
 
 /** Formats an event announcement schedule for Discord previews. */
@@ -163,15 +188,11 @@ export function formatAnnouncementSchedule(event: WarEvent): string {
     return "Not scheduled";
   }
 
-  const unix = unixSeconds(event.announcementDate, event.announcementTime);
+  const timezone = event.timezone ?? config.timezone;
+  const unix = dateTimeToUnix(event.announcementDate, event.announcementTime, timezone);
   return unix
     ? `<t:${unix}:F> (<t:${unix}:R>)`
-    : `${event.announcementDate} ${formatClockTime(event.announcementTime)} GMT+8`;
-}
-
-function unixSeconds(date: string, time: string): number | undefined {
-  const parsed = new Date(`${date}T${time}:00+08:00`);
-  return Number.isNaN(parsed.getTime()) ? undefined : Math.floor(parsed.getTime() / 1000);
+    : `${event.announcementDate} ${formatClockTime(event.announcementTime)} ${timezone}`;
 }
 
 export { formatGroupBadge, formatGroupName, getGroupEmoji, getGroupLabel };
