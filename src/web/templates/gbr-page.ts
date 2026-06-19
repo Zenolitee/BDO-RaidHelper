@@ -138,11 +138,11 @@ export function renderCreateGBRPage(
                         </div>
                       </div>
                       <div class="discord-embed-divider"></div>
-                      <div class="discord-embed-field-name" style="margin-bottom:4px;">🐉 BOSS ORDER</div>
-                      <div class="discord-embed-field-value" id="preview-boss-initials" style="font-weight:600;margin-bottom:2px;">O → MU → F → MO → K</div>
-                      <div class="discord-embed-field-value" id="preview-boss-names" style="color:#b5bac1;font-size:12px;">Org → Mudster → Ferrid → Moghulis → Khan</div>
+                      <div class="discord-embed-field-name" style="margin-bottom:6px;">🐉 BOSS ORDER</div>
+                      <div class="discord-embed-field-value" id="preview-boss-initials" style="font-weight:600;margin-bottom:4px;font-family:monospace;">O → MU → F → MO → K</div>
+                      <div class="discord-embed-field-value" id="preview-boss-names" style="color:#949ba4;font-size:0.8rem;">Org → Mudster → Ferrid → Moghulis → Khan</div>
                       <div class="discord-embed-divider"></div>
-                      <div class="discord-embed-field-value" id="preview-countdown" style="color:#b5bac1;">⏱️ <strong>Starting in 2 hours</strong></div>
+                      <div class="discord-embed-field-value" id="preview-countdown" style="color:#949ba4;">⏱️ <strong>Starting in 2 hours</strong></div>
                     </div>
                   </div>
                   <div class="discord-embed-footer">Project Athena | Event GBR-001</div>
