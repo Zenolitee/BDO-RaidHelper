@@ -97,7 +97,9 @@ export async function postEventToChannel(
     throw new Error("Selected Node War channel is not a text channel.");
   }
 
-  const content = roleIds.length ? roleIds.map((roleId) => `<@&${roleId}>`).join(" ") : undefined;
+  // GBR events: don't ping on initial post, only ping on re-announcement (5 min before)
+  const shouldPing = event.kind !== "gbr" || event.announcedAt;
+  const content = shouldPing && roleIds.length ? roleIds.map((roleId) => `<@&${roleId}>`).join(" ") : undefined;
   return channel.send({
     content,
     ...(event.kind === "gbr"
@@ -105,7 +107,7 @@ export async function postEventToChannel(
       : event.kind === "custom"
       ? renderCustomEventMessagePayload(event, createDiscordEmojiResolver(client))
       : renderEventMessagePayload(event, createDiscordEmojiResolver(client))),
-    allowedMentions: roleIds.length ? { roles: roleIds } : undefined
+    allowedMentions: shouldPing && roleIds.length ? { roles: roleIds } : undefined
   });
 }
 

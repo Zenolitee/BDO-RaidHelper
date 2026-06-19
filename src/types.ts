@@ -63,6 +63,8 @@ export interface WarEvent {
   closed: boolean;
   active?: boolean;
   autoRepost?: boolean;
+  /** GBR only: tracks if the 5-min-before ping has been sent */
+  gbrPingSent?: boolean;
 }
 
 export interface EventStoreData {

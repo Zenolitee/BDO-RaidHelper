@@ -77,6 +77,7 @@ export function renderGBREventEmbed(event: WarEvent, resolveEmoji: EmojiResolver
   const relativeTime = unix ? `<t:${unix}:R>` : formatEventDate(event);
   const bossOrder = event.bossOrder?.length ? event.bossOrder : DEFAULT_BOSS_ORDER;
   const dayLabel = event.day ? event.day.charAt(0).toUpperCase() + event.day.slice(1) : "Monday";
+  const pinged = event.announcedAt && event.announcementRoleIds?.length; // Has been re-announced with ping
 
   const embed = new EmbedBuilder()
     .setTitle(`Guild Boss Raid - ${dayLabel}`)
@@ -85,11 +86,10 @@ export function renderGBREventEmbed(event: WarEvent, resolveEmoji: EmojiResolver
     .addFields(
       { name: `${getSummaryEmoji("date")} Date`, value: `**${formatEventDate(event)}**`, inline: true },
       { name: `${getSummaryEmoji("time")} Time`, value: `**${formatEventTime(event)}**`, inline: true },
-      { name: "\ud83d\udce2 Announce", value: `**${event.announcementTime ? formatClockTime(event.announcementTime) : "TBD"}**`, inline: true },
+      { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: true },
       { name: `${getSummaryEmoji("status")} Status`, value: `**${status}**`, inline: true },
       { name: "\u200b", value: "\u200b", inline: true },
-      { name: "\ud83d\udc09 BOSS ORDER", value: `\`${formatBossOrderInitials(bossOrder)}\`\n${formatBossOrderNames(bossOrder)}`, inline: false },
-      { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: false }
+      { name: "\ud83d\udc09 BOSS ORDER", value: `\`${formatBossOrderInitials(bossOrder)}\`\n${formatBossOrderNames(bossOrder)}`, inline: false }
     )
     .setFooter({ text: `Project Athena | Event ${event.id}` })
     .setTimestamp(new Date(event.createdAt));

@@ -26,6 +26,7 @@ import { type ScoreReportResult, type ScoreRow } from "./score-types.js";
 import { type GroupKey, type WarDay, type WarEvent } from "./types.js";
 import { prepareAthenaReport, buildAthenaReportEmbed } from "./athena-report.js";
 import { commands } from "./commands.js";
+import { dateTimeToUnix } from "./timezone.js";
 
 
 // --- Bot modules ---
@@ -853,6 +854,7 @@ async function runNodeWarScheduler(client: Client, store: EventStore): Promise<v
   await closeExpiredOneTimeEvents(client, store);
   await rollCompletedWeeklyEvents(client, store, now);
   await postDueScheduledEvents(client, store, now);
+  await reAnnounceGBREventsWithPings(client, store);
 
   if (now.hour !== schedulerHour() || now.minute !== schedulerMinute()) {
     return;
@@ -966,6 +968,59 @@ async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Pro
     await refreshEventMessage(client, closed).catch((error) => {
       console.warn(`Could not refresh expired event ${event.id}:`, error);
     });
+  }
+}
+
+/** Re-announces GBR events 5 minutes before event time with role pings. */
+async function reAnnounceGBREventsWithPings(client: Client, store: EventStore): Promise<void> {
+  const events = await store.listEvents();
+  const now = Date.now();
+  const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+  for (const event of events) {
+    // Only GBR events that have been announced (initial post) but not yet re-announced with ping
+    if (event.closed || event.kind !== 'gbr' || !event.announcedAt || !event.channelId || !event.messageId) {
+      continue;
+    }
+
+    // Skip if no announcement role IDs configured
+    const roleIds = getAnnouncementRoleIds(event);
+    if (roleIds.length === 0) {
+      continue;
+    }
+
+    // Calculate event start time
+    const eventStartUnix = dateTimeToUnix(event.date, event.time, event.timezone);
+    if (!eventStartUnix) {
+      continue;
+    }
+    const eventStartMs = eventStartUnix * 1000;
+    const timeUntilEventMs = eventStartMs - now;
+
+    // Re-announce if we're within 5 minutes of the event (and event hasn't started yet)
+    if (timeUntilEventMs <= FIVE_MINUTES_MS && timeUntilEventMs > -FIVE_MINUTES_MS) {
+      // Check if we already re-announced (look for gbrPingSent flag)
+      if ((event as any).gbrPingSent) {
+        continue;
+      }
+
+      console.log(`[Scheduler] Re-announcing GBR event ${event.id} with pings`);
+      
+      // Mark as pinged before sending to avoid duplicate pings
+      await store.updateEventDetails(event.id, { gbrPingSent: true } as any);
+
+      // Send re-announcement with pings
+      const channel = await client.channels.fetch(event.channelId);
+      if (!channel || !('send' in channel)) {
+        continue;
+      }
+
+      const content = roleIds.map((roleId) => `<@&${roleId}>`).join(' ');
+      await channel.send({
+        content,
+        allowedMentions: { roles: roleIds }
+      });
+    }
   }
 }
 
