@@ -161,11 +161,11 @@ export function createDiscordClient(store: EventStore, options: DiscordClientOpt
       }
 
       if (interaction.isRoleSelectMenu()) {
-        await handleRoleSelect(interaction);
+        await handleRoleSelect(interaction, store);
       }
 
       if (interaction.isChannelSelectMenu()) {
-        await handleChannelSelect(interaction);
+        await handleChannelSelect(interaction, store);
       }
 
       if (interaction.isButton()) {
@@ -176,6 +176,7 @@ export function createDiscordClient(store: EventStore, options: DiscordClientOpt
         await handleModal(interaction, store, client);
       }
     } catch (error) {
+      console.error(`[Bot] Interaction error:`, error);
       await replyWithError(interaction, error);
     }
   });
@@ -246,6 +247,11 @@ async function handleCommand(
     await startEventWizard(interaction, store, true);
     return;
   }
+  if (subcommand === "create-qa") {
+    await startEventWizard(interaction, store);
+    return;
+  }
+
 
   if (subcommand === "create-test") {
     await createTestEvent(interaction, store);

@@ -68,6 +68,7 @@ export interface WarEvent {
 export interface EventStoreData {
   events: WarEvent[];
   settings?: BotSettings;
+  wizardStates?: Record<string, WizardStateData>;
 }
 
 export interface BotSettings {
@@ -79,4 +80,30 @@ export interface BotSettings {
   bdoGuildNames?: Record<string, string>;
   /** Maps Discord guild ID → BDO region (EU, NA, SA, KR, ASIA). */
   bdoGuildRegions?: Record<string, string>;
+}
+
+/** Persisted wizard state for event creation wizards. */
+export interface WizardStateData {
+  userId: string;
+  guildId: string;
+  step: string;
+  expiresAt: number;
+  eventKind: string;
+  createToday: boolean;
+  tier?: string;
+  days: string[];
+  recurring?: boolean;
+  startTime: string;
+  eventTime: string;
+  postTime: string;
+  pingRoleIds: string[];
+  channelId?: string;
+  slots: {
+    defense: number;
+    zerker: number;
+    shai: number;
+  };
+  bossOrder: string[];
+  customTitle: string;
+  customDescription: string;
 }

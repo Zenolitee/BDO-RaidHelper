@@ -12,7 +12,12 @@ export const eventCommand = new SlashCommandBuilder()
   .addSubcommand((subcommand) =>
     subcommand
       .setName("create-today")
-      .setDescription("Create a one-time event for today")
+      .setDescription("Create a one-time event for today (Node War, GBR, or Custom)")
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("create-qa")
+      .setDescription("QA: Open a private step-by-step event setup wizard (Node War, GBR, or Custom)")
   )
   .addSubcommand((subcommand) =>
     subcommand

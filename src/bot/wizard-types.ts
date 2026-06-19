@@ -7,7 +7,7 @@ import {
 import { GBR_BOSSES, DEFAULT_BOSS_ORDER } from '../gbr.js';
 
 export type EventKind = 'nodewar' | 'gbr' | 'custom';
-export type WizardStep = 'kind' | 'tier' | 'days' | 'boss-order' | 'title' | 'repeat' | 'post-time' | 'ping' | 'slots' | 'channel' | 'confirm';
+export type WizardStep = 'kind' | 'tier' | 'days' | 'boss-order' | 'title' | 'repeat' | 'post-time' | 'event-time' | 'ping' | 'slots' | 'channel' | 'confirm';
 
 export interface EventWizardState {
   userId: string;
@@ -20,6 +20,7 @@ export interface EventWizardState {
   days: WarDay[];
   recurring?: boolean;
   startTime: string;
+  eventTime: string;
   postTime: string;
   pingRoleIds: string[];
   channelId?: string;
@@ -52,6 +53,6 @@ export interface EditWizardState {
 }
 
 export const WIZARD_DAYS: WarDay[] = [...WEEKDAYS];
-export const WIZARD_TIMEOUT_MS = 10 * 60_000;
+export const WIZARD_TIMEOUT_MS = 60 * 60_000;
 export const GBR_BOSS_KEYS = GBR_BOSSES.map((b) => b.key);
 export const DEFAULT_GBR_ORDER = [...DEFAULT_BOSS_ORDER];

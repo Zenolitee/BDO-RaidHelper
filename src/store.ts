@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { formatGroupName, getGroupLabel } from "./emojis.js";
-import type { BotSettings, EventStoreData, GroupKey, Signup, WarEvent } from "./types.js";
+import type { BotSettings, EventStoreData, GroupKey, Signup, WarEvent, WizardStateData } from "./types.js";
 
 const NON_ROSTER_GROUPS = new Set<GroupKey>(["bench", "tentative", "absence"]);
 
@@ -278,6 +278,51 @@ export class EventStore {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Wizard state persistence
+  // ---------------------------------------------------------------------------
+
+  /** Retrieves a persisted wizard state by user ID. */
+  async getWizardState(userId: string): Promise<WizardStateData | undefined> {
+    console.log(`[Store] getWizardState called for user ${userId}`);
+    const result = await this.withStore(async (data) => {
+      data.wizardStates ??= {};
+      console.log(`[Store] wizardStates keys: ${Object.keys(data.wizardStates).join(', ') || 'none'}`);
+      const state = data.wizardStates[userId];
+      if (!state) return undefined;
+      // Auto-expire stale states
+      if (state.expiresAt < Date.now()) {
+        delete data.wizardStates[userId];
+        await this.write(data);
+        return undefined;
+      }
+      return state;
+    });
+    console.log(`[Store] getWizardState result: ${result ? 'found' : 'not found'}`);
+    return result;
+  }
+
+  /** Persists or updates a wizard state. */
+  async setWizardState(userId: string, state: WizardStateData): Promise<void> {
+    console.log(`[Store] setWizardState called for user ${userId}`);
+    await this.withStore(async (data) => {
+      data.wizardStates ??= {};
+      data.wizardStates[userId] = state;
+      console.log(`[Store] Writing wizard state for user ${userId}`);
+      await this.write(data);
+      console.log(`[Store] Wizard state written successfully`);
+    });
+  }
+
+  /** Removes a persisted wizard state. */
+  async deleteWizardState(userId: string): Promise<void> {
+    await this.withStore(async (data) => {
+      data.wizardStates ??= {};
+      delete data.wizardStates[userId];
+      await this.write(data);
+    });
+  }
+
   private async updateEvent(id: string, updater: (event: WarEvent) => void): Promise<void> {
     await this.withStore(async (data) => {
       const event = data.events.find((candidate) => candidate.id === id);
@@ -442,6 +487,15 @@ export function validateStoreData(value: unknown): EventStoreData {
   const data = value as EventStoreData;
   data.settings ??= {};
   validateSettings(data.settings);
+  // Initialize wizardStates if not present
+  data.wizardStates ??= {};
+  // Clean up expired wizard states on load
+  const now = Date.now();
+  for (const [userId, state] of Object.entries(data.wizardStates)) {
+    if (!state || typeof state !== "object" || typeof state.expiresAt !== "number" || state.expiresAt < now) {
+      delete data.wizardStates[userId];
+    }
+  }
   for (const event of data.events) {
     validateEvent(event);
     event.groups = ensureResponseGroups(event.groups);

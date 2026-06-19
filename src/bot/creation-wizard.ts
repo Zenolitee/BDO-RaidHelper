@@ -5,7 +5,7 @@ import { EventStore } from '../store.js';
 import { getNodeWarCapacity, buildNodeWarTitle, labelWarDay, NODE_WAR_PRESETS } from '../nodewar-presets.js';
 import type { EventKind, EventWizardState, WizardStep } from './wizard-types.js';
 import { WIZARD_DAYS, WIZARD_TIMEOUT_MS, GBR_BOSS_KEYS, DEFAULT_GBR_ORDER } from './wizard-types.js';
-import { wizardStates, getWizardState, refreshWizardTimeout, parseWizardCustomId, parseSlotValue, validateWizardSlots, nextStepAfterSlots } from './wizard-state.js';
+import { getWizardStateFromStore, refreshWizardTimeout, saveWizardState, deleteWizardStateFromStore, parseWizardCustomId, parseSlotValue, validateWizardSlots, nextStepAfterSlots } from './wizard-state.js';
 import { formatGroupBadge, formatGroupName, getGroupLabel } from '../emojis.js';
 import { labelTier } from '../nodewar-presets.js';
 import { parseTime, currentWarDay, zonedNow, announcementDateForEvent, todayWarDayFromSelection, nextWarDayFromSelection, getNodeWarChannelId, requireGuildId } from './utils.js';
@@ -16,6 +16,7 @@ import { nanoid } from 'nanoid';
 
 const AUTO_SCHEDULER_USER = 'nodewar-scheduler';
 const NODEWAR_DURATION_MS = 60 * 60 * 1000;
+
 async function startEventWizard(interaction: ChatInputCommandInteraction, store: EventStore, createToday = false): Promise<void> {
   const today = createToday ? currentWarDay(config.timezone) : undefined;
   const guildId = requireGuildId(interaction);
@@ -29,6 +30,7 @@ async function startEventWizard(interaction: ChatInputCommandInteraction, store:
     days: today ? [today] : [],
     recurring: createToday ? false : undefined,
     startTime: config.nodeWarStartTime,
+    eventTime: "21:00",
     postTime: config.nodeWarPostTime,
     pingRoleIds: config.nodeWarRoleId ? [config.nodeWarRoleId] : [],
     channelId: await getNodeWarChannelId(store, guildId),
@@ -37,14 +39,14 @@ async function startEventWizard(interaction: ChatInputCommandInteraction, store:
     customTitle: "",
     customDescription: ""
   };
-  wizardStates.set(interaction.user.id, state);
+  await saveWizardState(store, state);
   await interaction.reply({ ...renderWizard(state), ephemeral: true });
 }
 
 /** Applies creation-wizard and edit-wizard select-menu changes. */
 async function handleSelect(
   interaction: StringSelectMenuInteraction,
-  _store: EventStore,
+  store: EventStore,
   _client: Client
 ): Promise<void> {
   if (interaction.customId.startsWith("editwizard-")) {
@@ -57,28 +59,29 @@ async function handleSelect(
     return;
   }
 
-  const state = getWizardState(parsed.userId, interaction.user.id);
+  console.log(`[Wizard] handleSelect called: action=${parsed.action}, userId=${parsed.userId}, interactionUser=${interaction.user.id}`);
+  const state = await getWizardStateFromStore(store, parsed.userId, interaction.user.id);
 
   if (parsed.action === "kind") {
     state.eventKind = interaction.values[0] as EventKind;
     if (state.eventKind === "nodewar") {
-      // nodewar: tier → (days if not createToday) → repeat → ...
       state.step = "tier";
     } else if (state.eventKind === "gbr") {
-      state.step = state.createToday ? "post-time" : "days";
+      state.step = state.createToday ? "boss-order" : "days";
     } else {
-      // custom
       state.step = "title";
     }
-    refreshWizardTimeout(state);
+    await refreshWizardTimeout(store, state);
+    console.log(`[Wizard] Calling interaction.update() for kind action`);
     await interaction.update(renderWizard(state));
+    console.log(`[Wizard] interaction.update() completed successfully`);
     return;
   }
 
   if (parsed.action === "tier") {
     state.tier = interaction.values[0] as NodeWarTier;
     state.step = state.createToday ? "post-time" : "days";
-    refreshWizardTimeout(state);
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
   }
@@ -86,54 +89,56 @@ async function handleSelect(
   if (parsed.action === "days") {
     state.days = interaction.values as WarDay[];
     if (state.eventKind === "gbr") {
-      state.step = state.createToday ? "post-time" : "boss-order";
+      state.step = "boss-order";
+    } else if (state.eventKind === "custom") {
+      state.step = "event-time";
     } else {
-      state.step = state.createToday ? "post-time" : "repeat";
+      state.step = "repeat";
     }
-    refreshWizardTimeout(state);
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
   }
 
   if (parsed.action === "boss-order") {
     state.bossOrder = interaction.values;
-    state.step = state.createToday ? "post-time" : "repeat";
-    refreshWizardTimeout(state);
+    state.step = "event-time";
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
   }
 }
 
 /** Captures selected announcement roles for the active creation wizard. */
-async function handleRoleSelect(interaction: RoleSelectMenuInteraction): Promise<void> {
+async function handleRoleSelect(interaction: RoleSelectMenuInteraction, store: EventStore): Promise<void> {
   const parsed = parseWizardCustomId(interaction.customId);
   if (!parsed || parsed.action !== "ping-role") {
     return;
   }
 
-  const state = getWizardState(parsed.userId, interaction.user.id);
+  const state = await getWizardStateFromStore(store, parsed.userId, interaction.user.id);
   state.pingRoleIds = interaction.values;
-  refreshWizardTimeout(state);
+  await refreshWizardTimeout(store, state);
   await interaction.update(renderWizard(state));
 }
 
 /** Captures the selected delivery channel for the active creation wizard. */
-async function handleChannelSelect(interaction: ChannelSelectMenuInteraction): Promise<void> {
+async function handleChannelSelect(interaction: ChannelSelectMenuInteraction, store: EventStore): Promise<void> {
   const parsed = parseWizardCustomId(interaction.customId);
   if (!parsed || parsed.action !== "channel") {
     return;
   }
 
-  const state = getWizardState(parsed.userId, interaction.user.id);
+  const state = await getWizardStateFromStore(store, parsed.userId, interaction.user.id);
   state.channelId = interaction.values[0];
   state.step = "confirm";
-  refreshWizardTimeout(state);
+  await refreshWizardTimeout(store, state);
   await interaction.update(renderWizard(state));
 }
 
 /** Applies custom time and slot values submitted from creation or edit modals. */
 async function handleModal(
   interaction: ModalSubmitInteraction,
-  _store: EventStore,
+  store: EventStore,
   _client: Client
 ): Promise<void> {
   if (interaction.customId.startsWith("editwizard-")) {
@@ -146,14 +151,17 @@ async function handleModal(
     return;
   }
 
-  const state = getWizardState(parsed.userId, interaction.user.id);
+  const state = await getWizardStateFromStore(store, parsed.userId, interaction.user.id);
   if (parsed.action === "post-time") {
     state.postTime = parseTime(interaction.fields.getTextInputValue("postTime"));
     state.step = "ping";
   } else if (parsed.action === "title") {
     state.customTitle = interaction.fields.getTextInputValue("title").trim() || "Custom Event";
     state.customDescription = interaction.fields.getTextInputValue("description").trim();
-    state.step = state.createToday ? "post-time" : "days";
+    state.step = state.createToday ? "event-time" : "days";
+  } else if (parsed.action === "event-time") {
+    state.eventTime = parseTime(interaction.fields.getTextInputValue("eventTime"));
+    state.step = state.createToday ? "ping" : "repeat";
   } else if (parsed.action === "slots") {
     state.slots = {
       defense: parseSlotValue(interaction.fields.getTextInputValue("defense"), formatGroupBadge("defense")),
@@ -166,7 +174,7 @@ async function handleModal(
     return;
   }
 
-  refreshWizardTimeout(state);
+  await refreshWizardTimeout(store, state);
   if (interaction.isFromMessage()) {
     await interaction.update(renderWizard(state));
   } else {
@@ -181,11 +189,11 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
     return;
   }
 
-  const state = getWizardState(parsed.userId, interaction.user.id);
+  const state = await getWizardStateFromStore(store, parsed.userId, interaction.user.id);
   const value = parsed.value;
 
   if (parsed.action === "cancel") {
-    wizardStates.delete(state.userId);
+    await deleteWizardStateFromStore(store, state.userId);
     await interaction.update({ content: "Event setup cancelled.", components: [] });
     return;
   }
@@ -197,9 +205,25 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
 
   if (parsed.action === "repeat") {
     state.recurring = value === "weekly";
-    state.startTime = config.nodeWarStartTime;
-    state.step = "post-time";
-    refreshWizardTimeout(state);
+    if (state.eventKind === "nodewar") {
+      state.startTime = config.nodeWarStartTime;
+      state.step = "post-time";
+    } else {
+      state.step = "ping";
+    }
+    await refreshWizardTimeout(store, state);
+    await interaction.update(renderWizard(state));
+    return;
+  }
+
+  if (parsed.action === "event-time") {
+    if (value === "custom") {
+      await interaction.showModal(buildWizardEventTimeModal(state.userId));
+      return;
+    }
+    state.eventTime = "21:00";
+    state.step = state.createToday ? "ping" : "repeat";
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
   }
@@ -211,7 +235,7 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
     }
     state.postTime = config.nodeWarPostTime;
     state.step = "ping";
-    refreshWizardTimeout(state);
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
   }
@@ -224,7 +248,7 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
     }
     // Non-nodewar events skip slots
     state.step = state.eventKind === "nodewar" ? "slots" : nextStepAfterSlots(state);
-    refreshWizardTimeout(state);
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
   }
@@ -237,19 +261,19 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
     state.slots = { defense: 5, zerker: 2, shai: 2 };
     validateWizardSlots(state);
     state.step = nextStepAfterSlots(state);
-    refreshWizardTimeout(state);
+    await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
   }
 
   if (parsed.action === "confirm") {
     if (value === "cancel") {
-      wizardStates.delete(state.userId);
+      await deleteWizardStateFromStore(store, state.userId);
       await interaction.update({ content: "Event setup cancelled.", components: [] });
       return;
     }
     const created = await confirmWizard(state, store, interaction.user.id);
-    wizardStates.delete(state.userId);
+    await deleteWizardStateFromStore(store, state.userId);
     const channelId = created[0]?.channelId;
     await interaction.update({
       content: `Scheduled ${created.length} event${created.length === 1 ? "" : "s"}${channelId ? ` for <#${channelId}>` : ""}. The bot will post at the announcement time:\n${created
@@ -277,10 +301,11 @@ function wizardPrompt(state: EventWizardState): string {
     kind: "Step 1: choose the event type.",
     tier: "Step 2: choose event tier.",
     days: state.createToday ? "Step: choose what day today is." : "Step: choose one or more event days.",
-    "boss-order": "Step: arrange the boss kill order (drag to reorder).",
+    "boss-order": "Step: select the boss kill order.",
     title: "Step: enter the event title and description.",
     repeat: "Step: choose repeat mode.",
     "post-time": "Step: choose announcement posting time.",
+    "event-time": "Step: choose when the event starts. The bot announces 5 minutes before.",
     ping: "Step: choose role ping behavior.",
     slots: state.eventKind === "nodewar" ? "Step: choose slot setup." : undefined as unknown as string,
     channel: "Step: choose where to post the roster.",
@@ -389,6 +414,15 @@ function wizardStepComponents(
       )
     ];
   }
+  if (state.step === "event-time") {
+    return [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        wizardButton(`wizard-event-time:${state.userId}:default`, "Default 9:00 PM", ButtonStyle.Primary),
+        wizardButton(`wizard-event-time:${state.userId}:custom`, "Custom event time", ButtonStyle.Secondary)
+      )
+    ];
+  }
+
 
   if (state.step === "ping") {
     return [
@@ -442,13 +476,22 @@ function renderWizardSummary(state: EventWizardState): string {
   const ping = state.pingRoleIds.length ? state.pingRoleIds.map((roleId) => `<@&${roleId}>`).join(", ") : "No ping";
   const channel = state.channelId ? `<#${state.channelId}>` : config.nodeWarChannelId ? `<#${config.nodeWarChannelId}>` : "Select during setup";
 
+  const timeLine = state.eventKind === "nodewar"
+    ? `Post time: ${state.postTime} ${config.timezone}`
+    : `Event time: ${state.eventTime || "Not selected"} ${config.timezone}`;
+
+  const announceLine = state.eventKind !== "nodewar" && state.eventTime
+    ? `Bot announces: ${calculateAnnouncementTime(state.eventTime)} ${config.timezone} (5 min before)`
+    : undefined;
+
   const common = [
     `${state.createToday ? "Today" : "Days"}: ${days}`,
     `Repeat: ${state.recurring === undefined ? "Not selected" : state.recurring ? "Repeat weekly" : "One-time only"}`,
-    `Post time: ${state.postTime} ${config.timezone}`,
+    timeLine,
+    announceLine,
     `Ping roles: ${ping}`,
     `Post channel: ${channel}`
-  ];
+  ].filter(Boolean);
 
   if (state.eventKind === "nodewar") {
     const tier = state.tier ? labelTier(state.tier) : "Not selected";
@@ -524,6 +567,22 @@ function buildWizardPostTimeModal(userId: string): ModalBuilder {
     .setTitle("Custom Post Time")
     .addComponents(textInputRow("postTime", "Post time (HH:mm)", config.nodeWarPostTime));
 }
+function calculateAnnouncementTime(eventTime: string): string {
+  const [h, m] = eventTime.split(':').map(Number);
+  let totalMin = h * 60 + m - 5;
+  if (totalMin < 0) totalMin += 24 * 60;
+  const hours = Math.floor(totalMin / 60) % 24;
+  const mins = totalMin % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function buildWizardEventTimeModal(userId: string): ModalBuilder {
+  return new ModalBuilder()
+    .setCustomId(`wizard-event-time:${userId}`)
+    .setTitle("Custom Event Time")
+    .addComponents(textInputRow("eventTime", "Event time (HH:mm)", "21:00"));
+}
+
 
 function buildWizardSlotsModal(state: EventWizardState): ModalBuilder {
   return new ModalBuilder()
@@ -591,6 +650,7 @@ async function confirmWizard(state: EventWizardState, store: EventStore, created
     event.autoRepost = !state.createToday && state.recurring;
     event.groups = buildWizardGroups(state, totalCapacity);
   } else if (state.eventKind === "gbr") {
+    const announcementTime = calculateAnnouncementTime(state.eventTime);
     event = {
       id: nanoid(10),
       title: buildGBRTitle(next.day),
@@ -598,14 +658,14 @@ async function confirmWizard(state: EventWizardState, store: EventStore, created
       day: next.day,
       repeatDays: !state.createToday && state.recurring ? state.days : undefined,
       date: next.date,
-      time: config.nodeWarStartTime,
+      time: state.eventTime,
       timezone: config.timezone,
       recurrence,
       totalCapacity: 0,
       groups: [],
       bossOrder: state.bossOrder,
       announcementDate,
-      announcementTime: state.postTime,
+      announcementTime,
       announcementChannelId: channelId,
       announcementRoleIds: state.pingRoleIds,
       guildId: state.guildId,
@@ -619,6 +679,7 @@ async function confirmWizard(state: EventWizardState, store: EventStore, created
     };
   } else {
     // custom
+    const announcementTime = calculateAnnouncementTime(state.eventTime);
     event = {
       id: nanoid(10),
       title: state.customTitle || "Custom Event",
@@ -626,14 +687,14 @@ async function confirmWizard(state: EventWizardState, store: EventStore, created
       day: next.day,
       repeatDays: !state.createToday && state.recurring ? state.days : undefined,
       date: next.date,
-      time: config.nodeWarStartTime,
+      time: state.eventTime,
       timezone: config.timezone,
       recurrence,
       totalCapacity: 0,
       groups: [],
       description: state.customDescription,
       announcementDate,
-      announcementTime: state.postTime,
+      announcementTime,
       announcementChannelId: channelId,
       announcementRoleIds: state.pingRoleIds,
       guildId: state.guildId,
@@ -684,6 +745,7 @@ export {
   cancelRow,
   buildWizardTitleModal,
   buildWizardPostTimeModal,
+  buildWizardEventTimeModal,
   buildWizardSlotsModal,
   textInputRow,
   confirmWizard,
