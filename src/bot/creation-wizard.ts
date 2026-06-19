@@ -338,14 +338,22 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
   content: string;
   components: Array<ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | RoleSelectMenuBuilder | ChannelSelectMenuBuilder>>;
 } {
-  const steps = [
-    { key: "days", icon: "📅", label: "Select Day" },
-    { key: "repeat", icon: "🔄", label: "Repeat" },
-    { key: "boss-order", icon: "🐉", label: "Boss Order" },
-    { key: "event-time", icon: "⏰", label: "Event Time" },
-    { key: "ping", icon: "📢", label: "Role Pings" },
-    { key: "confirm", icon: "✅", label: "Confirm" },
-  ];
+  // Steps vary based on createToday flag
+  const steps = state.createToday
+    ? [
+        { key: "boss-order", icon: "🐉", label: "Boss Order" },
+        { key: "event-time", icon: "⏰", label: "Event Time" },
+        { key: "ping", icon: "📢", label: "Role Pings" },
+        { key: "confirm", icon: "✅", label: "Confirm" },
+      ]
+    : [
+        { key: "days", icon: "📅", label: "Select Day" },
+        { key: "boss-order", icon: "🐉", label: "Boss Order" },
+        { key: "event-time", icon: "⏰", label: "Event Time" },
+        { key: "repeat", icon: "🔄", label: "Repeat" },
+        { key: "ping", icon: "📢", label: "Role Pings" },
+        { key: "confirm", icon: "✅", label: "Confirm" },
+      ];
   const currentStepIndex = steps.findIndex((s) => s.key === state.step);
   const bossNames = state.bossOrder.map((key) => GBR_BOSSES.find((b) => b.key === key)?.name ?? key).join(" \u2192 ");
 
