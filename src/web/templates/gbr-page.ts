@@ -31,13 +31,18 @@ export function renderCreateGBRPage(
     .join("");
 
   const content = `
-    <div class="gbr-create-page">
-      <form id="gbr-form" method="POST" action="/create">
-        <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}" />
-        <input type="hidden" name="guildId" value="${escapeHtml(guildId)}" />
-        <input type="hidden" name="type" value="gbr" />
-        <input type="hidden" name="bossOrder" id="boss-order-value" value="${escapeHtml(DEFAULT_BOSS_ORDER.join(","))}" />
-        <input type="hidden" name="repeatDays" id="repeat-days-value" value="" />
+    <div class="gbr-shell">
+      <div class="gbr-topbar">
+        <h1>Create Guild Boss Raid</h1>
+        <a href="/create?guild=${escapeHtml(guildId)}" class="button button-ghost button-sm">← Back</a>
+      </div>
+      <div class="gbr-create-page">
+        <form id="gbr-form" method="POST" action="/create">
+          <input type="hidden" name="csrfToken" value="${escapeHtml(csrfToken)}" />
+          <input type="hidden" name="guildId" value="${escapeHtml(guildId)}" />
+          <input type="hidden" name="type" value="gbr" />
+          <input type="hidden" name="bossOrder" id="boss-order-value" value="${escapeHtml(DEFAULT_BOSS_ORDER.join(","))}" />
+          <input type="hidden" name="repeatDays" id="repeat-days-value" value="" />
 
         <div class="gbr-grid">
           <!-- Panel 01: Schedule -->
@@ -89,12 +94,12 @@ export function renderCreateGBRPage(
             <div class="gbr-panel-head">Live Preview</div>
             <div class="gbr-panel-body gbr-preview-body">
               <div class="discord-message">
-                <div class="discord-avatar"><img src="/assets/avatar.png" alt="Athena" /></div>
+                <div class="discord-avatar"><img class="discord-avatar-img" src="/assets/project_athena.png" alt="Athena" /></div>
                 <div class="discord-message-content">
                   <div class="discord-message-header">
-                    <span class="discord-author">Athena</span>
-                    <span class="discord-bot-tag">BOT</span>
-                    <span class="discord-timestamp">Today at <span id="preview-announce-time">10:15 PM</span></span>
+                    <span class="discord-message-author">Athena</span>
+                    <span class="discord-message-bot-tag">BOT</span>
+                    <span class="discord-message-timestamp">Today at <span id="preview-announce-time">10:15 PM</span></span>
                   </div>
                   <div class="discord-embed">
                     <div class="discord-embed-color-bar"></div>
@@ -102,20 +107,20 @@ export function renderCreateGBRPage(
                       <div class="discord-embed-title" id="preview-title">Guild Boss Raid - Monday</div>
                       <div class="discord-embed-fields">
                         <div class="discord-embed-field">
-                          <div class="discord-field-name">📅 Date</div>
-                          <div class="discord-field-value" id="preview-date">June 23, 2026</div>
+                          <div class="discord-embed-field-name">📅 Date</div>
+                          <div class="discord-embed-field-value" id="preview-date">June 23, 2026</div>
                         </div>
                         <div class="discord-embed-field">
-                          <div class="discord-field-name">🕐 Time</div>
-                          <div class="discord-field-value" id="preview-time">9:00 PM</div>
+                          <div class="discord-embed-field-name">🕐 Time</div>
+                          <div class="discord-embed-field-value" id="preview-time">9:00 PM</div>
                         </div>
                         <div class="discord-embed-field">
-                          <div class="discord-field-name">📢 Announce</div>
-                          <div class="discord-field-value" id="preview-announce">10:15 PM</div>
+                          <div class="discord-embed-field-name">📢 Announce</div>
+                          <div class="discord-embed-field-value" id="preview-announce">10:15 PM</div>
                         </div>
                         <div class="discord-embed-field">
-                          <div class="discord-field-name">📊 Status</div>
-                          <div class="discord-field-value">Open</div>
+                          <div class="discord-embed-field-name">📊 Status</div>
+                          <div class="discord-embed-field-value">Open</div>
                         </div>
                       </div>
                       <div class="discord-embed-divider"></div>
@@ -126,7 +131,7 @@ export function renderCreateGBRPage(
                       <div class="discord-embed-field-value" id="preview-countdown" style="color:#b5bac1;">⏱️ <strong>Starting in 2 hours</strong></div>
                     </div>
                   </div>
-                  <div class="discord-footer">Project Athena | Event GBR-001</div>
+                  <div class="discord-embed-footer">Project Athena | Event GBR-001</div>
                 </div>
               </div>
             </div>
@@ -137,6 +142,7 @@ export function renderCreateGBRPage(
           <button type="submit" class="button button-primary">Create GBR Event</button>
         </div>
       </form>
+      </div>
     </div>
   `;
 

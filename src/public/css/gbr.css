@@ -1,126 +1,258 @@
-/* GBR Create Page */
-.gbr-create-body { background: var(--bg-primary, #1e1f22); }
+/* GBR Create Page — follows nodewar-new theme */
+.gbr-create-body {
+  background: #0b0f14;
+}
 
-.gbr-create-page { padding: var(--space-4, 16px); max-width: 1720px; margin: 0 auto; }
+.gbr-create-body .main {
+  padding: 0;
+}
+
+.gbr-shell {
+  min-height: calc(100vh - 65px);
+  padding: 18px;
+  color: #e9edf4;
+  background:
+    radial-gradient(circle at 24% 12%, rgba(206, 155, 45, 0.16), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 35%),
+    #0b0f14;
+}
+
+.gbr-topbar {
+  width: min(100%, 1540px);
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.gbr-topbar h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #f3c157;
+}
+
+.gbr-topbar .button {
+  margin-left: auto;
+}
+
+.gbr-create-page {
+  width: min(100%, 1540px);
+  margin: 0 auto;
+}
 
 .gbr-grid {
   display: grid;
-  grid-template-columns: 385px 420px 330px 530px;
-  gap: 16px;
-  justify-content: center;
+  grid-template-columns: 1fr 1fr 1fr 1.4fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 1400px) {
+  .gbr-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .gbr-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .gbr-panel {
-  background: var(--bg-secondary, #2b2d31);
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
   overflow: hidden;
 }
 
 .gbr-panel-head {
-  padding: 11px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary, #f2f3f5);
-  background: var(--bg-tertiary, #1e1f22);
-  border-bottom: 1px solid var(--border-subtle, #3f4147);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b8c0cc;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   gap: 8px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .gbr-panel-num {
-  color: var(--text-muted, #b5bac1);
-  font-weight: 700;
+  color: #f3c157;
+  font-weight: 800;
 }
 
-.gbr-panel-body { padding: 15px 18px; }
+.gbr-panel-body {
+  padding: 14px 16px;
+}
 
 .gbr-panel-preview .gbr-panel-body {
-  background: #313338;
-  padding: 15px 18px;
+  background: #2b2d31;
+  padding: 14px 16px;
 }
 
 .gbr-label {
   display: block;
-  font-size: 13px;
-  color: var(--text-muted, #b5bac1);
-  margin-bottom: 3px;
-  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b929a;
+  margin-bottom: 4px;
+  margin-top: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.gbr-label:first-child { margin-top: 0; }
+.gbr-label:first-child {
+  margin-top: 0;
+}
 
 .gbr-input {
   width: 100%;
-  background: var(--bg-primary, #1e1f22);
-  color: var(--text-primary, #f2f3f5);
-  border: 1px solid var(--border-subtle, #3f4147);
-  border-radius: 5px;
-  padding: 8px 11px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #e9edf4;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
   font-size: 13px;
   box-sizing: border-box;
+  transition: border-color 0.15s;
 }
 
-.gbr-days { display: flex; gap: 4px; flex-wrap: wrap; }
+.gbr-input:focus {
+  outline: none;
+  border-color: rgba(214, 161, 48, 0.5);
+}
+
+.gbr-days {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
 
 .gbr-day-btn {
-  padding: 7px 13px;
-  border-radius: 5px;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--bg-secondary, #2b2d31);
-  color: var(--text-muted, #b5bac1);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.05);
+  color: #8b929a;
   cursor: pointer;
   user-select: none;
-  transition: background 0.15s, color 0.15s;
+  transition: all 0.15s;
+  border: 1px solid transparent;
 }
 
-.gbr-day-btn:hover { background: #3f4147; }
-.gbr-day-btn.active { background: #5865f2; color: white; }
+.gbr-day-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e9edf4;
+}
 
-.gbr-boss-list { display: flex; flex-direction: column; gap: 9px; }
+.gbr-day-btn.active {
+  background: rgba(214, 161, 48, 0.2);
+  color: #f3c157;
+  border-color: rgba(214, 161, 48, 0.4);
+}
+
+.gbr-boss-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .gbr-boss-card {
   display: flex;
   align-items: center;
-  gap: 13px;
-  background: var(--bg-secondary, #2b2d31);
-  padding: 9px 15px;
-  border-radius: 7px;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: grab;
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: all 0.15s;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.gbr-boss-card:active { cursor: grabbing; }
-.gbr-boss-card.dragging { opacity: 0.4; }
+.gbr-boss-card:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.gbr-boss-card:active {
+  cursor: grabbing;
+}
+
+.gbr-boss-card.dragging {
+  opacity: 0.4;
+  border-color: rgba(214, 161, 48, 0.4);
+}
 
 .gbr-boss-num {
-  color: var(--text-muted, #b5bac1);
-  font-weight: 700;
-  font-size: 19px;
-  min-width: 26px;
+  color: #f3c157;
+  font-weight: 800;
+  font-size: 16px;
+  min-width: 22px;
+  text-align: center;
 }
 
 .gbr-boss-img {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
   object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .gbr-boss-name {
-  color: var(--text-primary, #f2f3f5);
-  font-size: 15px;
+  color: #e9edf4;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .gbr-boss-drag {
   margin-left: auto;
-  color: var(--text-muted, #80848e);
-  font-size: 19px;
+  color: #5c6370;
+  font-size: 16px;
+  transition: color 0.15s;
+}
+
+.gbr-boss-card:hover .gbr-boss-drag {
+  color: #8b929a;
 }
 
 .gbr-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  margin-top: 18px;
+  gap: 10px;
+}
+
+/* Override discord preview styles for GBR */
+.gbr-panel-preview .discord-embed {
+  border-left: 3px solid #ed4245;
+}
+
+.gbr-panel-preview .discord-embed-title {
+  color: #f2f3f5;
+  font-weight: 700;
+}
+
+.gbr-panel-preview .discord-embed-field-name {
+  color: #b5bac1;
+}
+
+.gbr-panel-preview .discord-embed-field-value {
+  color: #f2f3f5;
+}
+
+.gbr-panel-preview .discord-message-author {
+  color: #f2f3f5;
+  font-weight: 600;
+}
+
+.gbr-panel-preview .discord-embed-footer {
+  color: #8b929a;
+  font-size: 11px;
 }
