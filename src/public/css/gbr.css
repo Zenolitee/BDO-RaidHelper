@@ -1,6 +1,6 @@
 /* GBR Create Page — follows nodewar-new theme */
 .gbr-create-body {
-  background: #0d1117;
+  background: #151b23;
 }
 
 .gbr-create-body .main {
@@ -13,9 +13,9 @@
   color: #e9edf4;
   background:
     url('/assets/gbr.png') center/cover no-repeat,
-    radial-gradient(circle at 24% 12%, rgba(206, 155, 45, 0.12), transparent 28%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 35%),
-    #0d1117;
+    radial-gradient(circle at 24% 12%, rgba(206, 155, 45, 0.18), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 35%),
+    #151b23;
   background-blend-mode: overlay;
 }
 
@@ -83,8 +83,8 @@
 }
 
 .gbr-panel {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   overflow: hidden;
 }

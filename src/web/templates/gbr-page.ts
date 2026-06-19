@@ -143,7 +143,7 @@ export function renderCreateGBRPage(
                           <div class="discord-embed-field-value" id="preview-time">9:00 PM</div>
                         </div>
                         <div class="discord-embed-field">
-                          <div class="discord-embed-field-name">📢 Announce</div>
+                          <div class="discord-embed-field-name">⏰ When</div>
                           <div class="discord-embed-field-value" id="preview-announce">in 2 hours</div>
                         </div>
                         <div class="discord-embed-field">
