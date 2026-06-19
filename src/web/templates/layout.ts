@@ -7,6 +7,7 @@ export function renderApp(title: string, body: string, opts: {
   summaries?: GuildDashboardSummary[];
   activeNav?: string;
   headExtra?: string;
+  bodyClass?: string;
 } = {}): string {
   return `<!doctype html>
 <html lang="en">
@@ -20,7 +21,7 @@ export function renderApp(title: string, body: string, opts: {
   <link rel="stylesheet" href="/assets/css/components.css">
   ${opts.headExtra ?? ""}
 </head>
-<body>
+<body${opts.bodyClass ? ` class="${esc(opts.bodyClass)}"` : ""}>
   <div class="app">
     ${renderTopNav(opts.session, opts.summaries, opts.activeNav)}
     <main class="main">

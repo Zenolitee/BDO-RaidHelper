@@ -3,6 +3,7 @@ import { getGroupEmoji, getGroupEmojiUrl } from '../emojis.js';
 import { buildNodeWarTitle, getNodeWarCapacity, labelWarDay, NODE_WAR_PRESETS } from '../nodewar-presets.js';
 import { activeRosterSignupCount } from '../store.js';
 import { formatClockTime } from '../time-format.js';
+import { dateTimeToUnix, timezoneOffsetMs } from '../timezone.js';
 import { WEEKDAYS, type BotSettings, type GroupKey, type WarDay, type WarEvent } from '../types.js';
 import type { DiscordGuild, GuildDashboardSummary, UpcomingAnnouncement } from './types.js';
 
@@ -50,7 +51,9 @@ export function eventSortTimestamp(event: WarEvent): number {
 }
 
 export function warStartTimestamp(event: WarEvent): number {
-  return new Date(`${event.date}T${event.time}:00+08:00`).getTime();
+  const timezone = event.timezone ?? config.timezone;
+  const ts = dateTimeToUnix(event.date, event.time, timezone);
+  return ts ? ts * 1000 : Number.NaN;
 }
 
 export function getUpcomingAnnouncements(event: WarEvent, limit: number): UpcomingAnnouncement[] {
@@ -95,7 +98,9 @@ export function getUpcomingAnnouncements(event: WarEvent, limit: number): Upcomi
 }
 
 export function announcementTimestamp(announcement: Pick<UpcomingAnnouncement, "announcementDate" | "announcementTime">): number {
-  return new Date(`${announcement.announcementDate}T${announcement.announcementTime}:00+08:00`).getTime();
+  // Announcement timestamps use the configured timezone
+  const ts = dateTimeToUnix(announcement.announcementDate, announcement.announcementTime, config.timezone);
+  return ts ? ts * 1000 : Number.NaN;
 }
 
 export function formatAnnouncementDateTime(announcement: Pick<UpcomingAnnouncement, "announcementDate" | "announcementTime">): string {
@@ -249,7 +254,8 @@ export function nextDateAfter(date: string, day: WarDay): string {
 }
 
 export function warEndsAt(date: string): number {
-  return new Date(`${date}T${config.nodeWarStartTime}:00+08:00`).getTime() + 60 * 60_000;
+  const ts = dateTimeToUnix(date, config.nodeWarStartTime, config.timezone);
+  return ts ? ts * 1000 + 60 * 60_000 : Number.NaN;
 }
 
 export function warDayForDate(date: string): WarDay {

@@ -67,6 +67,7 @@ import { renderDocsPage } from "./web/templates/docs.js";
 import { getBdoGuild, searchBdoGuilds, searchBdoAdventurers, getBdoAdventurer, type BdoGuildProfile } from "./integrations/bdo-community.js";
 import { renderCreateServerPickerPage, renderCreateRaidPage, renderCreateNodeWarNewPage, renderEditRaidPage } from "./web/templates/create-edit-page.js";
 import { renderCreateGBRPage } from "./web/templates/gbr-page.js";
+import { renderCreateCustomPage } from "./web/templates/custom-event-page.js";
 import { renderEventTypePickerPage } from "./web/templates/event-type-picker.js";
 import { DEFAULT_BOSS_ORDER, buildGBRTitle } from "./gbr.js";
 import type { ScoreReport } from "./score-types.js";
@@ -1230,7 +1231,9 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       let page: string;
       if (eventType === "gbr") {
         page = renderCreateGBRPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
-      } else if (eventType === "nodewar-new") {
+      } else if (eventType === "custom") {
+        page = renderCreateCustomPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
+      } else if (eventType === "nodewar" || eventType === "nodewar-new") {
         page = renderCreateNodeWarNewPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
       } else {
         page = renderCreateRaidPage(guildId, session.csrfToken, session, deliveryOptions, configuredChannelId);
@@ -1282,6 +1285,35 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
           totalCapacity: 0,
           groups: [],
           bossOrder,
+          announcementDate: previousDate(next.date),
+          announcementTime,
+          announcementChannelId,
+          announcementRoleIds,
+          guildId,
+          createdBy: `web:${session.user.id}`,
+          createdAt: new Date().toISOString(),
+          signups: [],
+          closed: false,
+          active: true,
+          autoRepost: recurrence === "weekly"
+        };
+      } else if (eventType === "custom") {
+        const customTitle = parseOptionalText(request.body.title, 120) || "Custom Event";
+        const customDescription = parseOptionalText(request.body.description, 1000);
+        const eventTime = parseClockTime(request.body.eventTime);
+        event = {
+          id: nanoid(10),
+          title: customTitle,
+          kind: "custom",
+          day: next.day,
+          repeatDays: recurrence === "weekly" ? repeatDays : undefined,
+          date: next.date,
+          time: eventTime,
+          timezone,
+          recurrence,
+          totalCapacity: 0,
+          groups: [],
+          description: customDescription,
           announcementDate: previousDate(next.date),
           announcementTime,
           announcementChannelId,

@@ -348,8 +348,6 @@ function ensureT1CoreGroups(groups: WarEvent["groups"]): WarEvent["groups"] {
   const required = [
     { key: "mainball", label: getGroupLabel("mainball"), capacity: 0, editable: true },
     { key: "defense", label: getGroupLabel("defense"), capacity: 5, editable: true },
-    { key: "zerker", label: getGroupLabel("zerker"), capacity: 2, editable: true },
-    { key: "shai", label: getGroupLabel("shai"), capacity: 2, editable: true },
     { key: "bench", label: getGroupLabel("bench"), capacity: 0, editable: false },
     { key: "tentative", label: getGroupLabel("tentative"), capacity: 0, editable: false },
     { key: "absence", label: getGroupLabel("absence"), capacity: 0, editable: false }

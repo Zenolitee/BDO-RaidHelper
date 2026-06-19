@@ -1,6 +1,7 @@
 import { getGroupLabel } from '../emojis.js';
 import type { NodeWarTier, WarDay, GroupConfig } from '../types.js';
 import { WEEKDAYS } from '../types.js';
+import { TIMEZONE_OPTIONS } from '../timezone.js';
 import type { ScoreRow, ScoreReportResult } from '../score-types.js';
 import type { DiscordGuildChannel, DiscordGuildRole } from './types.js';
 
@@ -19,9 +20,7 @@ export function parseGroupAllocation(raw: unknown, totalCapacity: number): Group
   }
 
   const coreLabels: Record<string, string> = {
-    defense: getGroupLabel("defense"),
-    zerker: getGroupLabel("zerker"),
-    shai: getGroupLabel("shai")
+    defense: getGroupLabel("defense")
   };
   const groups: GroupConfig[] = [];
   const keys = new Set<string>();
@@ -53,7 +52,7 @@ export function parseGroupAllocation(raw: unknown, totalCapacity: number): Group
     groups.push({ key, label, capacity, editable: true, ...(emoji ? { emoji } : {}) });
   }
 
-  for (const key of ["defense", "zerker", "shai"]) {
+  for (const key of ["defense"]) {
     if (!keys.has(key)) {
       groups.push({ key, label: coreLabels[key], capacity: 0, editable: true });
     }
@@ -71,6 +70,9 @@ export function parseGroupAllocation(raw: unknown, totalCapacity: number): Group
 
 export function validRoleEmoji(emoji: string): boolean {
   if (/^<a?:[A-Za-z0-9_]{2,32}:\d{5,25}>$/.test(emoji)) {
+    return true;
+  }
+  if (/^pa_[a-z0-9_]{2,32}$/.test(emoji)) {
     return true;
   }
   return !emoji.includes("@") && !emoji.includes("<") && !emoji.includes(">") && !/[\r\n]/.test(emoji) && [...emoji].length <= 12;
@@ -178,6 +180,13 @@ export function parseOptionalText(value: unknown, maxLength: number): string | u
 export function isAllowedScoreImage(mimeType: string, originalName: string): boolean {
   const extension = originalName.toLowerCase().match(/\.[^.]+$/)?.[0];
   return ["image/png", "image/jpeg", "image/webp"].includes(mimeType) && Boolean(extension && [".png", ".jpg", ".jpeg", ".webp"].includes(extension));
+}
+
+export function parseTimezone(value: unknown, fallback: string): string {
+  const tz = String(value ?? "").trim();
+  if (!tz) return fallback;
+  const valid = TIMEZONE_OPTIONS.some((option) => option.value === tz);
+  return valid ? tz : fallback;
 }
 
 export function parseRepeatDays(value: unknown, fallback?: WarDay): WarDay[] {

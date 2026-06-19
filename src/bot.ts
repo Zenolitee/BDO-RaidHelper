@@ -42,6 +42,7 @@ import {
   getAnnouncementRoleIds,
   groupsForCapacity,
 } from "./bot/utils.js";
+import { createDiscordEmojiResolver } from "./bot/discord-emojis.js";
 import {
   requireAdministrator,
   requireOfficer,
@@ -281,6 +282,11 @@ async function handleCommand(
     return;
   }
 
+  if (subcommand === "close") {
+    await closeEvent(interaction, store, client);
+    return;
+  }
+
   if (subcommand === "repost") {
     await repostEvent(interaction, store, client);
   }
@@ -476,7 +482,7 @@ async function showEvent(interaction: ChatInputCommandInteraction, store: EventS
 
   await interaction.reply({
     content: `Announcement: ${formatAnnouncementSchedule(event)}`,
-    embeds: [renderEventEmbed(event, true)],
+    embeds: [renderEventEmbed(event, true, createDiscordEmojiResolver(interaction.guild))],
     ephemeral: true
   });
 }
@@ -495,8 +501,9 @@ async function setSlots(
 
   await refreshEventMessage(client, event);
   const mainball = event.groups.find((group) => group.key === "mainball")?.capacity ?? 0;
+  const resolveEmoji = createDiscordEmojiResolver(interaction.guild);
   await interaction.reply({
-    content: `Updated ${event.title}: ${formatGroupName("mainball")} ${mainball}, ${formatGroupBadge("defense")} ${interaction.options.getInteger("def", true)}, ${formatGroupBadge("zerker")} ${interaction.options.getInteger("zerk", true)}, ${formatGroupBadge("shai")} ${interaction.options.getInteger("shai", true)}.`,
+    content: `Updated ${event.title}: ${formatGroupName("mainball", resolveEmoji)} ${mainball}, ${formatGroupBadge("defense", resolveEmoji)} ${interaction.options.getInteger("def", true)}, ${formatGroupBadge("zerker", resolveEmoji)} ${interaction.options.getInteger("zerk", true)}, ${formatGroupBadge("shai", resolveEmoji)} ${interaction.options.getInteger("shai", true)}.`,
     ephemeral: true
   });
 }
@@ -530,6 +537,24 @@ async function deleteEvent(interaction: ChatInputCommandInteraction, store: Even
   const id = await resolveEventIdFromStore(store, interaction.guildId ?? "", interaction.options.getString("id", true));
   await store.deleteEvent(id);
   await interaction.reply({ content: `Deleted event ${id}.`, ephemeral: true });
+}
+
+async function closeEvent(
+  interaction: ChatInputCommandInteraction,
+  store: EventStore,
+  client: Client
+): Promise<void> {
+  const id = interaction.options.getString("id", true);
+  const event = await getGuildEvent(store, interaction.guildId ?? "", id);
+  if (!event) {
+    throw new Error("Event not found.");
+  }
+  if (event.closed) {
+    throw new Error("Event is already closed.");
+  }
+  const closed = await store.closeEvent(event.id);
+  await refreshEventMessage(client, closed);
+  await interaction.reply({ content: `Closed ${closed.title}. Signups are no longer accepted.`, ephemeral: true });
 }
 
 async function repostEvent(
@@ -627,14 +652,14 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
       displayName: interaction.member && "displayName" in interaction.member ? interaction.member.displayName : interaction.user.username,
       group: groupKey as GroupKey
     });
-    await interaction.update(renderEventMessagePayload(event));
+    await interaction.update(renderEventMessagePayload(event, createDiscordEmojiResolver(interaction.guild)));
     return;
   }
 
   if (action === "event-leave") {
     await assertButtonGuild(store, interaction, eventId);
     const event = await store.removeSignup(eventId, interaction.user.id);
-    await interaction.update(renderEventMessagePayload(event));
+    await interaction.update(renderEventMessagePayload(event, createDiscordEmojiResolver(interaction.guild)));
     return;
   }
 
@@ -670,7 +695,7 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
     if (!event) {
       throw new Error("Event not found.");
     }
-    await interaction.update(renderEventMessagePayload(event));
+    await interaction.update(renderEventMessagePayload(event, createDiscordEmojiResolver(interaction.guild)));
     return;
   }
 
@@ -762,7 +787,7 @@ async function handleScoreUploadMessage(
   await message.reply([
     `Saved score report **${report.title ?? report.warDate}**.`,
     `Extracted **${rows.length}** player row${rows.length === 1 ? "" : "s"} using \`${extraction.engine}\`.`,
-    `View it in Project Athena: http://localhost:${config.port}/stats?guild=${encodeURIComponent(pending.guildId)}`
+    `View it in Project Athena: ${config.publicBaseUrl}/stats?guild=${encodeURIComponent(pending.guildId)}`
   ].join("\n"));
 }
 

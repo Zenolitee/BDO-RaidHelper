@@ -2,7 +2,7 @@ import { Client } from 'discord.js';
 import { nanoid } from 'nanoid';
 import { config } from '../config.js';
 import { buildNodeWarTitle, getNodeWarCapacity, getGroupsForPreset, getResponseGroups, getT1DefaultGroups, OPTIONAL_ROLE_PRESETS } from '../nodewar-presets.js';
-import { renderEventEmbed, renderEventComponents, renderGBREventEmbed, renderGBREventComponents } from '../render.js';
+import { renderEventEmbed, renderEventComponents, renderGBREventEmbed, renderGBREventComponents, renderCustomEventEmbed, renderCustomEventComponents } from '../render.js';
 import { type EventStore } from '../store.js';
 import { dateTimeToDate } from '../timezone.js';
 import { WEEKDAYS, type GroupKey, type NodeWarTier, type WarDay, type WarEvent } from '../types.js';
@@ -102,6 +102,8 @@ export async function postEventToChannel(
     content,
     ...(event.kind === "gbr"
       ? renderGBREventMessagePayload(event, createDiscordEmojiResolver(client))
+      : event.kind === "custom"
+      ? renderCustomEventMessagePayload(event, createDiscordEmojiResolver(client))
       : renderEventMessagePayload(event, createDiscordEmojiResolver(client))),
     allowedMentions: roleIds.length ? { roles: roleIds } : undefined
   });
@@ -122,6 +124,8 @@ export async function refreshEventMessage(client: Client, event: WarEvent): Prom
   await message.edit(
     event.kind === "gbr"
       ? renderGBREventMessagePayload(event, createDiscordEmojiResolver(client))
+      : event.kind === "custom"
+      ? renderCustomEventMessagePayload(event, createDiscordEmojiResolver(client))
       : renderEventMessagePayload(event, createDiscordEmojiResolver(client))
   );
 }
@@ -148,6 +152,14 @@ export function renderGBREventMessagePayload(event: WarEvent, resolveEmoji = cre
   return {
     embeds: [renderGBREventEmbed(event, resolveEmoji)],
     components: renderGBREventComponents(),
+    attachments: []
+  };
+}
+
+export function renderCustomEventMessagePayload(event: WarEvent, resolveEmoji = createDiscordEmojiResolver()) {
+  return {
+    embeds: [renderCustomEventEmbed(event, resolveEmoji)],
+    components: renderCustomEventComponents(),
     attachments: []
   };
 }

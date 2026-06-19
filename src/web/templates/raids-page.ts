@@ -28,20 +28,20 @@ function renderDashboardAccordion(summaries: GuildDashboardSummary[], session?: 
       const isAdmin = session ? canManageGuild(session, summary.guild.id) : false;
       const ready = summary.setupWarnings.length === 0;
       const subItems = [
-        { href: `/events?guild=${gid}`, label: "War Room", desc: "Open rosters and schedules" },
-        { href: `/stats?guild=${gid}`, label: "Combat Ledger", desc: "Scoreboard trends and player performance" },
-        { href: `/stats/history?guild=${gid}`, label: "Archives", desc: "Past war scoreboards and exports" },
-        { href: `/guilds/${gid}/performance`, label: "Performance", desc: "War analytics and combat stats" },
-        { href: `/guilds/${gid}/attendance`, label: "Attendance", desc: "Player participation tracking" },
-        { href: `/guilds/${gid}/activity`, label: "Guild Activity", desc: "BDO guild profile and members" },
+        { href: `/create?guild=${gid}`, label: "Create Event", desc: "Create events for Node Wars, GBR, or custom events!", image: "/assets/dashboard-images/create_event.png" },
+        { href: `/stats?guild=${gid}`, label: "Player Performance", desc: "View individual player stats and combat metrics", image: "/assets/dashboard-images/player_performance.png" },
+        { href: `/stats/history?guild=${gid}`, label: "War History", desc: "Review past war scoreboards and exports", image: "/assets/dashboard-images/score_history.png" },
+        { href: `/guilds/${gid}/performance`, label: "Guild Performance", desc: "Analyze your guild's war statistics and performance trends", image: "/assets/dashboard-images/guild_performance.png" },
+        { href: `/guilds/${gid}/attendance`, label: "Guild Attendance", desc: "Track member participation and attendance history", image: "/assets/dashboard-images/attendance.png" },
+        { href: `/events?guild=${gid}`, label: "Guild Activity", desc: "View active rosters and event schedules", image: "" },
       ];
 
       const adminBadge = isAdmin
         ? `<span class="dash-admin-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>Admin</span>`
         : "";
 
-      return `<article class="dash-server${isAdmin ? " is-admin" : ""}" data-index="${index}">
-        <button class="dash-server-row" type="button" aria-expanded="false" onclick="toggleDashServer(this)">
+      return `<article class="dash-server${isAdmin ? " is-admin" : ""}" data-index="${index}" data-guild-id="${esc(summary.guild.id)}">
+        <div class="dash-server-row" role="button" tabindex="0" aria-expanded="false" onclick="toggleDashServer(this)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleDashServer(this)}">
           <span class="dash-server-status ${ready ? "ready" : "warn"}" aria-hidden="true"></span>
           ${renderGuildAvatar(summary.guild)}
           <span class="dash-server-main">
@@ -50,10 +50,13 @@ function renderDashboardAccordion(summaries: GuildDashboardSummary[], session?: 
           </span>
           <span class="dash-server-spacer"></span>
           ${adminBadge}
+          <button class="dash-bookmark-button" type="button" aria-label="Bookmark server" aria-pressed="false" title="Bookmark server to keep it open and at the top" onclick="toggleDashBookmark(event, this)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>
+          </button>
           <svg class="dash-chevron" viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
-        </button>
+        </div>
         <div class="dash-server-menu" aria-hidden="true">
-          ${subItems.map((item) => `<a class="dash-menu-item" href="${esc(item.href)}">
+          ${subItems.map((item) => `<a class="dash-menu-item${item.image ? ' has-image' : ''}" href="${esc(item.href)}"${item.image ? ` style="background-image: url('${esc(item.image)}')"` : ''}>
             <span class="dash-menu-label">${esc(item.label)}</span>
             <span class="dash-menu-desc">${esc(item.desc)}</span>
             <svg class="dash-menu-arrow" viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
@@ -114,9 +117,14 @@ export function renderDashboardPage(
           <div>
             <p class="dash-panel-label">Guild Network</p>
             <h2>Choose a command channel</h2>
+            <p class="dash-bookmark-tip">Bookmark servers to keep them open and move them to the top.</p>
           </div>
           <span>${readyServers}/${serverCount} ready</span>
         </div>
+        ${dashboardSummaries.length ? `<label class="dash-server-search" aria-label="Search servers">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+          <input type="search" placeholder="Search servers" autocomplete="off" oninput="filterDashServers(this.value)">
+        </label>` : ""}
         <div class="dash-server-list">
           ${dashboardSummaries.length ? renderDashboardAccordion(dashboardSummaries, session) : renderEmptyState(
             "No servers found",
@@ -124,31 +132,122 @@ export function renderDashboardPage(
             `<div style="display:flex;justify-content:center;margin-top:var(--space-4);">${renderInviteButton("Invite Bot")}</div>`
           )}
         </div>
+        <div class="dash-server-empty" hidden>No matching servers.</div>
       </div>
     </section>
     <script>
       (function () {
+        var bookmarkKey = 'athena.dashboard.bookmarkedGuilds';
+        var legacyPinKey = 'athena.dashboard.pinnedGuilds';
+
+        function readBookmarkedGuilds() {
+          try {
+            var raw = window.localStorage.getItem(bookmarkKey) || window.localStorage.getItem(legacyPinKey);
+            var parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+          } catch (e) {
+            return [];
+          }
+        }
+
+        function writeBookmarkedGuilds(ids) {
+          try {
+            window.localStorage.setItem(bookmarkKey, JSON.stringify(ids));
+            window.localStorage.removeItem(legacyPinKey);
+          } catch (e) {}
+        }
+
+        function setDashServerOpen(server, open) {
+          var btn = server.querySelector('.dash-server-row');
+          var menu = server.querySelector('.dash-server-menu');
+          if (!btn || !menu) return;
+          btn.setAttribute('aria-expanded', String(open));
+          menu.setAttribute('aria-hidden', String(!open));
+          server.classList.toggle('is-open', open);
+        }
+
         function toggleDashServer(btn) {
           var server = btn.closest('.dash-server');
-          var menu = server.querySelector('.dash-server-menu');
           var expanded = btn.getAttribute('aria-expanded') === 'true';
 
-          // Close other open servers (accordion)
+          // Keep bookmarked servers open, but keep unbookmarked rows as an accordion.
           document.querySelectorAll('.dash-server.is-open').forEach(function (other) {
-            if (other !== server) {
-              var otherBtn = other.querySelector('.dash-server-row');
-              var otherMenu = other.querySelector('.dash-server-menu');
-              otherBtn.setAttribute('aria-expanded', 'false');
-              otherMenu.setAttribute('aria-hidden', 'true');
-              other.classList.remove('is-open');
+            if (other !== server && !other.classList.contains('is-bookmarked')) {
+              setDashServerOpen(other, false);
             }
           });
 
-          btn.setAttribute('aria-expanded', String(!expanded));
-          menu.setAttribute('aria-hidden', String(expanded));
-          server.classList.toggle('is-open', !expanded);
+          setDashServerOpen(server, !expanded);
         }
+
+        function sortBookmarkedServers(bookmarked) {
+          var list = document.querySelector('.dash-server-list');
+          if (!list) return;
+          var rank = {};
+          bookmarked.forEach(function (id, index) { rank[id] = index; });
+          Array.prototype.slice.call(list.querySelectorAll('.dash-server')).sort(function (a, b) {
+            var aId = a.getAttribute('data-guild-id') || '';
+            var bId = b.getAttribute('data-guild-id') || '';
+            var aBookmarked = Object.prototype.hasOwnProperty.call(rank, aId);
+            var bBookmarked = Object.prototype.hasOwnProperty.call(rank, bId);
+            if (aBookmarked !== bBookmarked) return aBookmarked ? -1 : 1;
+            if (aBookmarked && bBookmarked) return rank[aId] - rank[bId];
+            return Number(a.getAttribute('data-index') || 0) - Number(b.getAttribute('data-index') || 0);
+          }).forEach(function (server) {
+            list.appendChild(server);
+          });
+        }
+
+        function filterDashServers(value) {
+          var query = String(value || '').trim().toLowerCase();
+          var visibleCount = 0;
+          document.querySelectorAll('.dash-server').forEach(function (server) {
+            var name = (server.querySelector('.dash-server-name') || {}).textContent || '';
+            var sub = (server.querySelector('.dash-server-sub') || {}).textContent || '';
+            var visible = !query || (name + ' ' + sub).toLowerCase().indexOf(query) !== -1;
+            server.hidden = !visible;
+            if (visible) visibleCount += 1;
+          });
+          var empty = document.querySelector('.dash-server-empty');
+          if (empty) empty.hidden = visibleCount !== 0;
+        }
+
+        function toggleDashBookmark(event, btn) {
+          event.preventDefault();
+          event.stopPropagation();
+          var server = btn.closest('.dash-server');
+          if (!server) return;
+          var guildId = server.getAttribute('data-guild-id');
+          if (!guildId) return;
+          var bookmarked = readBookmarkedGuilds();
+          var isBookmarked = bookmarked.indexOf(guildId) !== -1;
+          bookmarked = isBookmarked ? bookmarked.filter(function (id) { return id !== guildId; }) : bookmarked.concat(guildId);
+          writeBookmarkedGuilds(bookmarked);
+          applyDashBookmarks();
+          if (!isBookmarked) setDashServerOpen(server, true);
+        }
+
+        function applyDashBookmarks() {
+          var bookmarked = readBookmarkedGuilds();
+          sortBookmarkedServers(bookmarked);
+          document.querySelectorAll('.dash-server').forEach(function (server) {
+            var guildId = server.getAttribute('data-guild-id');
+            var isBookmarked = guildId ? bookmarked.indexOf(guildId) !== -1 : false;
+            var btn = server.querySelector('.dash-bookmark-button');
+            server.classList.toggle('is-bookmarked', isBookmarked);
+            if (btn) {
+              btn.setAttribute('aria-pressed', String(isBookmarked));
+              btn.setAttribute('aria-label', isBookmarked ? 'Remove bookmark' : 'Bookmark server');
+              btn.setAttribute('title', isBookmarked ? 'Remove bookmark' : 'Bookmark server to keep it open and at the top');
+            }
+            if (isBookmarked) setDashServerOpen(server, true);
+          });
+        }
+
         window.toggleDashServer = toggleDashServer;
+        window.toggleDashBookmark = toggleDashBookmark;
+        window.filterDashServers = filterDashServers;
+        applyDashBookmarks();
       })();
     </script>
   `;

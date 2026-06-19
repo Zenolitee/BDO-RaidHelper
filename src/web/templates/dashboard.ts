@@ -75,7 +75,7 @@ ${"  "}    \\  /
 ${"  "}     \\/</pre>
     <dl class="fetch-info">
       <div><dt>user</dt><dd>${escapeHtml(session.user.username)}</dd></div>
-      <div><dt>host</dt><dd>nwhelper-os</dd></div>
+      <div><dt>host</dt><dd>athena-os</dd></div>
       <div><dt>shell</dt><dd>zsh 5.9</dd></div>
       <div><dt>wm</dt><dd>pinknord</dd></div>
       <div><dt>kernel</dt><dd>${escapeHtml(node)}</dd></div>
@@ -116,17 +116,17 @@ export function renderHome(events: WarEvent[], session?: WebSession, settings: B
       ])}
       <div class="button-row">${renderAccountControls()}${renderInviteButton("Invite Bot")}</div>
     `;
-    return `${renderWindow("welcome", heroBody, { prompt: "nwhelper@os" })}`;
+    return `${renderWindow("welcome", heroBody, { prompt: "athena@os" })}`;
   }
 
   const summaries = buildGuildDashboardSummaries(session.guilds, events, settings);
 
   if (!summaries.length) {
-    return `${renderWindow("no-shared-servers", renderNoSharedServersHome(), { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+    return `${renderWindow("no-shared-servers", renderNoSharedServersHome(), { prompt: "athena@os" })}${renderCountdownScript()}`;
   }
 
   const body = `
-    ${renderPromptLine({ path: "~", suffix: "./nw-helper --dashboard" })}
+    ${renderPromptLine({ path: "~", suffix: "./athena --dashboard" })}
     <section class="war-room-layout" aria-label="Project Athena war room">
       ${renderCommandRail()}
       ${renderPrimaryWarFocus(summaries, session)}
@@ -137,7 +137,7 @@ export function renderHome(events: WarEvent[], session?: WebSession, settings: B
     ${renderServerFleetSection(summaries)}
     ${renderRecentActivitySection()}
   `;
-  return `${renderWindow("nw-helper --dashboard", body, { prompt: "nwhelper@os" })}${renderCountdownScript()}`;
+  return `${renderWindow("athena --dashboard", body, { prompt: "athena@os" })}${renderCountdownScript()}`;
 }
 
 export function renderCommandRail(): string {

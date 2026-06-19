@@ -71,13 +71,13 @@ body {
   margin: 0;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   color: var(--text);
   background-color: var(--nord-bg-alt);
-  background-image: var(--bg-image);
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
 }
 
 body.bg-variant-2 {
@@ -89,7 +89,8 @@ body::before {
   inset: 0;
   z-index: 0;
   background:
-    linear-gradient(180deg, rgba(46, 52, 64, 0.18) 0%, rgba(46, 52, 64, 0.55) 100%);
+    linear-gradient(180deg, rgba(46, 52, 64, 0.18) 0%, rgba(46, 52, 64, 0.55) 100%),
+    var(--bg-image) center / cover no-repeat;
   content: "";
   pointer-events: none;
 }
@@ -4349,15 +4350,15 @@ h1 {
 }
 
 body {
+  background-color: var(--bg);
   background:
     linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     radial-gradient(circle at 62% 16%, rgba(106, 166, 255, 0.12), transparent 28%),
-    radial-gradient(circle at 18% 10%, rgba(242, 184, 75, 0.12), transparent 24%),
-    var(--bg-image);
-  background-size: 32px 32px, 32px 32px, auto, auto, cover;
-  background-position: 0 0, 0 0, 0 0, 0 0, center;
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
+    radial-gradient(circle at 18% 10%, rgba(242, 184, 75, 0.12), transparent 24%);
+  background-size: 32px 32px, 32px 32px, auto, auto;
+  background-position: 0 0, 0 0, 0 0, 0 0;
+  background-attachment: fixed, fixed, fixed, fixed;
 }
 
 .app-nav {

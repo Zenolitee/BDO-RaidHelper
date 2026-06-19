@@ -9,7 +9,7 @@ NW Helper is a single-process TypeScript application. `src/index.ts` selects a s
 | `src/index.ts` | Composition root for storage, bot startup, and web startup. |
 | `src/config.ts` | Environment parsing and required Discord registration values. |
 | `src/types.ts` | `WarEvent`, signup, group, recurrence, and settings contracts. |
-| `src/commands.ts` | Discord slash-command builders for `/event` and `/set-nwchannel`. |
+| `src/commands.ts` | Discord slash-command builders for `/event` (create, create-today, create-test, edit, recurring, set-slots, delete, close, repost, list, show), `/set-nwchannel`, `/export`, and `/score`. |
 | `src/register-commands.ts` | Guild-scoped or global Discord command registration. |
 | `src/bot.ts` | Discord client, interaction routing, wizards, permissions, scheduler, lifecycle transitions, posting, and refresh. |
 | `src/store.ts` | Serialized event mutations, JSON persistence, validation, capacity balancing, overflow handling, and guild channel settings. |
@@ -23,19 +23,28 @@ NW Helper is a single-process TypeScript application. `src/index.ts` selects a s
 | `src/styles/input.css` | Dashboard stylesheet source. |
 | `src/public/styles.css` | Generated minified dashboard stylesheet served at `/assets/styles.css`. |
 | `scripts/qa-web-smoke.mjs` | Build-output smoke test for public pages, headers, auth guards, roster rendering, refresh, scheduling, and weekly rollover. |
+| `src/timezone.ts` | IANA timezone offset calculation, date-to-Unix conversion, and timezone option constants. |
+| `src/gbr.ts` | Guild Boss Raid data: boss definitions, default order, and title formatting. |
+| `src/athena-report.ts` | War Intelligence Report builder: MVP calculation, stat formatting, and Discord embed generation. |
+| `src/score-types.ts` | Score report and score row TypeScript contracts. |
+| `src/integrations/bdo-community.ts` | BDO REST API client for adventurer and guild lookups. |
+| `src/integrations/bdo-asia.ts` | Pearl Abyss Asia (TH/SEA) HTML scraper for player and guild profiles. |
+| `src/integrations/ikusa-logger.ts` | Ikusa Logger metadata and install steps for the BDO network sniffer integration. |
+| `src/web/templates/` | Server-rendered HTML templates for all dashboard pages (layout, nav, helpers, raid pages, stats, player detail, guild performance, attendance, GBR, custom events, docs, war compare). |
 
 ## Core Data Model
 
 A `WarEvent` is the unit of scheduling and roster state. It contains:
 
-- Identity: `id`, `kind`, `title`, `tier`, and creator metadata.
+- Identity: `id`, `kind` (`nodewar`, `siege`, `gbr`, `custom`), `title`, `tier`, and creator metadata.
 - War schedule: `day`, `repeatDays`, `date`, `time`, `timezone`, and `recurrence`.
-- Delivery schedule: `announcementDate`, `announcementTime`, selected channel, and ping roles.
+- Delivery schedule: `announcementDate`, `announcementTime`, selected channel, and ping roles (`announcementRoleId`, `announcementRoleIds`).
 - Discord post state: `guildId`, `channelId`, `messageId`, and `announcedAt`.
 - Roster state: `totalCapacity`, groups, signups, and requested overflow groups.
 - Lifecycle state: `closed`, `active`, and `autoRepost`.
+- Optional content: `description`, `bossOrder` (GBR), `notes`.
 
-`EventStoreData` holds all events plus persisted per-guild announcement channel settings.
+`EventStoreData` holds all events plus persisted per-guild announcement channel settings, score upload channels, BDO guild names, and BDO guild regions.
 
 ## Data Flow
 
@@ -96,22 +105,51 @@ Persisted `announcedAt`, message IDs, lifecycle flags, and event records make sc
 | Route | Access | Purpose |
 | --- | --- | --- |
 | `GET /` | Public, with optional login | Logged-out product home, logged-in multi-server home, and legacy selected-server dashboard via `?guild=`. |
+| `GET /dashboard` | Authenticated | Main dashboard with guild network panel and command channel chooser. |
 | `GET /member` | Authenticated shared server member | Read-only member roster board across servers shared by the user and bot. |
-| `GET /raids` | Authenticated shared server member | Aggregated raid board across all shared servers; no random server default. |
-| `GET /servers` | Authenticated shared server member | Server chooser for opening a specific server dashboard. |
-| `GET /guilds/:guildId/raids` | Authenticated shared server | Canonical raid dashboard for one server. |
+| `GET /raids` | Authenticated | Redirects to `/dashboard`. |
+| `GET /guilds/:guildId/raids` | Authenticated shared server | Redirects to `/guilds/:guildId/events`. |
+| `GET /guilds/:guildId/events` | Authenticated shared server | Event list for one server. |
 | `GET /guilds/:guildId/stats` | Authenticated shared server | Canonical stats dashboard for one server. |
+| `GET /guilds/:guildId/performance` | Authenticated shared server | Guild performance analytics across score reports. |
+| `GET /guilds/:guildId/attendance` | Authenticated shared server | Attendance tracking grid across events. |
+| `GET /guilds/:guildId/activity` | Authenticated Administrator | Guild Activity page with BDO community API lookups. |
+| `POST /guilds/:guildId/activity` | Authenticated Administrator plus CSRF | Configure BDO guild name and region for a server. |
 | `GET /auth/discord` | Public | Start Discord OAuth. |
 | `GET /auth/discord/callback` | Public callback | Complete login and create a dashboard session. |
 | `GET /logout` | Public | Delete the session and clear the cookie. |
 | `GET /stats` | Authenticated, optional `?guild=` | Legacy stats picker or selected-server stats dashboard. |
-| `GET /create` | Authenticated Administrator | Render raid creation. |
+| `GET /stats/history` | Authenticated, optional `?guild=` | War score history list with export. |
+| `GET /stats/players/search` | Authenticated, optional `?guild=` | Player search across all score reports. |
+| `GET /stats/players/:name` | Authenticated, optional `?guild=` | Player detail page with per-war history and class data. |
+| `GET /stats/compare` | Authenticated, optional `?guild=` | War comparison tool for side-by-side score analysis. |
+| `GET /stats/export.csv` | Authenticated, optional `?guild=` | CSV export of all score reports. |
+| `GET /create` | Authenticated Administrator | Render event type picker (Node War, GBR, Custom). |
 | `POST /create` | Authenticated Administrator plus CSRF | Create a raid. |
+| `GET /events` | Authenticated | Event list across servers. |
 | `GET /events/:id` | Public for a known ID | Render roster detail. |
 | `GET /events/:id/edit` | Authenticated Administrator | Render raid management. |
 | `POST /events/:id/composition` | Authenticated Administrator plus CSRF | Update schedule and allocation. |
 | `POST /events/:id/delete` | Authenticated Administrator plus CSRF | Delete a raid. |
 | `POST /events/:id/status` | Authenticated Administrator plus CSRF | Activate or deactivate a raid. |
 | `POST /events/:id/auto-repost` | Authenticated Administrator plus CSRF | Toggle weekly rollover. |
+| `POST /events/:id/signups/move` | Authenticated Administrator plus CSRF | Drag-and-drop role movement in the web roster. |
+| `GET /docs` | Public | Documentation page. |
+| `POST /stats/upload` | Authenticated Administrator plus CSRF | Upload scoreboard screenshot for OCR extraction. |
+| `POST /stats/upload/preview` | Authenticated Administrator plus CSRF | Preview OCR extraction before saving. |
+| `POST /stats/extract-json` | Authenticated Administrator plus CSRF | Extract screenshot to JSON for manual entry. |
+| `POST /stats/manual` | Authenticated Administrator plus CSRF | Manually create or edit a score report. |
+| `GET /stats/reports/:id/edit` | Authenticated Administrator | Render report editor. |
+| `GET /stats/reports/:id/preview` | Authenticated Administrator | Preview a score report. |
+| `POST /stats/reports/:id/edit` | Authenticated Administrator plus CSRF | Update a score report. |
+| `POST /stats/reports/:id/delete` | Authenticated Administrator plus CSRF | Delete a score report. |
+| `POST /stats/reports/:id/rescan` | Authenticated Administrator plus CSRF | Re-run OCR on an existing screenshot. |
+| `POST /stats/players/rename` | Authenticated Administrator plus CSRF | Rename a player across all score rows. |
+| `GET /api/players/:name/class` | Authenticated | Get player class assignment. |
+| `POST /api/players/:name/class` | Authenticated plus CSRF | Set player class assignment. |
+| `GET /api/guilds/:guildId/player-classes` | Authenticated | Get all player class assignments for a guild. |
+| `GET /api/bdo/guilds/search` | Authenticated | Search BDO guilds via community API. |
+| `GET /api/bdo/players/search` | Authenticated | Search BDO players via community API. |
+| `GET /api/bdo/players/:profileTarget` | Authenticated | Get BDO player profile. |
 | `GET /api/events` | Denied | Server-scoped listing is intentionally unavailable. |
 | `GET /api/events/:id` | Authenticated Administrator | Return one server-authorized event as JSON. |

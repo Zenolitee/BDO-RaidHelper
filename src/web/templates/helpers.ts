@@ -6,7 +6,7 @@ export function renderPage(title: string, body: string, opts: { loggedIn?: boole
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)} | nwhelper ~ pinknord</title>
+  <title>${escapeHtml(title)} | Project Athena</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body class="antialiased" data-path="${escapeHtml(opts.path ?? "/")}">
@@ -763,5 +763,5 @@ export function renderCountdownScript(): string {
 export function renderWebError(error: unknown): string {
   const message = error instanceof Error ? error.message : "The request could not be completed.";
   const inner = `<main class="shell narrow-shell"><section class="empty-state"><p class="eyebrow">Request failed</p><h1>Could not save raid</h1><p>${escapeHtml(message)}</p><a class="button button-secondary" href="/">Return to dashboard</a></section></main>`;
-  return `${renderWindow("error", inner, { prompt: "nwhelper@os" })}`;
+  return `${renderWindow("error", inner, { prompt: "athena@os" })}`;
 }

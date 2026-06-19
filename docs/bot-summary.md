@@ -27,6 +27,9 @@ The bot supports administrator-driven Node War planning from Discord:
 - `/event delete` removes an event from storage.
 - `/event list` and `/event show` provide private admin views.
 - `/set-nwchannel` saves the announcement channel for a Discord server.
+- `/export stats` posts a formatted guild scoreboard summary in the current channel.
+- `/score set-channel` and `/score upload` manage scoreboard screenshot uploads.
+- `/event close` closes an event to prevent new signups.
 
 Posted Discord announcements include signup buttons for roster groups such as FFA, Defense, Zerker, Shai, Tentative, Absence, and Sign off. The bot keeps one response per user, moves users between groups, and sends overflow signups to Bench when a target group is full.
 
@@ -71,6 +74,41 @@ The roster system supports:
 - Tentative and Absence responses that do not consume active roster capacity.
 - Live refresh of posted Discord messages after changes.
 - Attendance-focused dashboard cards and roster summaries.
+### Guild Boss Raid (GBR)
+
+The project supports Guild Boss Raid scheduling:
+
+- Web-based GBR event creation with configurable boss order (Khan, Ferrid, Mudster, Moghulis, Org).
+- Drag-and-drop boss ordering with visual boss cards.
+- Default boss order and title generation per weekday.
+- GBR events integrate with the same roster and signup system as Node Wars.
+
+### Custom Events
+
+Custom event creation allows arbitrary event types:
+
+- Web-based custom event form with free-form title, description, and notes.
+- Configurable roster groups with custom labels and capacities.
+- Timezone-aware scheduling with IANA timezone selection.
+- Custom events share the same delivery, signup, and lifecycle system as Node Wars.
+
+### BDO Integrations
+
+The dashboard integrates with external BDO data sources:
+
+- **BDO Community REST API**: Adventurer and guild search, profile lookup, and guild member listing. Configurable per-server via the Guild Activity page.
+- **Pearl Abyss Asia (TH/SEA) Scraper**: Player search, character profiles, and guild profiles from the official PA Asia website.
+- **Guild Activity Page**: Configure BDO guild name and region per server, view guild profiles and member rosters.
+
+### Player Analytics
+
+Advanced player statistics and analytics:
+
+- Player search across all score reports with filtering.
+- Player detail pages with per-war history, class assignments, and impact scores.
+- Player class tracking (assign BDO classes to player names).
+- War comparison tool for side-by-side score analysis.
+- CSV export of all score data.
 - Drag-and-drop role movement in the web roster interface.
 
 ### Scoreboard Stats And OCR
@@ -130,6 +168,13 @@ Score reports store player metrics such as kills, deaths, damage dealt, damage t
 | `src/score-store.ts` | JSON and Supabase storage for scoreboard reports and uploaded images. |
 | `src/score-ocr.ts` | Gemini and Tesseract scoreboard extraction. |
 | `src/score-types.ts` | Score report and score row TypeScript contracts. |
+| `src/timezone.ts` | IANA timezone offset calculation, date-to-Unix conversion, and timezone option constants. |
+| `src/gbr.ts` | Guild Boss Raid data: boss definitions, default order, and title formatting. |
+| `src/athena-report.ts` | War Intelligence Report builder: MVP calculation, stat formatting, and Discord embed generation. |
+| `src/integrations/bdo-community.ts` | BDO REST API client for adventurer and guild lookups. |
+| `src/integrations/bdo-asia.ts` | Pearl Abyss Asia (TH/SEA) HTML scraper for player and guild profiles. |
+| `src/integrations/ikusa-logger.ts` | Ikusa Logger metadata and install steps. |
+| `src/web/templates/` | Server-rendered HTML templates for all dashboard pages. |
 | `src/styles/input.css` | Dashboard CSS source. |
 | `src/public/styles.css` | Generated dashboard CSS served by Express. |
 
@@ -186,6 +231,7 @@ Important environment variables include:
 | `GEMINI_USER_MINUTE_LIMIT` | Per-user Gemini OCR rate limit. |
 | `GEMINI_GUILD_DAY_LIMIT` | Per-server Gemini OCR daily limit. |
 | `EMOJI_*` | Custom Unicode or Discord emoji values for groups and labels. |
+| `BDO_COMMUNITY_API_BASE_URL` | Base URL for BDO REST API community endpoint (default: `https://api.cutepap.us/community/v1`). |
 
 ## Tools And Scripts Used
 
@@ -232,6 +278,20 @@ Based on the project source and commit history, the work completed includes:
 - Added Gemini OCR support with Tesseract fallback.
 - Added sortable score tables, support analysis, leader analysis, result colors, attendance cards, and impact score tables.
 - Added member views, server choosers, dashboard navigation improvements, and home page redesigns.
+- Added Guild Boss Raid (GBR) scheduling with configurable boss order and visual boss cards.
+- Added custom event creation with free-form titles, descriptions, and configurable roster groups.
+- Added BDO Community REST API integration for adventurer and guild lookups.
+- Added Pearl Abyss Asia (TH/SEA) scraper for player and guild profiles.
+- Added Guild Activity page with per-server BDO guild name and region configuration.
+- Added player search, player detail pages with per-war history, and class tracking.
+- Added guild performance analytics and attendance tracking dashboards.
+- Added war comparison tool for side-by-side score analysis and CSV export.
+- Added timezone-aware scheduling with IANA timezone selection and UTC offset calculation.
+- Added War Intelligence Report Discord embed builder with MVP calculation.
+- Added Ikusa Logger integration metadata and install steps.
+- Added dashboard image panels with hover effects for command channel navigation.
+- Added `/event close` command to prevent new signups.
+- Added `/export stats` and `/score` slash commands.
 - Added documentation for architecture, commands, configuration, deployment, security, Supabase score schema, and project audits.
 
 ## Security And Permission Model

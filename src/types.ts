@@ -35,7 +35,7 @@ export interface Signup {
 export interface WarEvent {
   id: string;
   title: string;
-  kind: "nodewar" | "siege" | "gbr";
+  kind: "nodewar" | "siege" | "gbr" | "custom";
   tier?: NodeWarTier;
   day?: WarDay;
   repeatDays?: WarDay[];
@@ -45,6 +45,7 @@ export interface WarEvent {
   recurrence: Recurrence;
   totalCapacity: number;
   groups: GroupConfig[];
+  description?: string;
   bossOrder?: string[];
   notes?: string;
   announcementDate?: string;

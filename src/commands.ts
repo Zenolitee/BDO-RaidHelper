@@ -2,17 +2,17 @@ import { PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 export const eventCommand = new SlashCommandBuilder()
   .setName("event")
-  .setDescription("Manage BDO Node War roster events")
+  .setDescription("Manage guild events — Node War, GBR, and Custom")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addSubcommand((subcommand) =>
     subcommand
       .setName("create")
-      .setDescription("Open a private step-by-step Node War event setup wizard")
+      .setDescription("Open a private step-by-step event setup wizard (Node War, GBR, or Custom)")
   )
   .addSubcommand((subcommand) =>
     subcommand
       .setName("create-today")
-      .setDescription("Create a one-time roster for today's Node War announcement")
+      .setDescription("Create a one-time event for today")
   )
   .addSubcommand((subcommand) =>
     subcommand
@@ -86,6 +86,12 @@ export const eventCommand = new SlashCommandBuilder()
     subcommand
       .setName("delete")
       .setDescription("Delete an event")
+      .addStringOption((option) => option.setName("id").setDescription("Event ID").setRequired(true))
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName("close")
+      .setDescription("Close an event to prevent new signups")
       .addStringOption((option) => option.setName("id").setDescription("Event ID").setRequired(true))
   )
   .addSubcommand((subcommand) =>

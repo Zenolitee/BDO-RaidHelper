@@ -212,7 +212,73 @@ Example:
 ```text
 /set-nwchannel
 ```
+### `/event close`
 
+Description: Closes an event to prevent new signups.
+
+Parameters:
+
+| Parameter | Required | Description |
+| --- | --- | --- |
+| `id` | Yes | Event ID. |
+
+Permissions: Administrator.
+
+Example:
+
+```text
+/event close id:AbCdEf1234
+```
+
+Closing an event prevents new signups while preserving existing roster state. One-time events also close automatically one hour after war start.
+
+### `/export stats`
+
+Description: Posts a formatted guild scoreboard summary in the current channel.
+
+Parameters: None.
+
+Permissions: None (available to all guild members).
+
+Example:
+
+```text
+/export stats
+```
+
+### `/score set-channel`
+
+Description: Sets the current channel as the approved scoreboard screenshot upload channel.
+
+Parameters: None.
+
+Permissions: Administrator.
+
+Example:
+
+```text
+/score set-channel
+```
+
+### `/score upload`
+
+Description: Authorizes the next scoreboard screenshot upload in this channel.
+
+Parameters:
+
+| Parameter | Required | Description |
+| --- | --- | --- |
+| `war-date` | Yes | War date as `YYYY-MM-DD`. |
+| `result` | No | War result: `win`, `loss`, or `unknown`. |
+| `title` | No | Optional report title (max 120 chars). |
+
+Permissions: Administrator.
+
+Example:
+
+```text
+/score upload war-date:2026-06-15 result:win title:"Node War - Calpheon"
+```
 ## Requested Names Not Registered Today
 
 ### `/event rename`
@@ -227,11 +293,6 @@ Status: Not registered.
 
 Current behavior: Use `/event edit`, then choose `Time to post`. War start time is configured globally with `NODEWAR_START_TIME`.
 
-### `/event close`
-
-Status: Not registered.
-
-Current behavior: There is no currently rendered manual-close control. One-time events close automatically one hour after war start. The interaction router retains support for older `event-close` custom IDs.
 
 ## Posted Message Buttons
 

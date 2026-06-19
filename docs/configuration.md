@@ -28,6 +28,11 @@ NW Helper reads environment variables from `.env` through `dotenv`. Copy `.env.e
 | `NODEWAR_POST_TIME` | Optional | `22:15` | Default announcement time in 24-hour `HH:mm`. |
 | `NODEWAR_START_TIME` | Optional | `21:00` | Default war start time in 24-hour `HH:mm`. |
 
+## BDO Integrations
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `BDO_COMMUNITY_API_BASE_URL` | Optional | `https://api.cutepap.us/community/v1` | Base URL for the BDO REST API community endpoint used for adventurer and guild lookups. |
 ## Gemini Stats OCR
 
 Gemini is optional. When `GEMINI_API_KEY` is set, score screenshot uploads and rescans try Gemini first, then fall back to local Tesseract OCR if Gemini fails or the app-side quota is exhausted.

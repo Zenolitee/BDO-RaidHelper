@@ -1,6 +1,8 @@
 /* ── App Shell ────────────────────────────────────────────────── */
 
 .app {
+  position: relative;
+  z-index: 1;
   min-height: 100vh;
 }
 
@@ -455,11 +457,24 @@
   min-height: calc(100vh - 64px);
   margin: 0;
   padding: var(--space-8) var(--space-8) var(--space-16);
+  background: transparent;
+}
+
+body:has(.dash-command) {
+  background: #090b10;
+}
+
+body:has(.dash-command)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   background:
     linear-gradient(180deg, rgba(9, 11, 16, 0.30), rgba(9, 11, 16, 0.70)),
     radial-gradient(circle at 20% 15%, rgba(201, 154, 46, 0.16), transparent 28%),
     radial-gradient(circle at 80% 35%, rgba(139, 46, 34, 0.14), transparent 24%),
-    url('/assets/dashboard.png') center / cover fixed;
+    url('/assets/dashboard.png') center / cover no-repeat;
+  pointer-events: none;
 }
 
 .dash-hero {
@@ -684,12 +699,72 @@
   font-size: var(--text-sm);
 }
 
+.dash-bookmark-tip {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.dash-server-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 42px;
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-3);
+  border: 1px solid rgba(201, 154, 46, 0.18);
+  background: rgba(9, 11, 16, 0.58);
+  color: var(--text-muted);
+  box-shadow: inset 0 1px 0 rgba(242, 184, 75, 0.05);
+}
+
+.dash-server-search:focus-within {
+  border-color: rgba(201, 154, 46, 0.46);
+  color: var(--accent-hover);
+  box-shadow: 0 0 0 3px rgba(201, 154, 46, 0.08);
+}
+
+.dash-server-search svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dash-server-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.dash-server-search input::placeholder {
+  color: var(--text-muted);
+}
+
 .dash-server-list {
   display: grid;
-  gap: 1px;
+  gap: 0;
   overflow: hidden;
   border: 1px solid rgba(201, 154, 46, 0.18);
-  background: rgba(201, 154, 46, 0.18);
+  background: transparent;
+}
+
+.dash-server-empty {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border: 1px dashed rgba(201, 154, 46, 0.22);
+  background: rgba(13, 17, 24, 0.58);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 
 .dash-server {
@@ -698,6 +773,11 @@
 }
 
 .dash-server.is-admin {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.dash-server.is-bookmarked {
+  background: rgba(18, 22, 30, 0.9);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -733,6 +813,52 @@
   width: 12px;
   height: 12px;
   flex-shrink: 0;
+}
+
+.dash-bookmark-button {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid rgba(201, 154, 46, 0.22);
+  border-radius: var(--radius-full);
+  background: rgba(10, 13, 18, 0.52);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0;
+  line-height: 1;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.dash-bookmark-button:hover,
+.dash-bookmark-button:focus-visible,
+.dash-bookmark-button[aria-pressed="true"] {
+  border-color: rgba(201, 154, 46, 0.46);
+  background: rgba(201, 154, 46, 0.16);
+  color: var(--accent-hover);
+  box-shadow: 0 0 18px rgba(201, 154, 46, 0.12);
+}
+
+.dash-bookmark-button:hover {
+  transform: translateY(-1px);
+}
+
+.dash-bookmark-button[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
+.dash-bookmark-button svg {
+  width: 13px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--transition-fast), fill var(--transition-fast);
 }
 
 .dash-server-row {
@@ -819,18 +945,23 @@
 .dash-server-menu {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
   max-height: 0;
+  opacity: 0;
   overflow: hidden;
   border-top: 1px solid transparent;
-  background: rgba(201, 154, 46, 0.025);
+  background: #090b10;
+  padding: 0;
   transition:
-    max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .dash-server.is-open .dash-server-menu {
-  max-height: 420px;
-  border-top-color: rgba(201, 154, 46, 0.16);
+  max-height: 640px;
+  opacity: 1;
+  border-top-color: transparent;
 }
 
 .dash-menu-item {
@@ -844,10 +975,45 @@
   border-top: 1px solid rgba(201, 154, 46, 0.06);
   border-right: 1px solid rgba(201, 154, 46, 0.06);
   transition: background var(--transition-fast), color var(--transition-fast);
+  position: relative;
+  overflow: hidden;
 }
 
-.dash-menu-item:hover {
+.dash-menu-item.has-image {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: none;
+}
+
+.dash-menu-item.has-image::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(9, 11, 16, 0.85);
+  transition: background var(--transition-fast);
+  z-index: 0;
+}
+
+.dash-menu-item.has-image > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dash-menu-item.has-image:hover::before {
+  background: rgba(9, 11, 16, 0.45);
+}
+
+.dash-menu-item:not(.has-image):hover {
   background: rgba(201, 154, 46, 0.07);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.dash-menu-item.has-image:hover {
   color: var(--text-primary);
   text-decoration: none;
 }
@@ -1060,6 +1226,10 @@
 
 .guild-performance-panel {
   min-width: 0;
+  padding: var(--space-4);
+  background: rgba(13, 17, 24, 0.6);
+  border-radius: 10px;
+  border: 1px solid rgba(201, 154, 46, 0.12);
 }
 
 .guild-performance-panel h2 {
@@ -1070,6 +1240,14 @@
 .guild-performance-panel .score-table-wrap {
   overflow: auto;
   max-height: 620px;
+  border-radius: 8px;
+  border: 1px solid rgba(201, 154, 46, 0.15);
+}
+
+.guild-performance-panel .score-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .guild-performance-panel .score-table {
@@ -1083,6 +1261,19 @@
 .guild-performance-panel .score-table th,
 .guild-performance-panel .score-table td {
   white-space: nowrap;
+  padding: 12px 14px;
+}
+
+.guild-performance-panel .score-table th {
+  padding-bottom: 14px;
+}
+
+.guild-performance-panel .score-table tbody tr:hover {
+  background: rgba(201, 154, 46, 0.04);
+}
+
+.guild-performance-panel .score-table tbody tr {
+  transition: background 0.15s ease;
 }
 
 .guild-performance-panel .score-table td:nth-child(3) {

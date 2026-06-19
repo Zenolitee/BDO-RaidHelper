@@ -39,20 +39,31 @@ export function renderEventEmbed(event: WarEvent, _includeThumbnail = false, res
 /** Renders member signup, response-status, and sign-off buttons. */
 export function renderEventComponents(event: WarEvent, resolveEmoji: EmojiResolver = (emoji) => emoji): Array<ActionRowBuilder<ButtonBuilder>> {
   const signupDisabled = event.closed;
+  const signupButtons = orderedGroups(event)
+    .filter((group) => isRosterGroup(group.key))
+    .map((group) =>
+      signupButton(
+        event,
+        group.key,
+        group.key === "mainball" ? "FFA" : truncate(group.label, 32),
+        group.key === "mainball" ? ButtonStyle.Primary : ButtonStyle.Secondary,
+        signupDisabled,
+        resolveEmoji
+      )
+    );
+  const rows: Array<ActionRowBuilder<ButtonBuilder>> = [];
+  for (let index = 0; index < signupButtons.length; index += 5) {
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...signupButtons.slice(index, index + 5)));
+  }
 
   return [
+    ...rows,
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      signupButton(event, "mainball", "FFA", ButtonStyle.Primary, signupDisabled, resolveEmoji),
-      signupButton(event, "defense", "DEF", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
-      signupButton(event, "zerker", "ZERK", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
-      signupButton(event, "shai", "SHAI", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
       new ButtonBuilder()
         .setCustomId(`event-leave:${event.id}`)
         .setLabel("Sign off")
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(signupDisabled)
-    ),
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
+        .setDisabled(signupDisabled),
       signupButton(event, "tentative", "Tentative", ButtonStyle.Secondary, signupDisabled, resolveEmoji),
       signupButton(event, "absence", "Absence", ButtonStyle.Secondary, signupDisabled, resolveEmoji)
     )
@@ -88,6 +99,43 @@ export function renderGBREventEmbed(event: WarEvent, resolveEmoji: EmojiResolver
 
 /** GBR events have no signup buttons — notification only. */
 export function renderGBREventComponents(): Array<ActionRowBuilder<ButtonBuilder>> {
+  return [];
+}
+
+/** Renders the Discord embed for a custom notification event (no signup buttons). */
+export function renderCustomEventEmbed(event: WarEvent, resolveEmoji: EmojiResolver = (emoji) => emoji): EmbedBuilder {
+  const status = event.closed ? "Closed" : "Open";
+  const unix = eventUnixSeconds(event);
+  const relativeTime = unix ? `<t:${unix}:R>` : formatEventDate(event);
+  const dayLabel = event.day ? event.day.charAt(0).toUpperCase() + event.day.slice(1) : "Monday";
+
+  const embed = new EmbedBuilder()
+    .setTitle(event.title || "Custom Event")
+    .setURL(`${config.publicBaseUrl}/events/${event.id}`)
+    .setColor(0x5865f2)
+    .addFields(
+      { name: `${getSummaryEmoji("date")} Date`, value: `**${formatEventDate(event)}**`, inline: true },
+      { name: `${getSummaryEmoji("time")} Time`, value: `**${formatEventTime(event)}**`, inline: true },
+      { name: "\ud83d\udce2 Announce", value: `**${event.announcementTime ? formatClockTime(event.announcementTime) : "TBD"}**`, inline: true },
+      { name: `${getSummaryEmoji("status")} Status`, value: `**${status}**`, inline: true },
+      { name: "\u200b", value: "\u200b", inline: true },
+      { name: `${getSummaryEmoji("when")} When`, value: `**${relativeTime}**`, inline: true }
+    )
+    .setFooter({ text: `Project Athena | Event ${event.id}` })
+    .setTimestamp(new Date(event.createdAt));
+
+  // Add description if present
+  if (event.description) {
+    embed.addFields(
+      { name: "\ud83d\udcdd DESCRIPTION", value: event.description, inline: false }
+    );
+  }
+
+  return embed;
+}
+
+/** Custom events have no signup buttons — notification only. */
+export function renderCustomEventComponents(): Array<ActionRowBuilder<ButtonBuilder>> {
   return [];
 }
 

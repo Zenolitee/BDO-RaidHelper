@@ -18,9 +18,15 @@ Main features:
 - Discord creation and editing wizards with buttons, select menus, and modals.
 - Mainball/FFA, Defense, Zerker, Shai, Bench, and optional custom roster groups.
 - Automatic overflow to Bench when a requested group is full.
+- Guild Boss Raid (GBR) scheduling with configurable boss order.
+- Custom event creation with free-form titles, descriptions, and configurable roster groups.
 - A minute-based scheduler with restart recovery and duplicate-post prevention.
 - JSON-file storage for local use or Supabase storage for persistent deployments.
 - Discord OAuth dashboard login with administrator-only server selection.
+- Scoreboard screenshot OCR with Gemini and Tesseract fallback.
+- Player search, detail pages, class tracking, and war comparison tools.
+- Guild performance analytics and attendance tracking dashboards.
+- BDO Community API integration for adventurer and guild lookups.
 
 ## Architecture
 
@@ -108,9 +114,13 @@ All registered slash commands require Discord server Administrator permission. S
 | `/event set-slots id:<event_id> def:<n> zerk:<n> shai:<n>` | Update specialist capacities and recalculate Mainball/FFA. |
 | `/event repost id:<event_id>` | Immediately publish a new roster message. |
 | `/event delete id:<event_id>` | Delete an event from storage. |
+| `/event close id:<event_id>` | Close an event to prevent new signups. |
 | `/event list` | List up to ten open events for the current server. |
 | `/event show id:<event_id>` | Show a private event preview with Post now, Edit, and Delete buttons. |
 | `/set-nwchannel` | Save the current text channel as this server's announcement channel. |
+| `/export stats` | Post a formatted guild scoreboard summary in the current channel. |
+| `/score set-channel` | Set the current channel for scoreboard screenshot uploads. |
+| `/score upload war-date:<YYYY-MM-DD>` | Authorize the next scoreboard screenshot upload. |
 
 The following names are not registered slash commands in the current implementation:
 
@@ -118,7 +128,6 @@ The following names are not registered slash commands in the current implementat
 | --- | --- |
 | `/event rename` | Titles are generated from tier, weekday, territory group, and capacity. There is no standalone rename command. |
 | `/event set-time` | Use `/event edit` and choose `Time to post`. The war start time comes from `NODEWAR_START_TIME`. |
-| `/event close` | No current slash command or rendered button exposes manual closing. One-time events close automatically after the war window. |
 
 See [docs/commands.md](docs/commands.md) for parameters, permissions, examples, and wizard behavior.
 
@@ -148,7 +157,7 @@ After a deployment, the bot edits tracked open Discord roster messages in place 
 
 ### Closing
 
-One-time events close automatically one hour after their configured start time. Weekly schedules close the previous roster display, then reuse the same event ID for the next selected day with cleared signups. The current UI does not expose a manual close control.
+One-time events close automatically one hour after their configured start time. `/event close` provides manual close control to prevent new signups while preserving existing roster state. Weekly schedules close the previous roster display, then reuse the same event ID for the next selected day with cleared signups.
 
 ## Roster System
 
