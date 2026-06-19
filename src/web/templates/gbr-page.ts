@@ -1,6 +1,6 @@
 import { escapeHtml } from '../utils.js';
 import { renderApp } from './layout.js';
-import { renderDeliveryEditor } from './create-edit-page.js';
+import { config } from '../../config.js';
 import { GBR_BOSSES, DEFAULT_BOSS_ORDER } from '../../gbr.js';
 import { TIMEZONE_OPTIONS } from '../../timezone.js';
 import type { WebSession, GuildDeliveryOptions } from '../types.js';
@@ -85,7 +85,21 @@ export function renderCreateGBRPage(
           <div class="gbr-panel">
             <div class="gbr-panel-head"><span class="gbr-panel-num">03</span> Delivery</div>
             <div class="gbr-panel-body">
-              ${renderDeliveryEditor(deliveryOptions, configuredChannelId)}
+              <label class="gbr-label">Channel</label>
+              <select name="announcementChannelId" class="gbr-input" required>
+                <option value="">Select a Discord channel</option>
+                ${deliveryOptions.channels
+                  .map((ch) => `<option value="${escapeHtml(ch.id)}"${ch.id === configuredChannelId ? " selected" : ""}># ${escapeHtml(ch.name)}</option>`)
+                  .join("")}
+              </select>
+
+              <label class="gbr-label">Ping Role</label>
+              <select name="announcementRoleIds" class="gbr-input">
+                <option value="">None</option>
+                ${deliveryOptions.roles
+                  .map((role) => `<option value="${escapeHtml(role.id)}"${role.id === config.nodeWarRoleId ? " selected" : ""}>@${escapeHtml(role.name)}</option>`)
+                  .join("")}
+              </select>
             </div>
           </div>
 

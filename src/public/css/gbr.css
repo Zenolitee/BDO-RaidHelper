@@ -12,9 +12,11 @@
   padding: 18px;
   color: #e9edf4;
   background:
+    url('/assets/gbr.png') center/cover no-repeat,
     radial-gradient(circle at 24% 12%, rgba(206, 155, 45, 0.16), transparent 28%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 35%),
     #0b0f14;
+  background-blend-mode: overlay;
 }
 
 .gbr-topbar {
