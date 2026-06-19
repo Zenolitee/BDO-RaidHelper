@@ -338,24 +338,27 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
   content: string;
   components: Array<ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | RoleSelectMenuBuilder | ChannelSelectMenuBuilder>>;
 } {
-  const steps = ["days", "boss-order", "event-time", "ping", "confirm"];
-  const currentStepIndex = steps.indexOf(state.step);
+  const steps = [
+    { key: "days", icon: "📅", label: "Select Day" },
+    { key: "repeat", icon: "🔄", label: "Repeat" },
+    { key: "boss-order", icon: "🐉", label: "Boss Order" },
+    { key: "event-time", icon: "⏰", label: "Event Time" },
+    { key: "ping", icon: "📢", label: "Role Pings" },
+    { key: "confirm", icon: "✅", label: "Confirm" },
+  ];
+  const currentStepIndex = steps.findIndex((s) => s.key === state.step);
   const bossNames = state.bossOrder.map((key) => GBR_BOSSES.find((b) => b.key === key)?.name ?? key).join(" \u2192 ");
 
-  // Build progress indicator
-  const progress = steps.map((step, i) => {
-    const icons: Record<string, string> = {
-      "days": "📅",
-      "boss-order": "🐉",
-      "event-time": "⏰",
-      "ping": "📢",
-      "confirm": "✅"
-    };
-    const icon = icons[step] || "\u2022";
-    if (i < currentStepIndex) return `~~${icon} ${getStepLabel(step)}~~`; // completed
-    if (i === currentStepIndex) return `**${icon} ${getStepLabel(step)}**`; // current
-    return `\u25CB ${getStepLabel(step)}`; // upcoming
-  }).join(" \u2192 ");
+  // Build vertical progress indicator
+  const progressLines = steps.map((step, i) => {
+    const isCompleted = i < currentStepIndex;
+    const isCurrent = i === currentStepIndex;
+    
+    if (isCompleted) return `~~${step.icon} ${step.label}~~`;
+    if (isCurrent) return `**${step.icon} ${step.label}**`;
+    return `${step.icon} ${step.label}`;
+  });
+  const progress = progressLines.join("\n");
 
   // Build step-specific content
   let stepContent = "";
@@ -375,6 +378,18 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
         state.createToday ? "*Select today's day to continue.*" : "*Select one or more days.*",
       ].join("\n");
       break;
+    case "repeat":
+      stepContent = [
+        "### 🔄 Repeat Mode",
+        "",
+        "Should this raid repeat weekly or be a one-time event?",
+        "",
+        "> **Days:** " + dayLabel,
+        "> **Repeat:** " + (state.recurring === undefined ? "*Not selected*" : state.recurring ? "Weekly" : "One-time"),
+        "",
+        "*Choose one-time or repeat weekly.*",
+      ].join("\n");
+      break;
     case "boss-order":
       stepContent = [
         "### 🐉 Boss Kill Order",
@@ -387,7 +402,7 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
               const boss = GBR_BOSSES.find((b) => b.key === key);
               return boss ? `**${boss.name}**` : key;
             }).join(" \u2192 ")
-          : "> *No bosses selected*", 
+          : "> *No bosses selected*",
         "",
         "*Select all 5 bosses in your desired kill order.*",
       ].join("\n");
@@ -422,6 +437,7 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
         "Review your Guild Boss Raid setup:",
         "",
         "> **📅 Day(s):** " + dayLabel,
+        "> **🔄 Repeat:** " + (state.recurring ? "Weekly" : "One-time"),
         "> **🐉 Boss Order:** " + (bossNames || "Not set"),
         "> **⏰ Time:** `" + (state.eventTime || "Not set") + "`",
         "> **📢 Ping:** " + ping,
@@ -434,11 +450,11 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
   }
 
   const content = [
-    `# 🐉 Guild Boss Raid Setup`,
+    "# 🐉 Guild Boss Raid Setup",
     "",
+    "\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509",
     progress,
-    "",
-    "---",
+    "\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509\u2509",
     "",
     stepContent,
     siteUrl ? `\n\n🌐 **Web Dashboard:** <${siteUrl}>` : "",
@@ -450,6 +466,7 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
 function getStepLabel(step: string): string {
   const labels: Record<string, string> = {
     "days": "Select Day",
+    "repeat": "Repeat",
     "boss-order": "Boss Order",
     "event-time": "Event Time",
     "ping": "Role Pings",
