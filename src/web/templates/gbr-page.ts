@@ -29,8 +29,14 @@ export function renderCreateGBRPage(
   const content = `
     <div class="gbr-shell">
       <div class="gbr-topbar">
-        <h1>Create Guild Boss Raid</h1>
-        <a href="/create?guild=${escapeHtml(guildId)}" class="button button-ghost button-sm">← Back</a>
+        <div class="gbr-title">
+          <span>GBR Builder</span>
+          <h1>Create Guild Boss Raid</h1>
+        </div>
+        <div class="gbr-actions-top">
+          <a href="/create?guild=${escapeHtml(guildId)}" class="button button-ghost">Cancel</a>
+          <button type="submit" class="button button-primary">Create GBR Event</button>
+        </div>
       </div>
       <div class="gbr-create-page">
         <form id="gbr-form" method="POST" action="/create">
@@ -122,6 +128,7 @@ export function renderCreateGBRPage(
                     <span class="discord-message-bot-tag">BOT</span>
                     <span class="discord-message-timestamp">Today at <span id="preview-announce-time">10:15 PM</span></span>
                   </div>
+                  <div class="discord-message-mention" id="preview-ping" style="display:none;"></div>
                   <div class="discord-embed">
                     <div class="discord-embed-color-bar"></div>
                     <div class="discord-embed-body">
@@ -157,10 +164,6 @@ export function renderCreateGBRPage(
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="gbr-actions">
-          <button type="submit" class="button button-primary gbr-submit">Create GBR Event</button>
         </div>
       </form>
       </div>
@@ -317,6 +320,20 @@ function renderGBRScript(): string {
       document.querySelector('[name="bossTime"]').addEventListener('input', updatePreview);
       document.querySelector('[name="announcementTime"]').addEventListener('input', updatePreview);
       document.querySelector('[name="recurrence"]').addEventListener('change', updatePreview);
+
+      // Role ping preview
+      const previewPing = document.getElementById('preview-ping');
+      const roleSelect = document.querySelector('[name="announcementRoleIds"]');
+      function updateRolePing() {
+        const selected = roleSelect.options[roleSelect.selectedIndex];
+        if (selected && selected.value) {
+          previewPing.textContent = '@' + selected.textContent.replace(/^@/, '');
+          previewPing.style.display = 'inline-block';
+        } else {
+          previewPing.style.display = 'none';
+        }
+      }
+      roleSelect.addEventListener('change', updateRolePing);
 
       updatePreview();
     })();

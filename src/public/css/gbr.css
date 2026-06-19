@@ -1,6 +1,6 @@
 /* GBR Create Page — follows nodewar-new theme */
 .gbr-create-body {
-  background: #0b0f14;
+  background: #0d1117;
 }
 
 .gbr-create-body .main {
@@ -13,29 +13,49 @@
   color: #e9edf4;
   background:
     url('/assets/gbr.png') center/cover no-repeat,
-    radial-gradient(circle at 24% 12%, rgba(206, 155, 45, 0.16), transparent 28%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 35%),
-    #0b0f14;
+    radial-gradient(circle at 24% 12%, rgba(206, 155, 45, 0.12), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 35%),
+    #0d1117;
   background-blend-mode: overlay;
 }
 
 .gbr-topbar {
   width: min(100%, 1540px);
   margin: 0 auto 16px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
 }
 
-.gbr-topbar h1 {
+.gbr-title span {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b929a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.gbr-title h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   color: #f3c157;
 }
 
-.gbr-topbar .button {
-  margin-left: auto;
+.gbr-actions-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.gbr-actions-top .button {
+  min-height: 40px;
+  border-radius: 8px;
+  padding-inline: 16px;
 }
 
 .gbr-create-page {
@@ -239,19 +259,6 @@ select.gbr-input option {
   color: #8b929a;
 }
 
-.gbr-actions {
-  display: flex;
-  justify-content: center;
-  margin-top: 20px;
-  padding: 16px 0;
-}
-
-.gbr-submit {
-  padding: 10px 32px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .gbr-panel-desc {
   padding: 10px 16px;
   font-size: 12px;
@@ -267,7 +274,7 @@ select.gbr-input option {
 }
 
 .gbr-panel-preview .discord-embed {
-  border-left: 4px solid #ed4245;
+  border-left: 2px solid #ed4245;
   background: #2b2d31;
 }
 
