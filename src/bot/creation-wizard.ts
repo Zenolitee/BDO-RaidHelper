@@ -295,10 +295,36 @@ function renderWizard(state: EventWizardState): {
   content: string;
   components: Array<ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | RoleSelectMenuBuilder | ChannelSelectMenuBuilder>>;
 } {
+  const siteUrl = config.publicBaseUrl;
+  const siteLine = siteUrl ? `\n\n🌐 **Web Dashboard:** <${siteUrl}>` : '';
+
+  // Show intro message for the first step (kind selection)
+  if (state.step === "kind") {
+    const content = [
+      "# 📋 Create Event",
+      "",
+      "Choose an event type below to get started.",
+      "",
+      "### Event Types",
+      "",
+      "**🎮 Node War**",
+      `> Standard Node War roster with role slots and signups.${siteUrl ? `\n> 💡 *Tip: Use the web dashboard for easier setup!*` : ''}`,
+      "",
+      "**🐉 Guild Boss Raid (GBR)**",
+      "> Boss raid notification with configurable kill order. Posts as an announcement with a countdown.",
+      "",
+      "**📝 Custom Event**",
+      "> Create any event with a custom title and description.",
+      "",
+      "---",
+      "*Select an event type below to continue.*",
+    ].join("\n");
+    return { content, components: [...wizardStepComponents(state), cancelRow(state.userId)] };
+  }
+
+  // For other steps, show the summary and prompt
   const summary = renderWizardSummary(state);
   const kindLabel = state.eventKind === "gbr" ? "Guild Boss Raid" : state.eventKind === "custom" ? "Custom Event" : "Node War";
-  const siteUrl = config.publicBaseUrl;
-  const siteLine = siteUrl ? `\n\n🌐 <${siteUrl}>` : '';
   const content = `${state.createToday ? `Today's ${kindLabel} setup` : `${kindLabel} event setup`}\n\n${summary}\n\n${wizardPrompt(state)}${siteLine}`;
   return { content, components: [...wizardStepComponents(state), cancelRow(state.userId)] };
 }
