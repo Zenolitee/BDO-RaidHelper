@@ -356,7 +356,6 @@ function wizardStepComponents(
               new StringSelectMenuOptionBuilder()
                 .setLabel(boss.name)
                 .setValue(boss.key)
-                .setEmoji(boss.initial)
                 .setDefault(state.bossOrder.includes(boss.key))
             )
           )
