@@ -137,7 +137,7 @@ export function renderCreateGBRPage(
                         </div>
                         <div class="discord-embed-field">
                           <div class="discord-embed-field-name">📢 Announce</div>
-                          <div class="discord-embed-field-value" id="preview-announce">10:15 PM</div>
+                          <div class="discord-embed-field-value" id="preview-announce">in 2 hours</div>
                         </div>
                         <div class="discord-embed-field">
                           <div class="discord-embed-field-name">📊 Status</div>
@@ -282,8 +282,34 @@ function renderGBRScript(): string {
           const [h, m] = announceTime.split(':');
           const hr = parseInt(h);
           const formatted = (hr > 12 ? hr - 12 : hr) + ':' + m + (hr >= 12 ? ' PM' : ' AM');
-          previewAnnounce.textContent = formatted;
           previewAnnounceTime.textContent = formatted;
+
+          // Calculate countdown to next occurrence of selected day + announce time
+          const now = new Date();
+          const announceDate = new Date();
+          const dayMap = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+          const targetDay = dayMap[selectedDay] ?? 1;
+          announceDate.setHours(parseInt(h), parseInt(m), 0, 0);
+
+          // Find next occurrence of the target day
+          const currentDay = now.getDay();
+          let daysUntil = targetDay - currentDay;
+          if (daysUntil < 0) daysUntil += 7;
+          if (daysUntil === 0 && announceDate <= now) daysUntil = 7;
+
+          announceDate.setDate(announceDate.getDate() + daysUntil);
+          const diffMs = announceDate - now;
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffDays = Math.floor(diffHours / 24);
+          const remainingHours = diffHours % 24;
+
+          if (diffDays > 0) {
+            previewAnnounce.textContent = 'in ' + diffDays + ' day' + (diffDays !== 1 ? 's' : '') + (remainingHours > 0 ? ' ' + remainingHours + 'h' : '');
+          } else if (diffHours > 0) {
+            previewAnnounce.textContent = 'in ' + diffHours + ' hour' + (diffHours !== 1 ? 's' : '');
+          } else {
+            previewAnnounce.textContent = 'soon';
+          }
         }
       }
 
