@@ -102,9 +102,9 @@ async function handleSelect(
 
   if (parsed.action === "boss-order") {
     state.bossOrder = interaction.values;
-    state.step = "event-time";
     await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
+    return;
   }
 }
 
@@ -195,6 +195,13 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
   if (parsed.action === "cancel") {
     await deleteWizardStateFromStore(store, state.userId);
     await interaction.update({ content: "Event setup cancelled.", components: [] });
+    return;
+  }
+
+  if (parsed.action === "boss-order-confirm") {
+    state.step = "event-time";
+    await refreshWizardTimeout(store, state);
+    await interaction.update(renderWizard(state));
     return;
   }
 
@@ -384,6 +391,9 @@ function wizardStepComponents(
                 .setDefault(state.bossOrder.includes(boss.key))
             )
           )
+      ),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        wizardButton(`wizard-boss-order-confirm:${state.userId}:continue`, "Continue", ButtonStyle.Success, state.bossOrder.length < GBR_BOSS_KEYS.length)
       )
     ];
   }
