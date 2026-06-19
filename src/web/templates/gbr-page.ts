@@ -26,10 +26,6 @@ export function renderCreateGBRPage(
       </div>`;
   }).join("");
 
-  const dayButtons = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    .map((d) => `<span class="gbr-day-btn" data-day="${d}">${d.slice(0, 3).toUpperCase()}</span>`)
-    .join("");
-
   const content = `
     <div class="gbr-shell">
       <div class="gbr-topbar">
@@ -67,8 +63,17 @@ export function renderCreateGBRPage(
               </select>
 
               <label class="gbr-label">Pick a day for GBR</label>
-              <div class="gbr-days">${dayButtons}</div>
+              <div class="gbr-days">
+                <span class="gbr-day-btn active" data-day="monday">MON</span>
+                <span class="gbr-day-btn" data-day="tuesday">TUE</span>
+                <span class="gbr-day-btn" data-day="wednesday">WED</span>
+                <span class="gbr-day-btn" data-day="thursday">THU</span>
+                <span class="gbr-day-btn" data-day="friday">FRI</span>
+                <span class="gbr-day-btn" data-day="saturday">SAT</span>
+                <span class="gbr-day-btn" data-day="sunday">SUN</span>
+              </div>
             </div>
+            <div class="gbr-panel-desc">Set when the bot should announce your GBR event.</div>
           </div>
 
           <!-- Panel 02: Boss Order -->
@@ -79,6 +84,7 @@ export function renderCreateGBRPage(
                 ${bossCards}
               </div>
             </div>
+            <div class="gbr-panel-desc">Drag to reorder bosses. The bot announces them in this order.</div>
           </div>
 
           <!-- Panel 03: Delivery -->
@@ -101,6 +107,7 @@ export function renderCreateGBRPage(
                   .join("")}
               </select>
             </div>
+            <div class="gbr-panel-desc">Choose where and who gets notified about the GBR.</div>
           </div>
 
           <!-- Panel 04: Live Preview -->
@@ -153,7 +160,7 @@ export function renderCreateGBRPage(
         </div>
 
         <div class="gbr-actions">
-          <button type="submit" class="button button-primary">Create GBR Event</button>
+          <button type="submit" class="button button-primary gbr-submit">Create GBR Event</button>
         </div>
       </form>
       </div>
@@ -185,20 +192,13 @@ function renderGBRScript(): string {
 
       let selectedDay = '';
 
-      // Day button selection
+      // Day button selection — always single select
       dayBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-          const recurrence = document.querySelector('[name="recurrence"]').value;
-          if (recurrence === 'once') {
-            dayBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            selectedDay = btn.dataset.day;
-          } else {
-            btn.classList.toggle('active');
-            const active = document.querySelectorAll('.gbr-day-btn.active');
-            selectedDay = active.length > 0 ? active[0].dataset.day : '';
-          }
-          repeatDaysInput.value = Array.from(document.querySelectorAll('.gbr-day-btn.active')).map(b => b.dataset.day).join(',');
+          dayBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          selectedDay = btn.dataset.day;
+          repeatDaysInput.value = selectedDay;
           updatePreview();
         });
       });
