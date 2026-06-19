@@ -296,7 +296,6 @@ function renderWizard(state: EventWizardState): {
   components: Array<ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | RoleSelectMenuBuilder | ChannelSelectMenuBuilder>>;
 } {
   const siteUrl = config.publicBaseUrl;
-  const siteLine = siteUrl ? `\n\n🌐 **Web Dashboard:** <${siteUrl}>` : '';
 
   // Show intro message for the first step (kind selection)
   if (state.step === "kind") {
@@ -322,11 +321,141 @@ function renderWizard(state: EventWizardState): {
     return { content, components: [...wizardStepComponents(state), cancelRow(state.userId)] };
   }
 
-  // For other steps, show the summary and prompt
+  // For GBR events, show formatted step-by-step wizard
+  if (state.eventKind === "gbr") {
+    return renderGBRWizard(state, siteUrl);
+  }
+
+  // For other event types, show the summary and prompt
   const summary = renderWizardSummary(state);
-  const kindLabel = state.eventKind === "gbr" ? "Guild Boss Raid" : state.eventKind === "custom" ? "Custom Event" : "Node War";
-  const content = `${state.createToday ? `Today's ${kindLabel} setup` : `${kindLabel} event setup`}\n\n${summary}\n\n${wizardPrompt(state)}${siteLine}`;
+  const kindLabel = state.eventKind === "custom" ? "Custom Event" : "Node War";
+  const content = `${state.createToday ? `Today's ${kindLabel} setup` : `${kindLabel} event setup`}\n\n${summary}\n\n${wizardPrompt(state)}`;
   return { content, components: [...wizardStepComponents(state), cancelRow(state.userId)] };
+}
+
+/** Renders a formatted step-by-step wizard for GBR events. */
+function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
+  content: string;
+  components: Array<ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | RoleSelectMenuBuilder | ChannelSelectMenuBuilder>>;
+} {
+  const steps = ["days", "boss-order", "event-time", "ping", "confirm"];
+  const currentStepIndex = steps.indexOf(state.step);
+  const bossNames = state.bossOrder.map((key) => GBR_BOSSES.find((b) => b.key === key)?.name ?? key).join(" \u2192 ");
+
+  // Build progress indicator
+  const progress = steps.map((step, i) => {
+    const icons: Record<string, string> = {
+      "days": "📅",
+      "boss-order": "🐉",
+      "event-time": "⏰",
+      "ping": "📢",
+      "confirm": "✅"
+    };
+    const icon = icons[step] || "\u2022";
+    if (i < currentStepIndex) return `~~${icon} ${getStepLabel(step)}~~`; // completed
+    if (i === currentStepIndex) return `**${icon} ${getStepLabel(step)}**`; // current
+    return `\u25CB ${getStepLabel(step)}`; // upcoming
+  }).join(" \u2192 ");
+
+  // Build step-specific content
+  let stepContent = "";
+  const dayLabel = state.days.length ? state.days.map(labelWarDay).join(", ") : "Not selected";
+  const announceTime = state.eventTime ? calculateAnnouncementTime(state.eventTime) : "TBD";
+  const ping = state.pingRoleIds.length ? state.pingRoleIds.map((roleId) => `<@&${roleId}>`).join(", ") : "None";
+
+  switch (state.step) {
+    case "days":
+      stepContent = [
+        "### 📅 Select Event Day",
+        "",
+        "Choose which day(s) this Guild Boss Raid will occur.",
+        "",
+        `> **Days:** ${state.days.length ? dayLabel : "*None selected*"}`,
+        "",
+        state.createToday ? "*Select today's day to continue.*" : "*Select one or more days.*",
+      ].join("\n");
+      break;
+    case "boss-order":
+      stepContent = [
+        "### 🐉 Boss Kill Order",
+        "",
+        "Arrange the bosses in the order you want them defeated.",
+        "",
+        "> **Current order:**",
+        state.bossOrder.length
+          ? "> " + state.bossOrder.map((key) => {
+              const boss = GBR_BOSSES.find((b) => b.key === key);
+              return boss ? `**${boss.name}**` : key;
+            }).join(" \u2192 ")
+          : "> *No bosses selected*", 
+        "",
+        "*Select all 5 bosses in your desired kill order.*",
+      ].join("\n");
+      break;
+    case "event-time":
+      stepContent = [
+        "### ⏰ Event Time",
+        "",
+        "Set the time when the Guild Boss Raid will start.",
+        "",
+        "> **Event time:** `" + (state.eventTime || "Not set") + "`",
+        "> **Pings at:** `" + announceTime + "` *(5 min before)*",
+        "",
+        "*Choose default (9:00 PM) or set a custom time.*",
+      ].join("\n");
+      break;
+    case "ping":
+      stepContent = [
+        "### 📢 Role Pings",
+        "",
+        "Choose which roles to notify when the raid is about to start.",
+        "",
+        "> **Ping roles:** " + (state.pingRoleIds.length ? ping : "*No roles selected*"),
+        "",
+        "*Select roles or choose a default option below.*",
+      ].join("\n");
+      break;
+    case "confirm":
+      stepContent = [
+        "### ✅ Confirm & Create",
+        "",
+        "Review your Guild Boss Raid setup:",
+        "",
+        "> **📅 Day(s):** " + dayLabel,
+        "> **🐉 Boss Order:** " + (bossNames || "Not set"),
+        "> **⏰ Time:** `" + (state.eventTime || "Not set") + "`",
+        "> **📢 Ping:** " + ping,
+        "",
+        state.createToday ? "*This raid will be created for today.*" : "*Click **Confirm** to create this raid.*",
+      ].join("\n");
+      break;
+    default:
+      stepContent = `### ${getStepLabel(state.step)}\n\n${wizardPrompt(state)}`;
+  }
+
+  const content = [
+    `# 🐉 Guild Boss Raid Setup`,
+    "",
+    progress,
+    "",
+    "---",
+    "",
+    stepContent,
+    siteUrl ? `\n\n🌐 **Web Dashboard:** <${siteUrl}>` : "",
+  ].join("\n");
+
+  return { content, components: [...wizardStepComponents(state), cancelRow(state.userId)] };
+}
+
+function getStepLabel(step: string): string {
+  const labels: Record<string, string> = {
+    "days": "Select Day",
+    "boss-order": "Boss Order",
+    "event-time": "Event Time",
+    "ping": "Role Pings",
+    "confirm": "Confirm"
+  };
+  return labels[step] || step;
 }
 
 function wizardPrompt(state: EventWizardState): string {
