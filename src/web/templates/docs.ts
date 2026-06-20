@@ -150,8 +150,8 @@ export function renderDocsPage(
           <h3 style="margin-top:0;color:var(--color-amber);">⚡ How it works</h3>
           <ul style="padding-left:var(--space-5);line-height:2;font-size:var(--text-sm);list-style:none;">
             <li>• The bot posts an announcement embed showing the date, time, and boss order</li>
-            <li>• 5 minutes before the raid, the bot <strong>edits the same message</strong> to add role pings</li>
-            <li>• This keeps everything in one message — no duplicates!</li>
+            <li>• 5 minutes before the raid, the bot deletes the original and <strong>sends a new message</strong> with role pings</li>
+            <li>• This ensures everyone gets pinged and notified!</li>
             <li>• After the raid window closes, the event is marked as closed</li>
             <li>• Weekly events automatically roll to the next occurrence</li>
           </ul>

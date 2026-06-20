@@ -979,7 +979,7 @@ async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Pro
   }
 }
 
-/** Adds role pings to GBR event embed 5 minutes before event time. */
+/** Re-announces GBR event with role pings 5 minutes before event time. */
 async function reAnnounceGBREventsWithPings(client: Client, store: EventStore): Promise<void> {
   const events = await store.listEvents();
   const now = Date.now();
@@ -1005,16 +1005,16 @@ async function reAnnounceGBREventsWithPings(client: Client, store: EventStore): 
     const eventStartMs = eventStartUnix * 1000;
     const timeUntilEventMs = eventStartMs - now;
 
-    // Add pings if we're within 5 minutes of the event (and event hasn't started yet)
+    // Re-announce with pings if we're within 5 minutes of the event (and event hasn't started yet)
     if (timeUntilEventMs <= FIVE_MINUTES_MS && timeUntilEventMs > -FIVE_MINUTES_MS) {
-      // Check if we already added pings (look for gbrPingSent flag)
+      // Check if we already re-announced (look for gbrPingSent flag)
       if ((event as any).gbrPingSent) {
         continue;
       }
 
-      console.log(`[Scheduler] Adding role pings to GBR event ${event.id}`);
+      console.log(`[Scheduler] Re-announcing GBR event ${event.id} with role pings`);
       
-      // Mark as pinged before editing to avoid duplicate pings
+      // Mark as pinged before sending to avoid duplicate pings
       await store.updateEventDetails(event.id, { gbrPingSent: true } as any);
 
       // Fetch the channel and original message
@@ -1024,21 +1024,29 @@ async function reAnnounceGBREventsWithPings(client: Client, store: EventStore): 
       }
 
       try {
-        const message = await channel.messages.fetch(event.messageId);
-        if (!message) {
-          continue;
+        // Delete the original message
+        const originalMessage = await channel.messages.fetch(event.messageId);
+        if (originalMessage) {
+          await originalMessage.delete().catch(() => {});
         }
 
         // Build ping content
         const pingContent = roleIds.map((roleId) => `<@&${roleId}>`).join(' ');
 
-        // Edit the original message to add role pings
-        await message.edit({
+        // Send new message with embed and role pings
+        if (!('send' in channel)) continue;
+        const { renderGBREventEmbed, renderGBREventComponents } = await import('./render.js');
+        const newMessage = await channel.send({
           content: pingContent,
+          embeds: [renderGBREventEmbed(event)],
+          components: renderGBREventComponents(),
           allowedMentions: { roles: roleIds }
         });
 
-        console.log(`[Scheduler] Successfully added pings to GBR event ${event.id}`);
+        // Update the stored message ID to point to the new message
+        await store.updateEventDetails(event.id, { messageId: newMessage.id } as any);
+
+        console.log(`[Scheduler] Successfully re-announced GBR event ${event.id} with pings`);
       } catch (error) {
         console.error(`[Scheduler] Failed to edit GBR message for event ${event.id}:`, error);
       }

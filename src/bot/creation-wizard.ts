@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChannelSelectMenuBuilder, ChannelSelectMenuInteraction, ChannelType, ChatInputCommandInteraction, Client, ModalBuilder, ModalSubmitInteraction, RoleSelectMenuBuilder, RoleSelectMenuInteraction, StringSelectMenuBuilder, StringSelectMenuInteraction, StringSelectMenuOptionBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonInteraction, ButtonStyle, ChannelSelectMenuBuilder, ChannelSelectMenuInteraction, ChannelType, ChatInputCommandInteraction, Client, MessageFlags, ModalBuilder, ModalSubmitInteraction, RoleSelectMenuBuilder, RoleSelectMenuInteraction, StringSelectMenuBuilder, StringSelectMenuInteraction, StringSelectMenuOptionBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { config } from '../config.js';
 import type { NodeWarTier, WarDay, WarEvent } from '../types.js';
 import { EventStore } from '../store.js';
@@ -38,7 +38,8 @@ async function startEventWizard(interaction: ChatInputCommandInteraction, store:
     customDescription: ""
   };
   await saveWizardState(store, state);
-  await interaction.reply({ ...renderWizard(state), ephemeral: true });
+  const reply = renderWizard(state);
+  await interaction.reply({ content: reply.content, components: reply.components, flags: MessageFlags.Ephemeral });
 }
 
 /** Applies creation-wizard and edit-wizard select-menu changes. */
@@ -99,7 +100,12 @@ async function handleSelect(
   }
 
   if (parsed.action === "boss-order") {
-    state.bossOrder = interaction.values;
+    // Preserve the order based on the original GBR_BOSSES array
+    // Discord multi-select returns values in selection order, not display order
+    const selectedSet = new Set(interaction.values);
+    state.bossOrder = GBR_BOSSES
+      .filter(boss => selectedSet.has(boss.key))
+      .map(boss => boss.key);
     await refreshWizardTimeout(store, state);
     await interaction.update(renderWizard(state));
     return;
@@ -176,7 +182,8 @@ async function handleModal(
   if (interaction.isFromMessage()) {
     await interaction.update(renderWizard(state));
   } else {
-    await interaction.reply({ ...renderWizard(state), ephemeral: true });
+    const reply = renderWizard(state);
+    await interaction.reply({ content: reply.content, components: reply.components, flags: MessageFlags.Ephemeral });
   }
 }
 
