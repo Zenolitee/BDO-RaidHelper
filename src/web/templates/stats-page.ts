@@ -82,7 +82,8 @@ export function renderStatsPage(
       </button>`
     : "";
 
-  const headerActions = `<a class="button button-ghost button-sm" href="/?guild=${enc(guild.id)}">Raids</a><a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">Score History</a><a class="button button-ghost button-sm" href="/stats/compare?guild=${enc(guild.id)}">Compare</a><a class="button button-ghost button-sm" href="/stats/export.csv?guild=${enc(guild.id)}">Export CSV</a>${uploadButton}`;
+  const warHistoryButton = canManage ? `<a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">War History</a>` : "";
+  const headerActions = `${warHistoryButton}<a class="button button-ghost button-sm" href="/stats/compare?guild=${enc(guild.id)}">Compare</a><a class="button button-ghost button-sm" href="/stats/export.csv?guild=${enc(guild.id)}">Export CSV</a>${uploadButton}`;
 
   const content = [
     `<div class="dashboard athena-data-page">
@@ -915,7 +916,7 @@ export function renderScoreReportEditorPage(
   const rows = [...report.rows, ...Array.from({ length: 3 }, () => undefined)];
   const sorted = [...allReports].sort((a, b) => b.warDate.localeCompare(a.warDate));
 
-  const headerActions = `<a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">← Score History</a><a class="button button-secondary button-sm" href="/stats?guild=${enc(guild.id)}">Back to Stats</a>`;
+  const headerActions = `<a class="button button-ghost button-sm" href="/stats/history?guild=${enc(guild.id)}">← War History</a><a class="button button-secondary button-sm" href="/stats?guild=${enc(guild.id)}">Back to Stats</a>`;
 
   // Sidebar: list of war dates
   const sidebarItems = sorted.map((r) => {

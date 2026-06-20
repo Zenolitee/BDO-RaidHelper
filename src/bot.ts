@@ -103,7 +103,6 @@ export { nextWarDayFromSelection } from "./bot/utils.js";
 
 const AUTO_SCHEDULER_USER = "nodewar-scheduler";
 const SCHEDULER_INTERVAL_MS = 60_000;
-const NODEWAR_DURATION_MS = 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Client wiring
@@ -249,6 +248,12 @@ async function handleCommand(
     return;
   }
   if (subcommand === "create-qa") {
+    // Only available in development mode
+    const isDev = (process.env.PUBLIC_BASE_URL ?? "http://localhost:3000").includes("localhost");
+    if (!isDev) {
+      await interaction.reply({ content: "This command is only available in development mode.", ephemeral: true });
+      return;
+    }
     await startEventWizard(interaction, store);
     return;
   }
@@ -698,6 +703,7 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
 
   if (action === "event-refresh") {
     await requireOfficer(interaction);
+    await assertButtonGuild(store, interaction, eventId);
     const event = await store.getEvent(eventId);
     if (!event) {
       throw new Error("Event not found.");
@@ -709,9 +715,11 @@ async function handleButton(interaction: ButtonInteraction, store: EventStore, c
   if (action === "event-close") {
     await interaction.deferReply({ ephemeral: true });
     await requireOfficer(interaction);
+    await assertButtonGuild(store, interaction, eventId);
     const event = await store.closeEvent(eventId);
     await refreshEventMessage(client, event);
     await interaction.editReply({ content: `Closed ${event.title}.` });
+    return;
   }
 }
 
@@ -971,7 +979,7 @@ async function closeExpiredOneTimeEvents(client: Client, store: EventStore): Pro
   }
 }
 
-/** Re-announces GBR events 5 minutes before event time with role pings. */
+/** Adds role pings to GBR event embed 5 minutes before event time. */
 async function reAnnounceGBREventsWithPings(client: Client, store: EventStore): Promise<void> {
   const events = await store.listEvents();
   const now = Date.now();
@@ -997,29 +1005,43 @@ async function reAnnounceGBREventsWithPings(client: Client, store: EventStore): 
     const eventStartMs = eventStartUnix * 1000;
     const timeUntilEventMs = eventStartMs - now;
 
-    // Re-announce if we're within 5 minutes of the event (and event hasn't started yet)
+    // Add pings if we're within 5 minutes of the event (and event hasn't started yet)
     if (timeUntilEventMs <= FIVE_MINUTES_MS && timeUntilEventMs > -FIVE_MINUTES_MS) {
-      // Check if we already re-announced (look for gbrPingSent flag)
+      // Check if we already added pings (look for gbrPingSent flag)
       if ((event as any).gbrPingSent) {
         continue;
       }
 
-      console.log(`[Scheduler] Re-announcing GBR event ${event.id} with pings`);
+      console.log(`[Scheduler] Adding role pings to GBR event ${event.id}`);
       
-      // Mark as pinged before sending to avoid duplicate pings
+      // Mark as pinged before editing to avoid duplicate pings
       await store.updateEventDetails(event.id, { gbrPingSent: true } as any);
 
-      // Send re-announcement with pings
+      // Fetch the channel and original message
       const channel = await client.channels.fetch(event.channelId);
-      if (!channel || !('send' in channel)) {
+      if (!channel || !('messages' in channel)) {
         continue;
       }
 
-      const content = roleIds.map((roleId) => `<@&${roleId}>`).join(' ');
-      await channel.send({
-        content,
-        allowedMentions: { roles: roleIds }
-      });
+      try {
+        const message = await channel.messages.fetch(event.messageId);
+        if (!message) {
+          continue;
+        }
+
+        // Build ping content
+        const pingContent = roleIds.map((roleId) => `<@&${roleId}>`).join(' ');
+
+        // Edit the original message to add role pings
+        await message.edit({
+          content: pingContent,
+          allowedMentions: { roles: roleIds }
+        });
+
+        console.log(`[Scheduler] Successfully added pings to GBR event ${event.id}`);
+      } catch (error) {
+        console.error(`[Scheduler] Failed to edit GBR message for event ${event.id}:`, error);
+      }
     }
   }
 }

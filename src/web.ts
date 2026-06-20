@@ -54,6 +54,7 @@ import {
   renderMemberLoginPage,
   renderMemberDashboardPage,
   renderLoginRequiredPage,
+  renderInsufficientPermissionsPage,
   renderLoginPage,
 } from "./web/templates/raids-page.js";
 import { renderStatsServerPickerPage, renderStatsPage, renderScoreReportEditorPage } from "./web/templates/stats-page.js";
@@ -337,6 +338,11 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
     const guild = session.guilds.find((candidate) => candidate.id === guildId);
     if (!guild || !options.scoreStore) {
       response.status(404).type("html").send(renderWebError(new Error("Server not found or score store unavailable.")));
+      return;
+    }
+    // Only moderators/admins can access War History
+    if (!canManageGuild(session, guild.id)) {
+      response.status(403).type("html").send(renderInsufficientPermissionsPage());
       return;
     }
     const [events, settings] = await Promise.all([store.listEvents(), store.getSettings()]);
@@ -774,7 +780,6 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       setPreviewImage(cacheKey, file.buffer, file.mimetype, file.originalname);
 
       // Normalize names
-      const { normalizePlayerName } = await import("./web/score.js");
       const rows = extraction.rows.map((row) => ({
         ...row,
         familyName: normalizePlayerName(row.familyName)
@@ -815,7 +820,6 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       });
 
       // Convert to manual entry JSON format
-      const { normalizePlayerName } = await import("./web/score.js");
       const players = extraction.rows.map((row) => ({
         name: normalizePlayerName(row.familyName),
         kills: row.kills,
@@ -1217,7 +1221,7 @@ export function createWebApp(store: EventStore, options: WebAppOptions = {}) {
       return;
     }
     if (!canManageGuild(session, guildId)) {
-      response.status(403).type("html").send(renderLoginRequiredPage());
+      response.status(403).type("html").send(renderInsufficientPermissionsPage());
       return;
     }
     // Show event type picker if no type is selected

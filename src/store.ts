@@ -284,10 +284,8 @@ export class EventStore {
 
   /** Retrieves a persisted wizard state by user ID. */
   async getWizardState(userId: string): Promise<WizardStateData | undefined> {
-    console.log(`[Store] getWizardState called for user ${userId}`);
-    const result = await this.withStore(async (data) => {
+    return this.withStore(async (data) => {
       data.wizardStates ??= {};
-      console.log(`[Store] wizardStates keys: ${Object.keys(data.wizardStates).join(', ') || 'none'}`);
       const state = data.wizardStates[userId];
       if (!state) return undefined;
       // Auto-expire stale states
@@ -298,19 +296,14 @@ export class EventStore {
       }
       return state;
     });
-    console.log(`[Store] getWizardState result: ${result ? 'found' : 'not found'}`);
-    return result;
   }
 
   /** Persists or updates a wizard state. */
   async setWizardState(userId: string, state: WizardStateData): Promise<void> {
-    console.log(`[Store] setWizardState called for user ${userId}`);
     await this.withStore(async (data) => {
       data.wizardStates ??= {};
       data.wizardStates[userId] = state;
-      console.log(`[Store] Writing wizard state for user ${userId}`);
       await this.write(data);
-      console.log(`[Store] Wizard state written successfully`);
     });
   }
 

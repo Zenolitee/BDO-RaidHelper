@@ -14,8 +14,6 @@ import { handleEditWizardSelect, handleEditWizardModal } from './edit-wizard.js'
 import { GBR_BOSSES, buildGBRTitle } from '../gbr.js';
 import { nanoid } from 'nanoid';
 
-const AUTO_SCHEDULER_USER = 'nodewar-scheduler';
-const NODEWAR_DURATION_MS = 60 * 60 * 1000;
 
 async function startEventWizard(interaction: ChatInputCommandInteraction, store: EventStore, createToday = false): Promise<void> {
   const today = createToday ? currentWarDay(config.timezone) : undefined;
@@ -224,14 +222,7 @@ async function handleWizardButton(interaction: ButtonInteraction, store: EventSt
   }
 
   if (parsed.action === "event-time") {
-    if (value === "custom") {
-      await interaction.showModal(buildWizardEventTimeModal(state.userId));
-      return;
-    }
-    state.eventTime = "21:00";
-    state.step = state.createToday ? "ping" : "repeat";
-    await refreshWizardTimeout(store, state);
-    await interaction.update(renderWizard(state));
+    await interaction.showModal(buildWizardEventTimeModal(state.userId));
     return;
   }
 
@@ -393,7 +384,7 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
         "Should this raid repeat weekly or be a one-time event?",
         "",
         "> **Days:** " + dayLabel,
-        "> **Repeat:** " + (state.recurring === undefined ? "*Not selected*" : state.recurring ? "Weekly" : "One-time"),
+        "> **Repeat:** " + (state.recurring === undefined ? "*Not selected*" : state.recurring ? "Repeat once a week" : "For this week only"),
         "",
         "*Choose one-time or repeat weekly.*",
       ].join("\n");
@@ -445,7 +436,7 @@ function renderGBRWizard(state: EventWizardState, siteUrl?: string): {
         "Review your Guild Boss Raid setup:",
         "",
         "> **📅 Day(s):** " + dayLabel,
-        "> **🔄 Repeat:** " + (state.recurring ? "Weekly" : "One-time"),
+        "> **🔄 Repeat:** " + (state.recurring ? "Repeat once a week" : "For this week only"),
         "> **🐉 Boss Order:** " + (bossNames || "Not set"),
         "> **⏰ Time:** `" + (state.eventTime || "Not set") + "`",
         "> **📢 Ping:** " + ping,
@@ -536,15 +527,19 @@ function wizardStepComponents(
 
   if (state.step === "days") {
     const dayLabel = state.eventKind === "gbr" ? "GBR day" : state.eventKind === "custom" ? "event day" : "Node War day";
+    // GBR includes Saturday since raids can happen on Saturdays
+    const availableDays = state.eventKind === "gbr"
+      ? [...WIZARD_DAYS, "saturday" as WarDay]
+      : WIZARD_DAYS;
     return [
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`wizard-days:${state.userId}`)
           .setPlaceholder(state.createToday ? `Select today's ${dayLabel}` : `Select ${dayLabel} or days`)
           .setMinValues(1)
-          .setMaxValues(state.createToday ? 1 : WIZARD_DAYS.length)
+          .setMaxValues(state.createToday ? 1 : availableDays.length)
           .addOptions(
-            WIZARD_DAYS.map((day) =>
+            availableDays.map((day) =>
               new StringSelectMenuOptionBuilder()
                 .setLabel(labelWarDay(day))
                 .setValue(day)
@@ -590,8 +585,8 @@ function wizardStepComponents(
   if (state.step === "repeat") {
     return [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        wizardButton(`wizard-repeat:${state.userId}:once`, "One-time only", ButtonStyle.Secondary),
-        wizardButton(`wizard-repeat:${state.userId}:weekly`, "Repeat weekly", ButtonStyle.Primary)
+        wizardButton(`wizard-repeat:${state.userId}:once`, "For this week only", ButtonStyle.Secondary),
+        wizardButton(`wizard-repeat:${state.userId}:weekly`, "Repeat once a week", ButtonStyle.Primary)
       )
     ];
   }
@@ -607,8 +602,7 @@ function wizardStepComponents(
   if (state.step === "event-time") {
     return [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        wizardButton(`wizard-event-time:${state.userId}:default`, "Default 9:00 PM", ButtonStyle.Primary),
-        wizardButton(`wizard-event-time:${state.userId}:custom`, "Custom event time", ButtonStyle.Secondary)
+        wizardButton(`wizard-event-time:${state.userId}:custom`, "Set time", ButtonStyle.Primary)
       )
     ];
   }
@@ -676,7 +670,7 @@ function renderWizardSummary(state: EventWizardState): string {
 
   const common = [
     `${state.createToday ? "Today" : "Days"}: ${days}`,
-    `Repeat: ${state.recurring === undefined ? "Not selected" : state.recurring ? "Repeat weekly" : "One-time only"}`,
+    `Repeat: ${state.recurring === undefined ? "Not selected" : state.recurring ? "Repeat once a week" : "For this week only"}`,
     timeLine,
     announceLine,
     `Ping roles: ${ping}`,

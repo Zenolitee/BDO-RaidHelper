@@ -1,6 +1,9 @@
 import { PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
-export const eventCommand = new SlashCommandBuilder()
+// Detect if running in development mode (localhost)
+const isDev = (process.env.PUBLIC_BASE_URL ?? "http://localhost:3000").includes("localhost");
+
+const eventBuilder = new SlashCommandBuilder()
   .setName("event")
   .setDescription("Manage guild events — Node War, GBR, and Custom")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -13,11 +16,6 @@ export const eventCommand = new SlashCommandBuilder()
     subcommand
       .setName("create-today")
       .setDescription("Create a one-time event for today (Node War, GBR, or Custom)")
-  )
-  .addSubcommand((subcommand) =>
-    subcommand
-      .setName("create-qa")
-      .setDescription("QA: Open a private step-by-step event setup wizard (Node War, GBR, or Custom)")
   )
   .addSubcommand((subcommand) =>
     subcommand
@@ -52,6 +50,16 @@ export const eventCommand = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
+// Dev-only: QA command for testing wizard changes locally
+if (isDev) {
+  eventBuilder.addSubcommand((subcommand) =>
+    subcommand
+      .setName("create-qa")
+      .setDescription("QA: Open a private step-by-step event setup wizard (Node War, GBR, or Custom)")
+  );
+}
+
+const eventCommand = eventBuilder
   .addSubcommand((subcommand) => subcommand.setName("list").setDescription("List upcoming roster events"))
   .addSubcommand((subcommand) =>
     subcommand

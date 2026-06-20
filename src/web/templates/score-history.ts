@@ -4,7 +4,7 @@ import type { WebSession, GuildDashboardSummary } from '../types.js';
 import type { ScoreReport } from '../../score-types.js';
 import type { DiscordGuild } from '../types.js';
 
-/* ── Score History page ──────────────────────────────────────── */
+/* ── War History page ──────────────────────────────────────── */
 
 export function renderScoreHistoryPage(
   guild: DiscordGuild,
@@ -20,7 +20,7 @@ export function renderScoreHistoryPage(
   const content = `<div class="dashboard athena-data-page">
     <div class="dashboard-header">
       <div>
-        <h1 style="font-size:var(--text-xl);font-weight:700;">Score History</h1>
+        <h1 style="font-size:var(--text-xl);font-weight:700;">War History</h1>
         <p style="font-size:var(--text-xs);color:var(--text-muted);margin-top:2px;">All uploaded war scoreboards for ${esc(guild.name)}.</p>
       </div>
       <div style="display:flex;align-items:center;gap:var(--space-2);">${headerActions}</div>
@@ -39,7 +39,7 @@ export function renderScoreHistoryPage(
     }
   </div>`;
 
-  return renderApp(`Score History — ${guild.name}`, content, { session, summaries, activeNav: "stats" });
+  return renderApp(`War History — ${guild.name}`, content, { session, summaries, activeNav: "stats" });
 }
 
 /* ── Individual score history card ───────────────────────────── */

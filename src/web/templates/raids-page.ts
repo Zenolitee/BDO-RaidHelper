@@ -766,6 +766,23 @@ export function renderLoginRequiredPage(): string {
   return renderApp("Login Required", content);
 }
 
+/* ── 6b. Insufficient Permissions Page ───────────────────────── */
+
+export function renderInsufficientPermissionsPage(): string {
+  const content = `
+    <div class="page-content" style="padding-top:var(--space-16);">
+      ${renderEmptyState(
+        "\u{1F6AB} Access Denied",
+        "You must be a Moderator or Admin of this Discord Server to manage events.",
+        `<div style="display:flex;justify-content:center;margin-top:var(--space-4);">
+          <a href="/" class="button button-secondary">Back to Dashboard</a>
+        </div>`
+      )}
+    </div>`;
+
+  return renderApp("Access Denied", content);
+}
+
 /* ── 7. Login Failed Page ────────────────────────────────────── */
 
 export function renderLoginPage(error?: string): string {
